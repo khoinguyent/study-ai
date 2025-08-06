@@ -216,6 +216,27 @@ curl -X POST http://localhost:11434/api/generate \
 wscat -c ws://localhost:8000/ws/test@test.com
 ```
 
+### 🧪 API Testing with Postman
+
+For comprehensive API testing, use the provided Postman collection:
+
+```bash
+# Validate Postman collection
+./scripts/test-postman-collection.sh
+```
+
+**Postman Collection Files:**
+- `postman/Study-AI-API-Collection.json` - Complete API collection
+- `postman/Study-AI-Environment.json` - Environment variables
+- `postman/README.md` - Detailed usage instructions
+
+**Import Instructions:**
+1. Open Postman
+2. Import `Study-AI-API-Collection.json`
+3. Import `Study-AI-Environment.json`
+4. Select "Study AI - Development Environment"
+5. Start testing with "Login User" endpoint
+
 ### Building for Production
 
 Instructions for building each component for production deployment.

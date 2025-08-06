@@ -1,0 +1,883 @@
+{
+	"info": {
+		"_postman_id": "study-ai-api-collection",
+		"name": "Study AI API Collection",
+		"description": "Complete API collection for Study AI platform - Microservices Architecture with Auth, Document, Indexing, Quiz, and Notification services",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "study-ai"
+	},
+	"item": [
+		{
+			"name": "Auth Service",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"newuser@example.com\",\n    \"username\": \"newuser\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"register"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('auth_token', response.access_token);",
+									"    pm.environment.set('user_id', response.user_id || 'test@test.com');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/auth/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"me"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/auth/verify",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"verify"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Document Service",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/documents/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"documents",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upload Document",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/documents/upload",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"documents",
+								"upload"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Documents",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/documents/documents",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"documents",
+								"documents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Document",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/documents/documents/{{document_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"documents",
+								"documents",
+								"{{document_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Document",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/documents/documents/{{document_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"documents",
+								"documents",
+								"{{document_id}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Indexing Service",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/indexing/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"indexing",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Index Document",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/indexing/index?document_id={{document_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"indexing",
+								"index"
+							],
+							"query": [
+								{
+									"key": "document_id",
+									"value": "{{document_id}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Search Documents",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"query\": \"{{search_query}}\",\n    \"limit\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/indexing/search",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"indexing",
+								"search"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Document Chunks",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/indexing/chunks/{{document_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"indexing",
+								"chunks",
+								"{{document_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Document Chunks",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/indexing/chunks/{{document_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"indexing",
+								"chunks",
+								"{{document_id}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Quiz Service",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/quizzes/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Quiz",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"topic\": \"{{quiz_topic}}\",\n    \"difficulty\": \"{{quiz_difficulty}}\",\n    \"num_questions\": {{quiz_questions}}\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/quizzes/generate",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"generate"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Quizzes",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/quizzes/quizzes",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"quizzes"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Quiz",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/quizzes/quizzes/{{quiz_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"quizzes",
+								"{{quiz_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Quiz",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/quizzes/quizzes/{{quiz_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"quizzes",
+								"{{quiz_id}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Notification Service",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/notifications/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Task Status",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"task_id\": \"{{task_id}}\",\n    \"user_id\": \"{{user_id}}\",\n    \"task_type\": \"{{task_type}}\",\n    \"status\": \"{{task_status}}\",\n    \"progress\": {{task_progress}},\n    \"message\": \"{{task_message}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/notifications/task-status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"task-status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Task Status",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"{{task_status}}\",\n    \"progress\": {{task_progress}},\n    \"message\": \"{{task_message}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/notifications/task-status/{{task_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"task-status",
+								"{{task_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Task Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/notifications/task-status/{{task_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"task-status",
+								"{{task_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Task Statuses",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/notifications/task-status/user/{{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"task-status",
+								"user",
+								"{{user_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Notification",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": \"{{user_id}}\",\n    \"title\": \"{{notification_title}}\",\n    \"message\": \"{{notification_message}}\",\n    \"notification_type\": \"{{notification_type}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/notifications/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"notifications"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Notifications",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/notifications/notifications/user/{{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"notifications",
+								"user",
+								"{{user_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Mark Notification as Read",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/notifications/notifications/{{notification_id}}/read",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"notifications",
+								"notifications",
+								"{{notification_id}}",
+								"read"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Development Tools",
+			"item": [
+				{
+					"name": "Test Ollama",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"model\": \"llama2\",\n    \"prompt\": \"{{ollama_prompt}}\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:11434/api/generate",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "11434",
+							"path": [
+								"api",
+								"generate"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Ollama Models",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:11434/api/tags",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "11434",
+							"path": [
+								"api",
+								"tags"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "test@test.com",
+			"type": "string"
+		},
+		{
+			"key": "test_email",
+			"value": "test@test.com",
+			"type": "string"
+		},
+		{
+			"key": "test_password",
+			"value": "test123",
+			"type": "string"
+		},
+		{
+			"key": "document_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "quiz_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "task_id",
+			"value": "test_task_123",
+			"type": "string"
+		},
+		{
+			"key": "notification_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "search_query",
+			"value": "artificial intelligence",
+			"type": "string"
+		},
+		{
+			"key": "quiz_topic",
+			"value": "Machine Learning",
+			"type": "string"
+		},
+		{
+			"key": "quiz_difficulty",
+			"value": "intermediate",
+			"type": "string"
+		},
+		{
+			"key": "quiz_questions",
+			"value": "5",
+			"type": "string"
+		},
+		{
+			"key": "task_type",
+			"value": "document_processing",
+			"type": "string"
+		},
+		{
+			"key": "task_status",
+			"value": "processing",
+			"type": "string"
+		},
+		{
+			"key": "task_progress",
+			"value": "50",
+			"type": "string"
+		},
+		{
+			"key": "task_message",
+			"value": "Processing document...",
+			"type": "string"
+		},
+		{
+			"key": "notification_title",
+			"value": "Document Processed",
+			"type": "string"
+		},
+		{
+			"key": "notification_message",
+			"value": "Your document has been successfully processed.",
+			"type": "string"
+		},
+		{
+			"key": "notification_type",
+			"value": "task_status",
+			"type": "string"
+		},
+		{
+			"key": "ollama_prompt",
+			"value": "Hello, how are you?",
+			"type": "string"
+		}
+	]
+} 

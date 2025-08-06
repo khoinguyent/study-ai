@@ -1,0 +1,135 @@
+{
+	"id": "study-ai-environment",
+	"name": "Study AI - Development Environment",
+	"values": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "user_id",
+			"value": "test@test.com",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_email",
+			"value": "test@test.com",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_password",
+			"value": "test123",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "document_id",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "quiz_id",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "task_id",
+			"value": "test_task_123",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "notification_id",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "search_query",
+			"value": "artificial intelligence",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "quiz_topic",
+			"value": "Machine Learning",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "quiz_difficulty",
+			"value": "intermediate",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "quiz_questions",
+			"value": "5",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "task_type",
+			"value": "document_processing",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "task_status",
+			"value": "processing",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "task_progress",
+			"value": "50",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "task_message",
+			"value": "Processing document...",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "notification_title",
+			"value": "Document Processed",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "notification_message",
+			"value": "Your document has been successfully processed.",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "notification_type",
+			"value": "task_status",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "ollama_prompt",
+			"value": "Hello, how are you?",
+			"type": "default",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment",
+	"_postman_exported_at": "2024-01-01T00:00:00.000Z",
+	"_postman_exported_using": "Study AI Platform"
+} 
