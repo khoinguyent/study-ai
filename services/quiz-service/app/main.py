@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
@@ -28,7 +28,7 @@ app.add_middleware(
 # Initialize services
 quiz_generator = QuizGenerator()
 
-async def verify_auth_token(authorization: str = Depends(httpx.Header)):
+async def verify_auth_token(authorization: str = Depends(Header)):
     """Verify JWT token with auth service"""
     if not authorization:
         raise HTTPException(

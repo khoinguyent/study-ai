@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
@@ -14,9 +14,117 @@ from .schemas import (
 )
 from .config import settings
 from .websocket_manager import websocket_manager
+import sys
+import os
+
+# Add shared module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+from shared import EventConsumer, EventType, BaseEvent
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+# Initialize event consumer
+event_consumer = EventConsumer(settings.REDIS_URL)
+
+# Event handlers
+async def handle_document_event(event: BaseEvent):
+    """Handle document-related events"""
+    try:
+        # Create notification for user
+        notification = Notification(
+            user_id=event.user_id,
+            title=f"Document {event.event_type.value.replace('document.', '').title()}",
+            message=f"Document {event.document_id}: {event.event_type.value}",
+            notification_type="document_status",
+            status="unread"
+        )
+        
+        db = next(get_db())
+        db.add(notification)
+        db.commit()
+        
+        # Send WebSocket notification
+        await websocket_manager.send_personal_message(
+            user_id=event.user_id,
+            message={
+                "type": "document_status",
+                "event": event.event_type.value,
+                "document_id": event.document_id,
+                "message": f"Document {event.event_type.value.replace('document.', '').title()}"
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error handling document event: {e}")
+
+async def handle_indexing_event(event: BaseEvent):
+    """Handle indexing-related events"""
+    try:
+        # Create notification for user
+        notification = Notification(
+            user_id=event.user_id,
+            title=f"Indexing {event.event_type.value.replace('indexing.', '').title()}",
+            message=f"Document {event.document_id}: {event.event_type.value}",
+            notification_type="indexing_status",
+            status="unread"
+        )
+        
+        db = next(get_db())
+        db.add(notification)
+        db.commit()
+        
+        # Send WebSocket notification
+        await websocket_manager.send_personal_message(
+            user_id=event.user_id,
+            message={
+                "type": "indexing_status",
+                "event": event.event_type.value,
+                "document_id": event.document_id,
+                "message": f"Indexing {event.event_type.value.replace('indexing.', '').title()}"
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error handling indexing event: {e}")
+
+async def handle_quiz_event(event: BaseEvent):
+    """Handle quiz-related events"""
+    try:
+        # Create notification for user
+        notification = Notification(
+            user_id=event.user_id,
+            title=f"Quiz {event.event_type.value.replace('quiz.generation.', '').title()}",
+            message=f"Quiz {event.quiz_id}: {event.event_type.value}",
+            notification_type="quiz_status",
+            status="unread"
+        )
+        
+        db = next(get_db())
+        db.add(notification)
+        db.commit()
+        
+        # Send WebSocket notification
+        await websocket_manager.send_personal_message(
+            user_id=event.user_id,
+            message={
+                "type": "quiz_status",
+                "event": event.event_type.value,
+                "quiz_id": event.quiz_id,
+                "message": f"Quiz {event.event_type.value.replace('quiz.generation.', '').title()}"
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error handling quiz event: {e}")
+
+# Subscribe to events
+event_consumer.subscribe_to_document_events(handle_document_event)
+event_consumer.subscribe_to_indexing_events(handle_indexing_event)
+event_consumer.subscribe_to_quiz_events(handle_quiz_event)
+
+# Start event consumer
+event_consumer.start()
 
 app = FastAPI(
     title="Notification Service",
@@ -33,7 +141,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def verify_auth_token(authorization: str = Depends(httpx.Header)):
+async def verify_auth_token(authorization: str = Depends(Header)):
     """Verify JWT token with auth service"""
     if not authorization:
         raise HTTPException(

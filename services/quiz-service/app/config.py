@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     
     # Ollama (Local LLM)
     OLLAMA_BASE_URL: str = "http://ollama:11434"
-    OLLAMA_MODEL: str = "llama2"
+    OLLAMA_MODEL: str = "llama2:7b-chat"
     
     # Services
     AUTH_SERVICE_URL: str = "http://auth-service:8001"

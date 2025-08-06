@@ -13,7 +13,7 @@ class Notification(Base):
     message = Column(Text, nullable=False)
     notification_type = Column(String, nullable=False)  # task_status, system, etc.
     status = Column(String, default="unread")  # unread, read, archived
-    metadata = Column(JSONB)  # Additional data like task_id, progress, etc.
+    meta_data = Column(JSONB)  # Additional data like task_id, progress, etc.
     created_at = Column(DateTime, default=datetime.utcnow)
     read_at = Column(DateTime, nullable=True)
 
@@ -27,7 +27,7 @@ class TaskStatus(Base):
     status = Column(String, nullable=False)  # pending, processing, completed, failed
     progress = Column(Integer, default=0)  # 0-100
     message = Column(Text, nullable=True)
-    metadata = Column(JSONB)  # Additional task-specific data
+    meta_data = Column(JSONB)  # Additional task-specific data
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True) 

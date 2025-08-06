@@ -210,7 +210,16 @@ curl -X POST http://localhost:8000/auth/login \
 # Test Ollama (local LLM)
 curl -X POST http://localhost:11434/api/generate \
   -H 'Content-Type: application/json' \
-  -d '{"model": "llama2", "prompt": "Hello, how are you?"}'
+  -d '{"model": "llama2:7b-chat", "prompt": "Hello, how are you?"}'
+
+# Manage Ollama models
+./scripts/manage-ollama.sh list
+./scripts/manage-ollama.sh test llama2:7b-chat
+
+# Test Event-Driven System
+./scripts/test-event-system.sh check
+./scripts/test-event-system.sh publish
+./scripts/test-event-system.sh monitor
 
 # Test WebSocket notifications (using wscat or similar tool)
 wscat -c ws://localhost:8000/ws/test@test.com
@@ -241,11 +250,40 @@ For comprehensive API testing, use the provided Postman collection:
 
 Instructions for building each component for production deployment.
 
+## 🚀 Event-Driven Architecture
+
+The platform uses an event-driven architecture with Redis pub/sub and Celery for handling long-running tasks:
+
+### **📋 Event Flow:**
+```
+User Upload → Document Service → Event Publisher → Redis Pub/Sub → Event Consumer → Notification Service → WebSocket → User
+```
+
+### **🔄 Event Types:**
+- **Document Events**: Upload, processing, completion, failure
+- **Indexing Events**: Started, progress, completion, failure  
+- **Quiz Events**: Generation started, progress, completion, failure
+- **System Events**: Task status updates, user notifications
+
+### **⚡ Real-time Features:**
+- **Instant Notifications**: Users get immediate feedback
+- **Progress Tracking**: Real-time progress updates
+- **Task Status**: Clear visibility into task status
+- **WebSocket Updates**: Live updates via WebSocket connections
+
+### **📚 Documentation:**
+- **Event Architecture**: `docs/EVENT_DRIVEN_ARCHITECTURE.md`
+- **Testing**: `./scripts/test-event-system.sh`
+
 ## 📱 Features
 
-- [ ] Feature 1
-- [ ] Feature 2
-- [ ] Feature 3
+- [x] **User Authentication** - JWT-based login/registration
+- [x] **Document Upload** - File storage with MinIO
+- [x] **AI Quiz Generation** - Using local Ollama LLM
+- [x] **Real-time Notifications** - WebSocket-based updates
+- [x] **Event-Driven Architecture** - Redis pub/sub with Celery
+- [x] **Vector Search** - Document indexing and retrieval
+- [x] **Task Status Tracking** - Real-time progress monitoring
 
 ## 🤝 Contributing
 

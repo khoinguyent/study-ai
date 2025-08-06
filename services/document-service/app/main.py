@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
@@ -31,7 +31,7 @@ app.add_middleware(
 document_processor = DocumentProcessor()
 storage_service = StorageService()
 
-async def verify_auth_token(authorization: str = Depends(httpx.Header)):
+async def verify_auth_token(authorization: str = Depends(Header)):
     """Verify JWT token with auth service"""
     if not authorization:
         raise HTTPException(
@@ -107,8 +107,8 @@ async def upload_document(
         document.status = DocumentStatus.PROCESSING
         db.commit()
         
-        # Trigger processing task
-        document_processor.process_document.delay(document_id)
+        # Trigger processing task asynchronously
+        asyncio.create_task(document_processor.process_document(document_id, user_id, db))
         
         return DocumentResponse(
             id=document.id,
