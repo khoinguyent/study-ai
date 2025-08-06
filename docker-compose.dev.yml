@@ -1,0 +1,274 @@
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: study-ai-api-gateway-dev
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-service
+      - document-service
+      - indexing-service
+      - quiz-service
+      - notification-service
+    networks:
+      - study-ai-network
+
+  # Auth Service Database
+  auth-db:
+    image: postgres:15
+    container_name: study-ai-auth-db-dev
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Document Service Database
+  document-db:
+    image: postgres:15
+    container_name: study-ai-document-db-dev
+    environment:
+      POSTGRES_DB: document_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - document_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Indexing Service Database (with pgvector extension)
+  indexing-db:
+    image: pgvector/pgvector:pg15
+    container_name: study-ai-indexing-db-dev
+    environment:
+      POSTGRES_DB: indexing_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - indexing_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Quiz Service Database
+  quiz-db:
+    image: postgres:15
+    container_name: study-ai-quiz-db-dev
+    environment:
+      POSTGRES_DB: quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - quiz_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Notification Service Database
+  notification-db:
+    image: postgres:15
+    container_name: study-ai-notification-db-dev
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Redis for caching and message queue
+  redis:
+    image: redis:7-alpine
+    container_name: study-ai-redis-dev
+    ports:
+      - "6379:6379"
+    networks:
+      - study-ai-network
+
+  # MinIO for local S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: study-ai-minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - study-ai-network
+
+  # Ollama for local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: study-ai-ollama-dev
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - study-ai-network
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: study-ai-auth-service-dev
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@auth-db:5432/auth_db
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: your-secret-key-change-in-production
+    depends_on:
+      - auth-db
+      - redis
+    volumes:
+      - ./services/auth-service:/app
+    networks:
+      - study-ai-network
+
+  # Document Service
+  document-service:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-document-service-dev
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_db
+      REDIS_URL: redis://redis:6379
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: study-ai-documents
+      MINIO_SECURE: false
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      - document-db
+      - redis
+      - minio
+      - auth-service
+    volumes:
+      - ./services/document-service:/app
+    networks:
+      - study-ai-network
+
+  # Indexing Service
+  indexing-service:
+    build:
+      context: ./services/indexing-service
+      dockerfile: Dockerfile
+    container_name: study-ai-indexing-service-dev
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@indexing-db:5432/indexing_db
+      REDIS_URL: redis://redis:6379
+      DOCUMENT_SERVICE_URL: http://document-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      - indexing-db
+      - redis
+      - document-service
+    volumes:
+      - ./services/indexing-service:/app
+    networks:
+      - study-ai-network
+
+  # Quiz Service
+  quiz-service:
+    build:
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-quiz-service-dev
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      REDIS_URL: redis://redis:6379
+      # Ollama configuration
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama2
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      - quiz-db
+      - redis
+      - ollama
+      - auth-service
+      - indexing-service
+    volumes:
+      - ./services/quiz-service:/app
+    networks:
+      - study-ai-network
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: study-ai-notification-service-dev
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@notification-db:5432/notification_db
+      REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: http://auth-service:8001
+    depends_on:
+      - notification-db
+      - redis
+      - auth-service
+    volumes:
+      - ./services/notification-service:/app
+    networks:
+      - study-ai-network
+
+  # Web frontend service
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: study-ai-web-dev
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      REACT_APP_API_URL: http://localhost
+      REACT_APP_WS_URL: ws://localhost:8005
+    depends_on:
+      - api-gateway
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    networks:
+      - study-ai-network
+
+volumes:
+  auth_postgres_data:
+  document_postgres_data:
+  indexing_postgres_data:
+  quiz_postgres_data:
+  notification_postgres_data:
+  minio_data:
+  ollama_data:
+
+networks:
+  study-ai-network:
+    driver: bridge 

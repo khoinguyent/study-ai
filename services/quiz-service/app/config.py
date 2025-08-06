@@ -2,17 +2,14 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql://postgres:password@document-db:5432/document_db"
+    DATABASE_URL: str = "postgresql://postgres:password@quiz-db:5432/quiz_db"
     
     # Redis
     REDIS_URL: str = "redis://redis:6379"
     
-    # MinIO (S3-compatible storage)
-    MINIO_ENDPOINT: str = "minio:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
-    MINIO_BUCKET: str = "study-ai-documents"
-    MINIO_SECURE: bool = False
+    # Ollama (Local LLM)
+    OLLAMA_BASE_URL: str = "http://ollama:11434"
+    OLLAMA_MODEL: str = "llama2"
     
     # Services
     AUTH_SERVICE_URL: str = "http://auth-service:8001"
@@ -20,8 +17,8 @@ class Settings(BaseSettings):
     NOTIFICATION_SERVICE_URL: str = "http://notification-service:8005"
     
     # Service
-    SERVICE_NAME: str = "document-service"
-    SERVICE_PORT: int = 8002
+    SERVICE_NAME: str = "quiz-service"
+    SERVICE_PORT: int = 8004
     
     class Config:
         env_file = ".env"

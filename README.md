@@ -31,8 +31,19 @@ study-ai/
 - Docker and Docker Compose
 - Node.js (v18 or higher) for web/mobile development
 - Python 3.11+ for local development
-- AWS S3 bucket for document storage
-- OpenAI API key for quiz generation
+
+### Development vs Production
+
+**Development Environment:**
+- **MinIO** instead of AWS S3 (local S3-compatible storage)
+- **Ollama** instead of OpenAI (local LLM)
+- **Real-time notifications** via WebSocket
+- **Async task processing** with progress tracking
+
+**Production Environment:**
+- **AWS S3** for document storage
+- **OpenAI GPT** for quiz generation
+- **Redis** for caching and message queuing
 
 ### Development Environment Setup
 
@@ -42,24 +53,27 @@ study-ai/
    cd study-ai
    ```
 
-2. **Configure environment variables:**
+2. **Quick setup (recommended):**
    ```bash
-   # Copy example environment files
-   cp services/auth-service/.env.example services/auth-service/.env
-   cp services/document-service/.env.example services/document-service/.env
-   cp services/quiz-service/.env.example services/quiz-service/.env
-   
-   # Edit the .env files with your actual values
+   # This will set up everything automatically
+   ./scripts/setup-dev.sh
    ```
 
-3. **Start all services:**
+3. **Manual setup (alternative):**
    ```bash
-   docker-compose up -d
+   # Start development services
+   docker-compose -f docker-compose.dev.yml up -d
+   
+   # Create test data
+   ./scripts/seed_data_docker.sh
+   
+   # Test the setup
+   ./scripts/test_login.sh
    ```
 
 4. **Verify services are running:**
    ```bash
-   docker-compose ps
+   docker-compose -f docker-compose.dev.yml ps
    ```
 
 ### Individual Service Setup
@@ -158,7 +172,12 @@ npx react-native run-ios  # or run-android
    - Document Service: http://localhost:8002/docs
    - Indexing Service: http://localhost:8003/docs
    - Quiz Service: http://localhost:8004/docs
+   - Notification Service: http://localhost:8005/docs
    - Web Frontend: http://localhost:3001
+
+5. **Development Tools:**
+   - MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
+   - Ollama API: http://localhost:11434
 
 ### Test Data
 
@@ -187,6 +206,14 @@ curl -X POST http://localhost:8001/login \
 curl -X POST http://localhost/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email": "test@test.com", "password": "test123"}'
+
+# Test Ollama (local LLM)
+curl -X POST http://localhost:11434/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "llama2", "prompt": "Hello, how are you?"}'
+
+# Test WebSocket notifications (using wscat or similar tool)
+wscat -c ws://localhost/ws/test@test.com
 ```
 
 ### Building for Production
