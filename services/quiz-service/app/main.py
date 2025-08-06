@@ -6,10 +6,11 @@ import httpx
 import time
 
 from .database import get_db
-from .models import Base, Quiz
+from .models import Base, Quiz, CustomDocumentSet
 from .schemas import (
     QuizCreate, QuizResponse, QuizGenerationRequest,
     SubjectQuizGenerationRequest, CategoryQuizGenerationRequest,
+    DocumentSelectionRequest, CustomDocumentSetRequest, CustomDocumentSetResponse,
     QuizGenerationResponse
 )
 from .config import settings
@@ -17,7 +18,7 @@ from .services.quiz_generator import QuizGenerator
 
 app = FastAPI(
     title="Quiz Service",
-    description="AI-powered quiz generation service with subject-based grouping",
+    description="AI-powered quiz generation service with subject-based grouping and document selection",
     version="1.0.0"
 )
 
@@ -62,6 +63,272 @@ async def verify_auth_token(authorization: str = Depends(Header)):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "quiz-service"}
+
+# Custom Document Set Management
+@app.post("/document-sets", response_model=CustomDocumentSetResponse)
+async def create_custom_document_set(
+    request: CustomDocumentSetRequest,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Create a custom document set for quiz generation"""
+    try:
+        # Validate that all documents belong to the user
+        async with httpx.AsyncClient() as client:
+            for doc_id in request.document_ids:
+                doc_response = await client.get(
+                    f"{settings.DOCUMENT_SERVICE_URL}/documents/{doc_id}",
+                    headers={"Authorization": f"Bearer {user_id}"}
+                )
+                if doc_response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Document {doc_id} not found or not accessible"
+                    )
+        
+        # Create custom document set
+        doc_set = CustomDocumentSet(
+            name=request.name,
+            description=request.description,
+            document_ids=request.document_ids,
+            user_id=user_id,
+            subject_id=request.subject_id,
+            category_id=request.category_id
+        )
+        
+        db.add(doc_set)
+        db.commit()
+        db.refresh(doc_set)
+        
+        return doc_set
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create document set: {str(e)}"
+        )
+
+@app.get("/document-sets", response_model=List[CustomDocumentSetResponse])
+async def list_custom_document_sets(
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """List all custom document sets for a user"""
+    doc_sets = db.query(CustomDocumentSet).filter(
+        CustomDocumentSet.user_id == user_id
+    ).all()
+    return doc_sets
+
+@app.get("/document-sets/{set_id}", response_model=CustomDocumentSetResponse)
+async def get_custom_document_set(
+    set_id: int,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Get a specific custom document set"""
+    doc_set = db.query(CustomDocumentSet).filter(
+        CustomDocumentSet.id == set_id,
+        CustomDocumentSet.user_id == user_id
+    ).first()
+    
+    if not doc_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document set not found"
+        )
+    
+    return doc_set
+
+@app.delete("/document-sets/{set_id}")
+async def delete_custom_document_set(
+    set_id: int,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Delete a custom document set"""
+    doc_set = db.query(CustomDocumentSet).filter(
+        CustomDocumentSet.id == set_id,
+        CustomDocumentSet.user_id == user_id
+    ).first()
+    
+    if not doc_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document set not found"
+        )
+    
+    db.delete(doc_set)
+    db.commit()
+    
+    return {"message": "Document set deleted successfully"}
+
+# Document Selection Quiz Generation
+@app.post("/generate/selected-documents", response_model=QuizGenerationResponse)
+async def generate_quiz_from_selected_documents(
+    request: DocumentSelectionRequest,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Generate a quiz from specific selected documents"""
+    start_time = time.time()
+    
+    try:
+        # Validate that all documents belong to the user
+        async with httpx.AsyncClient() as client:
+            for doc_id in request.document_ids:
+                doc_response = await client.get(
+                    f"{settings.DOCUMENT_SERVICE_URL}/documents/{doc_id}",
+                    headers={"Authorization": f"Bearer {user_id}"}
+                )
+                if doc_response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Document {doc_id} not found or not accessible"
+                    )
+        
+        # Get context from all selected documents
+        all_context_chunks = []
+        for doc_id in request.document_ids:
+            async with httpx.AsyncClient() as client:
+                context_response = await client.get(
+                    f"{settings.INDEXING_SERVICE_URL}/chunks/{doc_id}"
+                )
+                
+                if context_response.status_code == 200:
+                    chunks = context_response.json()
+                    all_context_chunks.extend(chunks)
+        
+        if not all_context_chunks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No content found in selected documents"
+            )
+        
+        # Generate quiz using AI with selected document context
+        quiz_content = await quiz_generator.generate_quiz_from_context(
+            topic=request.topic,
+            difficulty=request.difficulty,
+            num_questions=request.num_questions,
+            context_chunks=all_context_chunks,
+            source_type="selected_documents",
+            source_id=",".join(request.document_ids)
+        )
+        
+        # Save quiz to database
+        quiz = Quiz(
+            user_id=user_id,
+            title=quiz_content["title"],
+            description=quiz_content.get("description"),
+            questions=quiz_content["questions"],
+            status="draft"
+        )
+        
+        db.add(quiz)
+        db.commit()
+        db.refresh(quiz)
+        
+        generation_time = time.time() - start_time
+        
+        return QuizGenerationResponse(
+            quiz_id=quiz.id,
+            title=quiz.title,
+            questions_count=len(quiz.questions),
+            generation_time=generation_time,
+            source_type="selected_documents",
+            source_id=",".join(request.document_ids),
+            documents_used=request.document_ids
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Quiz generation failed: {str(e)}"
+        )
+
+@app.post("/generate/document-set/{set_id}", response_model=QuizGenerationResponse)
+async def generate_quiz_from_custom_document_set(
+    set_id: int,
+    request: QuizGenerationRequest,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Generate a quiz from a custom document set"""
+    start_time = time.time()
+    
+    try:
+        # Get the custom document set
+        doc_set = db.query(CustomDocumentSet).filter(
+            CustomDocumentSet.id == set_id,
+            CustomDocumentSet.user_id == user_id
+        ).first()
+        
+        if not doc_set:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document set not found"
+            )
+        
+        # Get context from all documents in the set
+        all_context_chunks = []
+        for doc_id in doc_set.document_ids:
+            async with httpx.AsyncClient() as client:
+                context_response = await client.get(
+                    f"{settings.INDEXING_SERVICE_URL}/chunks/{doc_id}"
+                )
+                
+                if context_response.status_code == 200:
+                    chunks = context_response.json()
+                    all_context_chunks.extend(chunks)
+        
+        if not all_context_chunks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No content found in document set"
+            )
+        
+        # Use document set name as topic if not provided
+        topic = request.topic or doc_set.name
+        
+        # Generate quiz using AI with document set context
+        quiz_content = await quiz_generator.generate_quiz_from_context(
+            topic=topic,
+            difficulty=request.difficulty,
+            num_questions=request.num_questions,
+            context_chunks=all_context_chunks,
+            source_type="custom_document_set",
+            source_id=str(set_id)
+        )
+        
+        # Save quiz to database
+        quiz = Quiz(
+            user_id=user_id,
+            title=quiz_content["title"],
+            description=quiz_content.get("description"),
+            questions=quiz_content["questions"],
+            status="draft"
+        )
+        
+        db.add(quiz)
+        db.commit()
+        db.refresh(quiz)
+        
+        generation_time = time.time() - start_time
+        
+        return QuizGenerationResponse(
+            quiz_id=quiz.id,
+            title=quiz.title,
+            questions_count=len(quiz.questions),
+            generation_time=generation_time,
+            source_type="custom_document_set",
+            source_id=str(set_id),
+            documents_used=doc_set.document_ids
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Quiz generation failed: {str(e)}"
+        )
 
 @app.post("/generate", response_model=QuizResponse)
 async def generate_quiz(

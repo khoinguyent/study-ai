@@ -545,6 +545,60 @@ async def delete_document(
     
     return {"message": "Document deleted successfully"}
 
+@app.get("/categories/{category_id}/documents", response_model=List[DocumentResponse])
+async def list_category_documents(
+    category_id: int,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """List all documents in a specific category"""
+    # Verify category exists and belongs to user
+    category = db.query(Category).join(Subject).filter(
+        Category.id == category_id,
+        Subject.user_id == user_id
+    ).first()
+    
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found"
+        )
+    
+    # Get all documents in this category
+    documents = db.query(Document).filter(
+        Document.category_id == category_id,
+        Document.user_id == user_id
+    ).all()
+    
+    return documents
+
+@app.get("/subjects/{subject_id}/documents", response_model=List[DocumentResponse])
+async def list_subject_documents(
+    subject_id: int,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """List all documents in a specific subject"""
+    # Verify subject exists and belongs to user
+    subject = db.query(Subject).filter(
+        Subject.id == subject_id,
+        Subject.user_id == user_id
+    ).first()
+    
+    if not subject:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subject not found"
+        )
+    
+    # Get all documents in this subject
+    documents = db.query(Document).filter(
+        Document.subject_id == subject_id,
+        Document.user_id == user_id
+    ).all()
+    
+    return documents
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8002) 
