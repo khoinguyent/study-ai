@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: study-ai-api-gateway-dev
     ports:
-      - "80:80"
+      - "8000:80"
     depends_on:
       - auth-service
       - document-service
@@ -250,8 +250,8 @@ services:
       - "3001:3001"
     environment:
       NODE_ENV: development
-      REACT_APP_API_URL: http://localhost
-      REACT_APP_WS_URL: ws://localhost:8005
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8000/ws
     depends_on:
       - api-gateway
     volumes:

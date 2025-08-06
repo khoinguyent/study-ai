@@ -167,7 +167,7 @@ npx react-native run-ios  # or run-android
    ```
 
 4. **Access the services:**
-   - API Gateway: http://localhost
+   - API Gateway: http://localhost:8000
    - Auth Service: http://localhost:8001/docs
    - Document Service: http://localhost:8002/docs
    - Indexing Service: http://localhost:8003/docs
@@ -203,7 +203,7 @@ curl -X POST http://localhost:8001/login \
   -d '{"email": "test@test.com", "password": "test123"}'
 
 # Test login through API Gateway
-curl -X POST http://localhost/auth/login \
+curl -X POST http://localhost:8000/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email": "test@test.com", "password": "test123"}'
 
@@ -213,7 +213,7 @@ curl -X POST http://localhost:11434/api/generate \
   -d '{"model": "llama2", "prompt": "Hello, how are you?"}'
 
 # Test WebSocket notifications (using wscat or similar tool)
-wscat -c ws://localhost/ws/test@test.com
+wscat -c ws://localhost:8000/ws/test@test.com
 ```
 
 ### Building for Production

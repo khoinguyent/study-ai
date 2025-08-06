@@ -59,7 +59,7 @@ fi
 
 # Test 2: API Gateway Login
 print_status "Testing API Gateway login..."
-GATEWAY_RESPONSE=$(curl -s -X POST http://localhost/auth/login \
+GATEWAY_RESPONSE=$(curl -s -X POST http://localhost:8000/auth/login \
   -H 'Content-Type: application/json' \
   -d "{\"email\": \"$TEST_EMAIL\", \"password\": \"$TEST_PASSWORD\"}")
 
@@ -110,7 +110,7 @@ echo "   Password: $TEST_PASSWORD"
 echo ""
 echo "🌐 Test Endpoints:"
 echo "   - Auth Service: http://localhost:8001"
-echo "   - API Gateway: http://localhost"
+echo "   - API Gateway: http://localhost:8000"
 echo ""
 echo "📋 Test Results:"
 if echo "$AUTH_RESPONSE" | grep -q "access_token" && echo "$GATEWAY_RESPONSE" | grep -q "access_token"; then
