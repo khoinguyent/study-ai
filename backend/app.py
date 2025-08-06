@@ -12,19 +12,20 @@ from sqlalchemy.orm import Session
 # Import our modules
 from database import get_db, init_db, check_db_connection
 from models import User, Document, DocumentChunk, Quiz, ProcessingTask
-from s3_client import s3_client
+from storage_client import storage_client
 from document_processor import document_processor
 from ai_agents import ai_agents
+from config import config
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://postgres:password@localhost:5432/study_ai')
+app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['SQLALCHEMY_DATABASE_URI'] = config.DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+app.config['MAX_CONTENT_LENGTH'] = config.MAX_CONTENT_LENGTH
 
 # Enable CORS
 CORS(app)
@@ -36,8 +37,8 @@ api = Api(app)
 def make_celery(app):
     celery = Celery(
         app.import_name,
-        backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-        broker=os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        backend=config.REDIS_URL,
+        broker=config.REDIS_URL
     )
     celery.conf.update(app.config)
     
@@ -169,8 +170,8 @@ def upload_document():
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}')
         file.save(temp_file.name)
         
-        # Upload to S3
-        s3_key, s3_url = s3_client.upload_file(
+        # Upload to storage
+        storage_key, storage_url = storage_client.upload_file(
             temp_file.name, 
             file.filename, 
             user_id
@@ -179,12 +180,12 @@ def upload_document():
         # Create document record
         document = Document(
             user_id=user_id,
-            filename=os.path.basename(s3_key),
+            filename=os.path.basename(storage_key),
             original_filename=file.filename,
             file_size=os.path.getsize(temp_file.name),
             file_type=file_extension,
-            s3_key=s3_key,
-            s3_bucket=s3_client.bucket_name,
+            s3_key=storage_key,
+            s3_bucket=storage_client.storage_config['bucket_name'],
             status='uploaded'
         )
         
@@ -402,10 +403,10 @@ def process_document(document_id: str, user_id: str):
         if not document:
             raise Exception("Document not found")
         
-        # Download file from S3
+        # Download file from storage
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{document.file_type}')
-        if not s3_client.download_file(document.s3_key, temp_file.name):
-            raise Exception("Failed to download file from S3")
+        if not storage_client.download_file(document.s3_key, temp_file.name):
+            raise Exception("Failed to download file from storage")
         
         # Process document
         processed_chunks = document_processor.process_document(temp_file.name, document.file_type)

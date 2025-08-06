@@ -1,19 +1,12 @@
-import openai
 import os
 from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
 import json
 from database import get_vector_similarity_scores
 from document_processor import document_processor
-
-load_dotenv()
-
-# Configure OpenAI
-openai.api_key = os.getenv('OPENAI_API_KEY')
+from llm_client import llm_client
 
 class AIAgents:
     def __init__(self):
-        self.model = "gpt-4"
         self.max_tokens = 2000
     
     def topic_extractor_agent(self, document_ids: List[str], db_session) -> List[str]:
@@ -50,18 +43,13 @@ class AIAgents:
             Topics:
             """
             
-            response = openai.ChatCompletion.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert educational content analyzer. Extract specific, diverse topics suitable for quiz generation."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=0.3
-            )
+            response = llm_client.chat_completion([
+                {"role": "system", "content": "You are an expert educational content analyzer. Extract specific, diverse topics suitable for quiz generation."},
+                {"role": "user", "content": prompt}
+            ], self.max_tokens)
             
             # Parse topics from response
-            topics_text = response.choices[0].message.content.strip()
+            topics_text = response.strip()
             topics = [topic.strip() for topic in topics_text.split('\n') if topic.strip()]
             
             # Clean and validate topics
@@ -154,18 +142,13 @@ class AIAgents:
             }}
             """
             
-            response = openai.ChatCompletion.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert educational content creator. Create clear, accurate multiple-choice questions."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=0.4
-            )
+            response = llm_client.chat_completion([
+                {"role": "system", "content": "You are an expert educational content creator. Create clear, accurate multiple-choice questions."},
+                {"role": "user", "content": prompt}
+            ], self.max_tokens)
             
             # Parse JSON response
-            response_text = response.choices[0].message.content.strip()
+            response_text = response.strip()
             
             # Try to extract JSON from response
             try:

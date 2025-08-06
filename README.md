@@ -24,21 +24,23 @@ study-ai/
 
 - Docker and Docker Compose
 - Git
-- OpenAI API key (for AI features)
+- OpenAI API key (for production AI features)
+- Ollama (for local LLM - optional)
 
 ### Quick Start (Recommended)
 
+#### Option 1: Local Development (MinIO + Ollama)
 1. **Clone and setup environment:**
    ```bash
    git clone <your-repo-url>
    cd study-ai
    cp env.example .env
-   # Edit .env file with your OpenAI API key
+   # Edit .env file (local settings are pre-configured)
    ```
 
-2. **Start the entire stack:**
+2. **Setup local development environment:**
    ```bash
-   ./start-local.sh
+   ./setup-local-dev.sh
    ```
 
 3. **Test the API:**
@@ -50,6 +52,30 @@ study-ai/
    - Web Interface: http://localhost
    - API Health Check: http://localhost/api/health
    - Backend API: http://localhost/api
+   - MinIO Console: http://localhost:9001
+   - Ollama API: http://localhost:11434
+
+#### Option 2: Production Setup (AWS S3 + OpenAI)
+1. **Clone and setup environment:**
+   ```bash
+   git clone <your-repo-url>
+   cd study-ai
+   cp env.example .env
+   # Edit .env file with your OpenAI API key and AWS credentials
+   ```
+
+2. **Configure for production:**
+   ```bash
+   # Set environment variables
+   export ENV=production
+   export STORAGE_TYPE=cloud
+   export LLM_TYPE=cloud
+   ```
+
+3. **Start the entire stack:**
+   ```bash
+   ./start-local.sh
+   ```
 
 ### Manual Setup
 
@@ -137,11 +163,23 @@ This project follows a **EC2 + Docker + Nginx + Gunicorn + Celery + Redis** arch
 
 ### Local Development
 
-For local development, all services run in Docker containers:
+For local development, all services run in Docker containers with local alternatives:
 
+#### **Storage Options:**
+- **Local**: MinIO (S3-compatible object storage)
+- **Production**: AWS S3
+
+#### **LLM Options:**
+- **Local**: Ollama (with Llama2) or LlamaIndex
+- **Production**: OpenAI GPT-4
+
+#### **Services:**
 - **Backend**: Flask application with Gunicorn
 - **Web**: React/Vue.js frontend application
 - **Mobile**: React Native/Flutter mobile application
+- **Database**: PostgreSQL with pgvector
+- **Cache**: Redis
+- **Queue**: Celery with Redis broker
 
 ## 🔧 Development
 

@@ -35,6 +35,43 @@ services:
       timeout: 5s
       retries: 5
 
+  # MinIO for local object storage
+  minio:
+    image: minio/minio:latest
+    container_name: study-ai-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - study-ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Ollama for local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: study-ai-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - study-ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
   # Backend service (Flask + Gunicorn)
   backend:
     build:
@@ -42,15 +79,23 @@ services:
       dockerfile: Dockerfile
     container_name: study-ai-backend
     environment:
-      FLASK_ENV: production
+      ENV: ${ENV:-development}
       DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: your-secret-key-here
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      LLM_TYPE: ${LLM_TYPE:-local}
+      MINIO_ENDPOINT: minio:9000
+      OLLAMA_BASE_URL: http://ollama:11434
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       database:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -67,15 +112,23 @@ services:
     container_name: study-ai-celery-worker
     command: celery -A app.celery worker --loglevel=info
     environment:
-      FLASK_ENV: production
+      ENV: ${ENV:-development}
       DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: your-secret-key-here
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      LLM_TYPE: ${LLM_TYPE:-local}
+      MINIO_ENDPOINT: minio:9000
+      OLLAMA_BASE_URL: http://ollama:11434
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       database:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -92,15 +145,23 @@ services:
     container_name: study-ai-celery-beat
     command: celery -A app.celery beat --loglevel=info
     environment:
-      FLASK_ENV: production
+      ENV: ${ENV:-development}
       DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: your-secret-key-here
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      LLM_TYPE: ${LLM_TYPE:-local}
+      MINIO_ENDPOINT: minio:9000
+      OLLAMA_BASE_URL: http://ollama:11434
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       database:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -147,6 +208,8 @@ services:
 volumes:
   postgres_data:
   uploads:
+  minio_data:
+  ollama_data:
 
 networks:
   study-ai-network:

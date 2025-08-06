@@ -4,15 +4,9 @@ from typing import List, Dict, Any
 import PyPDF2
 from docx import Document as DocxDocument
 from pptx import Presentation
-import openai
-from dotenv import load_dotenv
 import re
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-load_dotenv()
-
-# Configure OpenAI
-openai.api_key = os.getenv('OPENAI_API_KEY')
+from llm_client import llm_client
 
 class DocumentProcessor:
     def __init__(self):
@@ -132,7 +126,7 @@ class DocumentProcessor:
     
     def generate_embeddings(self, text: str) -> List[float]:
         """
-        Generate embeddings for text using OpenAI
+        Generate embeddings for text using configured LLM
         
         Args:
             text: Text to generate embeddings for
@@ -141,11 +135,7 @@ class DocumentProcessor:
             List of embedding values
         """
         try:
-            response = openai.Embedding.create(
-                model="text-embedding-ada-002",
-                input=text
-            )
-            return response['data'][0]['embedding']
+            return llm_client.generate_embeddings(text)
         except Exception as e:
             raise Exception(f"Failed to generate embeddings: {str(e)}")
     
