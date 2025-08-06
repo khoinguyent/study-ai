@@ -15,8 +15,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - study-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Redis for caching
+  # Redis for caching and Celery broker
   redis:
     image: redis:7-alpine
     container_name: study-ai-redis
@@ -24,29 +29,103 @@ services:
       - "6379:6379"
     networks:
       - study-ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Backend service
+  # Backend service (Flask + Gunicorn)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: study-ai-backend
-    ports:
-      - "3000:3000"
     environment:
-      NODE_ENV: development
+      FLASK_ENV: production
       DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-secret-key-here
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
-      - database
-      - redis
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./backend:/app
-      - /app/node_modules
+      - uploads:/app/uploads
     networks:
       - study-ai-network
+    restart: unless-stopped
 
-  # Web frontend service
+  # Celery worker for background tasks
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: study-ai-celery-worker
+    command: celery -A app.celery worker --loglevel=info
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-secret-key-here
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - uploads:/app/uploads
+    networks:
+      - study-ai-network
+    restart: unless-stopped
+
+  # Celery beat for scheduled tasks
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: study-ai-celery-beat
+    command: celery -A app.celery beat --loglevel=info
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-secret-key-here
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - uploads:/app/uploads
+    networks:
+      - study-ai-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: study-ai-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    volumes:
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - study-ai-network
+    restart: unless-stopped
+
+  # Web frontend service (optional - for development)
   web:
     build:
       context: ./web
@@ -56,9 +135,9 @@ services:
       - "3001:3001"
     environment:
       NODE_ENV: development
-      REACT_APP_API_URL: http://localhost:3000
+      REACT_APP_API_URL: http://localhost
     depends_on:
-      - backend
+      - nginx
     volumes:
       - ./web:/app
       - /app/node_modules
@@ -67,6 +146,7 @@ services:
 
 volumes:
   postgres_data:
+  uploads:
 
 networks:
   study-ai-network:
