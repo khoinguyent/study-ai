@@ -133,9 +133,61 @@ npx react-native run-ios  # or run-android
 
 ### Running the Development Environment
 
-1. Start the backend server
-2. Start the web development server
-3. Start the mobile development server
+1. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Create test data:**
+   ```bash
+   # Option 1: Using Docker (recommended)
+   ./scripts/seed_data_docker.sh
+   
+   # Option 2: Using local Python
+   ./scripts/seed_test_data.sh
+   ```
+
+3. **Test the login functionality:**
+   ```bash
+   ./scripts/test_login.sh
+   ```
+
+4. **Access the services:**
+   - API Gateway: http://localhost
+   - Auth Service: http://localhost:8001/docs
+   - Document Service: http://localhost:8002/docs
+   - Indexing Service: http://localhost:8003/docs
+   - Quiz Service: http://localhost:8004/docs
+   - Web Frontend: http://localhost:3001
+
+### Test Data
+
+The application comes with pre-configured test users:
+
+**Primary Test User:**
+- Email: `test@test.com`
+- Password: `test123`
+- Username: `testuser`
+
+**Additional Test Users:**
+- Email: `admin@study-ai.com` | Password: `admin123`
+- Email: `student@study-ai.com` | Password: `student123`
+- Email: `teacher@study-ai.com` | Password: `teacher123`
+- Email: `demo@study-ai.com` | Password: `demo123`
+
+### Quick Test Commands
+
+```bash
+# Test login directly to Auth Service
+curl -X POST http://localhost:8001/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "test@test.com", "password": "test123"}'
+
+# Test login through API Gateway
+curl -X POST http://localhost/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "test@test.com", "password": "test123"}'
+```
 
 ### Building for Production
 
