@@ -1,27 +1,86 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 from enum import Enum
+
+class SubjectBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class SubjectCreate(SubjectBase):
+    pass
+
+class SubjectUpdate(SubjectBase):
+    pass
+
+class SubjectResponse(SubjectBase):
+    id: int
+    user_id: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class CategoryBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    subject_id: int
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryUpdate(CategoryBase):
+    pass
+
+class CategoryResponse(CategoryBase):
+    id: int
+    user_id: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 class DocumentStatus(str, Enum):
     UPLOADED = "uploaded"
     PROCESSING = "processing"
-    PROCESSED = "processed"
-    ERROR = "error"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class DocumentBase(BaseModel):
     filename: str
     content_type: str
+    file_size: int
+    subject_id: Optional[int] = None
+    category_id: Optional[int] = None
 
 class DocumentCreate(DocumentBase):
-    user_id: str
+    pass
 
 class DocumentResponse(DocumentBase):
-    id: UUID
-    status: DocumentStatus
-    file_size: int
+    id: int
+    file_path: str
+    status: str
+    user_id: str
     created_at: datetime
-    
+    updated_at: Optional[datetime] = None
+    subject: Optional[SubjectResponse] = None
+    category: Optional[CategoryResponse] = None
+
     class Config:
-        from_attributes = True 
+        from_attributes = True
+
+class DocumentGroupResponse(BaseModel):
+    subject: SubjectResponse
+    categories: List[CategoryResponse]
+    documents: List[DocumentResponse]
+    total_documents: int
+    total_size: int
+
+class DocumentUploadResponse(BaseModel):
+    id: int
+    filename: str
+    status: str
+    message: str 

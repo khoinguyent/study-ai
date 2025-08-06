@@ -1,144 +1,191 @@
+"""
+Quiz Generator Service for Study AI Platform
+Handles AI-powered quiz generation using Ollama
+"""
+
 import asyncio
 import json
 import httpx
 from typing import List, Dict, Any
 from ..config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 class QuizGenerator:
+    """Service for generating quizzes using AI"""
+    
     def __init__(self):
         self.ollama_url = settings.OLLAMA_BASE_URL
         self.model = settings.OLLAMA_MODEL
-        self.notification_url = settings.NOTIFICATION_SERVICE_URL
     
-    async def create_task_status(self, task_id: str, user_id: str, task_type: str, status: str = "pending", progress: int = 0, message: str = None):
-        """Create a task status in the notification service"""
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    f"{self.notification_url}/task-status",
-                    json={
-                        "task_id": task_id,
-                        "user_id": user_id,
-                        "task_type": task_type,
-                        "status": status,
-                        "progress": progress,
-                        "message": message
-                    }
-                )
-                return response.json()
-            except Exception as e:
-                print(f"Failed to create task status: {e}")
-    
-    async def update_task_status(self, task_id: str, status: str, progress: int = None, message: str = None):
-        """Update task status in the notification service"""
-        async with httpx.AsyncClient() as client:
-            try:
-                update_data = {"status": status}
-                if progress is not None:
-                    update_data["progress"] = progress
-                if message is not None:
-                    update_data["message"] = message
-                
-                response = await client.put(
-                    f"{self.notification_url}/task-status/{task_id}",
-                    json=update_data
-                )
-                return response.json()
-            except Exception as e:
-                print(f"Failed to update task status: {e}")
-    
-    async def generate_quiz(self, topic: str, difficulty: str, num_questions: int, context_chunks: List[Dict[str, Any]], user_id: str):
-        """Generate a quiz using Ollama"""
-        task_id = f"quiz_gen_{topic}_{asyncio.get_event_loop().time()}"
-        
+    async def generate_quiz(
+        self, 
+        topic: str, 
+        difficulty: str, 
+        num_questions: int, 
+        context_chunks: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Generate a quiz based on search results"""
         try:
-            # Create initial task status
-            await self.create_task_status(
-                task_id=task_id,
-                user_id=user_id,
-                task_type="quiz_generation",
-                status="processing",
-                progress=10,
-                message="Starting quiz generation..."
-            )
-            
-            # Prepare context from chunks
-            context = "\n".join([chunk.get("content", "") for chunk in context_chunks[:5]])  # Use first 5 chunks
-            
-            await self.update_task_status(
-                task_id=task_id,
-                status="processing",
-                progress=30,
-                message="Analyzing document content..."
-            )
+            # Prepare context from search results
+            context = self._prepare_context_from_chunks(context_chunks)
             
             # Create prompt for quiz generation
             prompt = self._create_quiz_prompt(topic, difficulty, num_questions, context)
             
-            await self.update_task_status(
-                task_id=task_id,
-                status="processing",
-                progress=50,
-                message="Generating quiz questions..."
+            # Generate quiz using Ollama
+            quiz_content = await self._call_ollama(prompt)
+            
+            # Parse the response
+            quiz_data = self._parse_quiz_response(quiz_content)
+            
+            return quiz_data
+            
+        except Exception as e:
+            logger.error(f"Error generating quiz: {str(e)}")
+            raise
+    
+    async def generate_quiz_from_context(
+        self,
+        topic: str,
+        difficulty: str,
+        num_questions: int,
+        context_chunks: List[Dict[str, Any]],
+        source_type: str,
+        source_id: str
+    ) -> Dict[str, Any]:
+        """Generate a quiz from specific context (subject or category)"""
+        try:
+            # Prepare context from chunks
+            context = self._prepare_context_from_chunks(context_chunks)
+            
+            # Create prompt for context-based quiz generation
+            prompt = self._create_context_quiz_prompt(
+                topic, difficulty, num_questions, context, source_type
             )
             
             # Generate quiz using Ollama
             quiz_content = await self._call_ollama(prompt)
             
-            await self.update_task_status(
-                task_id=task_id,
-                status="processing",
-                progress=80,
-                message="Formatting quiz content..."
-            )
-            
             # Parse the response
-            parsed_quiz = self._parse_quiz_response(quiz_content)
+            quiz_data = self._parse_quiz_response(quiz_content)
             
-            await self.update_task_status(
-                task_id=task_id,
-                status="completed",
-                progress=100,
-                message="Quiz generated successfully!"
-            )
+            # Add source information
+            quiz_data["source_type"] = source_type
+            quiz_data["source_id"] = source_id
             
-            return parsed_quiz
+            return quiz_data
             
         except Exception as e:
-            await self.update_task_status(
-                task_id=task_id,
-                status="failed",
-                progress=0,
-                message=f"Quiz generation failed: {str(e)}"
-            )
+            logger.error(f"Error generating context-based quiz: {str(e)}")
             raise
     
-    def _create_quiz_prompt(self, topic: str, difficulty: str, num_questions: int, context: str) -> str:
+    def _prepare_context_from_chunks(self, chunks: List[Dict[str, Any]]) -> str:
+        """Prepare context string from document chunks"""
+        if not chunks:
+            return "No specific context available."
+        
+        context_parts = []
+        for chunk in chunks:
+            if isinstance(chunk, dict):
+                content = chunk.get("content", "")
+                if content:
+                    context_parts.append(content)
+            else:
+                # Handle case where chunk might be a different structure
+                context_parts.append(str(chunk))
+        
+        return "\n\n".join(context_parts)
+    
+    def _create_quiz_prompt(
+        self, 
+        topic: str, 
+        difficulty: str, 
+        num_questions: int, 
+        context: str
+    ) -> str:
         """Create a prompt for quiz generation"""
-        return f"""You are an expert educator creating a quiz. Based on the following context about {topic}, create a {difficulty} level quiz with {num_questions} multiple choice questions.
+        return f"""
+You are an expert quiz creator. Create a {difficulty} difficulty quiz about "{topic}" with {num_questions} multiple choice questions.
 
-Context:
+Context information:
 {context}
 
-Please generate a quiz in the following JSON format:
+Instructions:
+1. Create exactly {num_questions} multiple choice questions
+2. Each question should have 4 options (A, B, C, D)
+3. Provide the correct answer (0-3, where 0=A, 1=B, 2=C, 3=D)
+4. Include a brief explanation for the correct answer
+5. Make questions relevant to the provided context
+6. Vary the difficulty appropriately for {difficulty} level
+
+Format your response as a JSON object with this structure:
 {{
     "title": "Quiz Title",
+    "description": "Brief description of the quiz",
     "questions": [
         {{
+            "id": "q1",
             "question": "Question text?",
-            "options": ["A", "B", "C", "D"],
-            "correct_answer": "A",
-            "explanation": "Explanation of why this is correct"
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correct_answer": 0,
+            "explanation": "Why this answer is correct"
         }}
     ]
 }}
 
-Make sure the questions are relevant to the context provided and appropriate for {difficulty} level. Each question should have exactly 4 options (A, B, C, D) and one correct answer."""
+Generate the quiz now:
+"""
+    
+    def _create_context_quiz_prompt(
+        self,
+        topic: str,
+        difficulty: str,
+        num_questions: int,
+        context: str,
+        source_type: str
+    ) -> str:
+        """Create a prompt for context-based quiz generation"""
+        return f"""
+You are an expert quiz creator. Create a {difficulty} difficulty quiz about "{topic}" with {num_questions} multiple choice questions.
+
+IMPORTANT: Base your questions ONLY on the provided context from the {source_type}. Do not use external knowledge.
+
+Context from {source_type}:
+{context}
+
+Instructions:
+1. Create exactly {num_questions} multiple choice questions
+2. Each question should have 4 options (A, B, C, D)
+3. Provide the correct answer (0-3, where 0=A, 1=B, 2=C, 3=D)
+4. Include a brief explanation for the correct answer
+5. Base ALL questions on the provided context - do not use external knowledge
+6. If the context is insufficient, create questions about what IS available in the context
+7. Vary the difficulty appropriately for {difficulty} level
+
+Format your response as a JSON object with this structure:
+{{
+    "title": "Quiz Title",
+    "description": "Brief description of the quiz",
+    "questions": [
+        {{
+            "id": "q1",
+            "question": "Question text?",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correct_answer": 0,
+            "explanation": "Why this answer is correct"
+        }}
+    ]
+}}
+
+Generate the quiz based ONLY on the provided context:
+"""
     
     async def _call_ollama(self, prompt: str) -> str:
         """Call Ollama API to generate content"""
-        async with httpx.AsyncClient() as client:
-            try:
+        try:
+            async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.ollama_url}/api/generate",
                     json={
@@ -146,59 +193,60 @@ Make sure the questions are relevant to the context provided and appropriate for
                         "prompt": prompt,
                         "stream": False
                     },
-                    timeout=120.0  # 2 minutes timeout
+                    timeout=60.0
                 )
                 
                 if response.status_code != 200:
-                    raise Exception(f"Ollama API error: {response.text}")
+                    raise Exception(f"Ollama API error: {response.status_code}")
                 
                 result = response.json()
                 return result.get("response", "")
                 
-            except Exception as e:
-                raise Exception(f"Failed to call Ollama: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error calling Ollama: {str(e)}")
+            raise
     
     def _parse_quiz_response(self, response: str) -> Dict[str, Any]:
         """Parse the quiz response from Ollama"""
         try:
             # Try to extract JSON from the response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            
-            if start_idx != -1 and end_idx != 0:
-                json_str = response[start_idx:end_idx]
-                quiz_data = json.loads(json_str)
-                
-                # Validate the structure
-                if "title" not in quiz_data or "questions" not in quiz_data:
-                    raise ValueError("Invalid quiz structure")
-                
-                return quiz_data
+            # Look for JSON content between ```json and ``` or just parse the whole response
+            if "```json" in response:
+                json_start = response.find("```json") + 7
+                json_end = response.find("```", json_start)
+                json_content = response[json_start:json_end].strip()
+            elif "```" in response:
+                json_start = response.find("```") + 3
+                json_end = response.find("```", json_start)
+                json_content = response[json_start:json_end].strip()
             else:
-                # Fallback: create a simple quiz structure
-                return {
-                    "title": "Generated Quiz",
-                    "questions": [
-                        {
-                            "question": "Sample question based on the content?",
-                            "options": ["A", "B", "C", "D"],
-                            "correct_answer": "A",
-                            "explanation": "This is a sample explanation."
-                        }
-                    ]
-                }
-                
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"Failed to parse quiz response: {e}")
-            # Return a fallback quiz
+                json_content = response.strip()
+            
+            # Parse JSON
+            quiz_data = json.loads(json_content)
+            
+            # Validate structure
+            if "title" not in quiz_data or "questions" not in quiz_data:
+                raise ValueError("Invalid quiz structure")
+            
+            return quiz_data
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse quiz response as JSON: {str(e)}")
+            # Return a fallback quiz structure
             return {
                 "title": "Generated Quiz",
+                "description": "Quiz generated from content",
                 "questions": [
                     {
+                        "id": "q1",
                         "question": "Sample question based on the content?",
-                        "options": ["A", "B", "C", "D"],
-                        "correct_answer": "A",
-                        "explanation": "This is a sample explanation."
+                        "options": ["Option A", "Option B", "Option C", "Option D"],
+                        "correct_answer": 0,
+                        "explanation": "This is a sample question."
                     }
                 ]
-            } 
+            }
+        except Exception as e:
+            logger.error(f"Error parsing quiz response: {str(e)}")
+            raise 

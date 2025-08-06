@@ -11,6 +11,8 @@ class Quiz(Base):
     questions = Column(JSON, nullable=False)  # List of question objects
     user_id = Column(String, nullable=False)
     document_id = Column(String, nullable=True)  # Reference to source document
+    subject_id = Column(Integer, nullable=True)  # Reference to source subject
+    category_id = Column(Integer, nullable=True)  # Reference to source category
     status = Column(String, default="draft")  # draft, published, archived
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now()) 
