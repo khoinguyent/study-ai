@@ -1,27 +1,75 @@
 version: '3.8'
 
 services:
-  # Database service
-  database:
-    image: postgres:15
-    container_name: study-ai-db
-    environment:
-      POSTGRES_DB: study_ai
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: study-ai-api-gateway
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "80:80"
+    depends_on:
+      - auth-service
+      - document-service
+      - indexing-service
+      - quiz-service
     networks:
       - study-ai-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
-  # Redis for caching and Celery broker
+  # Auth Service Database
+  auth-db:
+    image: postgres:15
+    container_name: study-ai-auth-db
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Document Service Database
+  document-db:
+    image: postgres:15
+    container_name: study-ai-document-db
+    environment:
+      POSTGRES_DB: document_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - document_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Indexing Service Database (with pgvector extension)
+  indexing-db:
+    image: pgvector/pgvector:pg15
+    container_name: study-ai-indexing-db
+    environment:
+      POSTGRES_DB: indexing_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - indexing_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Quiz Service Database
+  quiz-db:
+    image: postgres:15
+    container_name: study-ai-quiz-db
+    environment:
+      POSTGRES_DB: quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - quiz_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Redis for caching and message queue
   redis:
     image: redis:7-alpine
     container_name: study-ai-redis
@@ -29,164 +77,99 @@ services:
       - "6379:6379"
     networks:
       - study-ai-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
-  # MinIO for local object storage
-  minio:
-    image: minio/minio:latest
-    container_name: study-ai-minio
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: study-ai-auth-service
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8001:8001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
+      DATABASE_URL: postgresql://postgres:password@auth-db:5432/auth_db
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: your-secret-key-change-in-production
+    depends_on:
+      - auth-db
+      - redis
     volumes:
-      - minio_data:/data
+      - ./services/auth-service:/app
     networks:
       - study-ai-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
 
-  # Ollama for local LLM
-  ollama:
-    image: ollama/ollama:latest
-    container_name: study-ai-ollama
+  # Document Service
+  document-service:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-document-service
     ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - study-ai-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
-  # Backend service (Flask + Gunicorn)
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: study-ai-backend
+      - "8002:8002"
     environment:
-      ENV: ${ENV:-development}
-      DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: your-secret-key-here
-      STORAGE_TYPE: ${STORAGE_TYPE:-local}
-      LLM_TYPE: ${LLM_TYPE:-local}
-      MINIO_ENDPOINT: minio:9000
-      OLLAMA_BASE_URL: http://ollama:11434
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_db
+      REDIS_URL: redis://redis:6379
+      AWS_ACCESS_KEY_ID: your-access-key
+      AWS_SECRET_ACCESS_KEY: your-secret-key
+      AWS_REGION: us-east-1
+      S3_BUCKET: study-ai-documents
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
     depends_on:
-      database:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
+      - document-db
+      - redis
+      - auth-service
     volumes:
-      - ./backend:/app
-      - uploads:/app/uploads
+      - ./services/document-service:/app
     networks:
       - study-ai-network
-    restart: unless-stopped
 
-  # Celery worker for background tasks
-  celery-worker:
+  # Indexing Service
+  indexing-service:
     build:
-      context: ./backend
+      context: ./services/indexing-service
       dockerfile: Dockerfile
-    container_name: study-ai-celery-worker
-    command: celery -A app.celery worker --loglevel=info
-    environment:
-      ENV: ${ENV:-development}
-      DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: your-secret-key-here
-      STORAGE_TYPE: ${STORAGE_TYPE:-local}
-      LLM_TYPE: ${LLM_TYPE:-local}
-      MINIO_ENDPOINT: minio:9000
-      OLLAMA_BASE_URL: http://ollama:11434
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-    depends_on:
-      database:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - uploads:/app/uploads
-    networks:
-      - study-ai-network
-    restart: unless-stopped
-
-  # Celery beat for scheduled tasks
-  celery-beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: study-ai-celery-beat
-    command: celery -A app.celery beat --loglevel=info
-    environment:
-      ENV: ${ENV:-development}
-      DATABASE_URL: postgresql://postgres:password@database:5432/study_ai
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: your-secret-key-here
-      STORAGE_TYPE: ${STORAGE_TYPE:-local}
-      LLM_TYPE: ${LLM_TYPE:-local}
-      MINIO_ENDPOINT: minio:9000
-      OLLAMA_BASE_URL: http://ollama:11434
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-    depends_on:
-      database:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - uploads:/app/uploads
-    networks:
-      - study-ai-network
-    restart: unless-stopped
-
-  # Nginx reverse proxy
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: study-ai-nginx
+    container_name: study-ai-indexing-service
     ports:
-      - "80:80"
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@indexing-db:5432/indexing_db
+      REDIS_URL: redis://redis:6379
+      DOCUMENT_SERVICE_URL: http://document-service:8002
     depends_on:
-      - backend
+      - indexing-db
+      - redis
+      - document-service
     volumes:
-      - ./nginx/logs:/var/log/nginx
+      - ./services/indexing-service:/app
     networks:
       - study-ai-network
-    restart: unless-stopped
 
-  # Web frontend service (optional - for development)
+  # Quiz Service
+  quiz-service:
+    build:
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-quiz-service
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: your-openai-api-key
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+    depends_on:
+      - quiz-db
+      - redis
+      - auth-service
+      - indexing-service
+    volumes:
+      - ./services/quiz-service:/app
+    networks:
+      - study-ai-network
+
+  # Web frontend service
   web:
     build:
       context: ./web
@@ -198,7 +181,7 @@ services:
       NODE_ENV: development
       REACT_APP_API_URL: http://localhost
     depends_on:
-      - nginx
+      - api-gateway
     volumes:
       - ./web:/app
       - /app/node_modules
@@ -206,10 +189,10 @@ services:
       - study-ai-network
 
 volumes:
-  postgres_data:
-  uploads:
-  minio_data:
-  ollama_data:
+  auth_postgres_data:
+  document_postgres_data:
+  indexing_postgres_data:
+  quiz_postgres_data:
 
 networks:
   study-ai-network:
