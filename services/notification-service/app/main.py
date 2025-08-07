@@ -18,7 +18,7 @@ import sys
 import os
 
 # Add shared module to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
 from shared import EventConsumer, EventType, BaseEvent
 
 # Create database tables
