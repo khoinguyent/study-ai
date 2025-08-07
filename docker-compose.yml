@@ -239,9 +239,11 @@ services:
       - "3001:3001"
     environment:
       NODE_ENV: development
-      REACT_APP_API_URL: http://localhost
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8000/ws
     depends_on:
       - api-gateway
+      - auth-service
     volumes:
       - ./web:/app
       - /app/node_modules
