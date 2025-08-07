@@ -1,48 +1,43 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Lock, Crown, Brain } from 'lucide-react';
+import { LoginRequest } from '../types';
+import apiService from '../services/api';
 import './LoginPage.css';
 
-const LoginPage = () => {
-  const [formData, setFormData] = useState({
+const LoginPage: React.FC = () => {
+  const [formData, setFormData] = useState<LoginRequest>({
     email: '',
     password: ''
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    // Clear error when user starts typing
+    if (error) {
+      setError('');
+    }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setIsLoading(true);
+    setError('');
     
     try {
-      const response = await fetch('/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.access_token);
-        // Redirect to dashboard or home page
-        window.location.href = '/dashboard';
-      } else {
-        const errorData = await response.json();
-        alert(errorData.detail || 'Login failed');
-      }
+      const response = await apiService.login(formData);
+      localStorage.setItem('token', response.access_token);
+      // Redirect to dashboard
+      window.location.href = '/dashboard';
     } catch (error) {
       console.error('Login error:', error);
-      alert('Login failed. Please try again.');
+      setError(error instanceof Error ? error.message : 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -97,6 +92,12 @@ const LoginPage = () => {
               />
             </div>
           </div>
+
+          {error && (
+            <div className="error-message">
+              {error}
+            </div>
+          )}
 
           <button 
             type="submit" 

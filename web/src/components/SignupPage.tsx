@@ -1,26 +1,39 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Lock, Crown, Brain, User } from 'lucide-react';
+import { RegisterRequest } from '../types';
+import apiService from '../services/api';
 import './LoginPage.css'; // Reuse the same styles
 
-const SignupPage = () => {
-  const [formData, setFormData] = useState({
+interface FormData extends RegisterRequest {
+  confirmPassword: string;
+}
+
+interface FormErrors {
+  name?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+}
+
+const SignupPage: React.FC = () => {
+  const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
     password: '',
     confirmPassword: ''
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errors, setErrors] = useState<FormErrors>({});
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
     // Clear error when user starts typing
-    if (errors[name]) {
+    if (errors[name as keyof FormErrors]) {
       setErrors(prev => ({
         ...prev,
         [name]: ''
@@ -28,8 +41,8 @@ const SignupPage = () => {
     }
   };
 
-  const validateForm = () => {
-    const newErrors = {};
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {};
 
     if (!formData.name.trim()) {
       newErrors.name = 'Name is required';
@@ -55,7 +68,7 @@ const SignupPage = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -65,30 +78,16 @@ const SignupPage = () => {
     setIsLoading(true);
     
     try {
-      const response = await fetch('/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.access_token);
-        // Redirect to dashboard or home page
-        window.location.href = '/dashboard';
-      } else {
-        const errorData = await response.json();
-        alert(errorData.detail || 'Registration failed');
-      }
+      const { confirmPassword, ...registerData } = formData;
+      const response = await apiService.register(registerData);
+      localStorage.setItem('token', response.access_token);
+      // Redirect to dashboard
+      window.location.href = '/dashboard';
     } catch (error) {
       console.error('Registration error:', error);
-      alert('Registration failed. Please try again.');
+      setErrors({
+        email: error instanceof Error ? error.message : 'Registration failed. Please try again.'
+      });
     } finally {
       setIsLoading(false);
     }
