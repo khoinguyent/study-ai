@@ -78,6 +78,22 @@ services:
     networks:
       - study-ai-network
 
+  # MinIO for S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: study-ai-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - study-ai-network
+
   # Auth Service
   auth-service:
     build:
@@ -119,6 +135,7 @@ services:
       - document-db
       - redis
       - auth-service
+      - minio
     volumes:
       - ./services/document-service:/app
     networks:
@@ -169,6 +186,49 @@ services:
     networks:
       - study-ai-network
 
+  # Leaf Quiz Service Database
+  leaf-quiz-db:
+    image: postgres:15
+    container_name: study-ai-leaf-quiz-db
+    environment:
+      POSTGRES_DB: leaf_quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - leaf_quiz_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Leaf Quiz Service
+  leaf-quiz-service:
+    build:
+      context: ./services/leaf-quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-leaf-quiz-service
+    ports:
+      - "8006:8006"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@leaf-quiz-db:5432/leaf_quiz_db
+      REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: http://auth-service:8001
+      DOCUMENT_SERVICE_URL: http://document-service:8002
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN:-your_huggingface_token_here}
+      QUESTION_GENERATION_MODEL: google/flan-t5-base
+      DISTRACTOR_GENERATION_MODEL: google/flan-t5-base
+      SERVICE_PORT: 8006
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: INFO
+    volumes:
+      - ./services/leaf-quiz-service:/app
+      - leaf_quiz_cache:/app/cache
+    depends_on:
+      - leaf-quiz-db
+      - redis
+      - auth-service
+    networks:
+      - study-ai-network
+
   # Web frontend service
   web:
     build:
@@ -193,6 +253,9 @@ volumes:
   document_postgres_data:
   indexing_postgres_data:
   quiz_postgres_data:
+  leaf_quiz_postgres_data:
+  leaf_quiz_cache:
+  minio_data:
 
 networks:
   study-ai-network:

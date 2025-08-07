@@ -18,4 +18,10 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+# Create all tables
+def create_tables():
+    # Import models here to ensure they are registered with Base
+    from .models import Quiz, CustomDocumentSet
+    Base.metadata.create_all(bind=engine) 

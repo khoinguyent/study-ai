@@ -3,6 +3,7 @@ from minio import Minio
 from minio.error import S3Error
 import uuid
 from typing import Optional
+from io import BytesIO
 from ..config import settings
 
 class StorageService:
@@ -32,16 +33,25 @@ class StorageService:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
-                self.client.put_object,
-                self.bucket_name,
+                self._upload_file_sync,
                 key,
                 content,
-                len(content),
-                content_type=content_type
+                content_type
             )
             return f"minio://{self.bucket_name}/{key}"
         except S3Error as e:
             raise Exception(f"Failed to upload file to MinIO: {e}")
+    
+    def _upload_file_sync(self, key: str, content: bytes, content_type: str):
+        """Synchronous upload method for run_in_executor"""
+        content_io = BytesIO(content)
+        self.client.put_object(
+            self.bucket_name,
+            key,
+            content_io,
+            len(content),
+            content_type=content_type
+        )
     
     async def download_file(self, key: str) -> bytes:
         """Download a file from MinIO"""

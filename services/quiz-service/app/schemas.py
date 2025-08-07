@@ -1,86 +1,84 @@
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, field_validator
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
 class QuizCreate(BaseModel):
     title: str
     description: Optional[str] = None
-    questions: List[Dict[str, Any]]
+    questions: Union[List[Dict[str, Any]], Dict[str, Any]]
+    status: str = "draft"
 
 class QuizResponse(BaseModel):
-    id: int
+    id: str
     title: str
     description: Optional[str] = None
-    questions: List[Dict[str, Any]]
-    user_id: str
-    document_id: Optional[str] = None
-    subject_id: Optional[int] = None
-    category_id: Optional[int] = None
+    questions: Union[List[Dict[str, Any]], Dict[str, Any]]
     status: str
+    user_id: str
+    subject_id: Optional[str] = None
+    category_id: Optional[str] = None
+    document_id: Optional[str] = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime
 
     class Config:
         from_attributes = True
 
 class QuizGenerationRequest(BaseModel):
     topic: str
-    difficulty: str = "medium"  # easy, medium, hard
+    difficulty: str = "medium"
     num_questions: int = 5
+    subject_id: Optional[str] = None
+    category_id: Optional[str] = None
     document_id: Optional[str] = None
-    subject_id: Optional[int] = None
-    category_id: Optional[int] = None
-    use_only_subject_content: bool = True  # Only use content from the subject/category
 
 class SubjectQuizGenerationRequest(BaseModel):
-    subject_id: int
-    topic: Optional[str] = None  # If not provided, use subject name
+    subject_id: str
+    topic: Optional[str] = None
     difficulty: str = "medium"
     num_questions: int = 5
-    use_only_subject_content: bool = True
 
 class CategoryQuizGenerationRequest(BaseModel):
-    category_id: int
-    topic: Optional[str] = None  # If not provided, use category name
+    category_id: str
+    topic: Optional[str] = None
     difficulty: str = "medium"
     num_questions: int = 5
-    use_only_category_content: bool = True
 
 class DocumentSelectionRequest(BaseModel):
-    """Request for quiz generation with specific document selection"""
     topic: str
     difficulty: str = "medium"
     num_questions: int = 5
-    document_ids: List[str]  # List of specific document IDs to use
-    subject_id: Optional[int] = None  # For context/validation
-    category_id: Optional[int] = None  # For context/validation
+    document_ids: List[str]
+    subject_id: Optional[str] = None
+    category_id: Optional[str] = None
 
 class CustomDocumentSetRequest(BaseModel):
-    """Request for creating a custom document set for quiz generation"""
     name: str
     description: Optional[str] = None
     document_ids: List[str]
-    subject_id: Optional[int] = None
-    category_id: Optional[int] = None
+    subject_id: Optional[str] = None
+    category_id: Optional[str] = None
 
 class CustomDocumentSetResponse(BaseModel):
-    id: int
+    id: str
     name: str
     description: Optional[str] = None
     document_ids: List[str]
-    subject_id: Optional[int] = None
-    category_id: Optional[int] = None
     user_id: str
+    subject_id: Optional[str] = None
+    category_id: Optional[str] = None
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
 
 class QuizGenerationResponse(BaseModel):
-    quiz_id: int
+    quiz_id: str
     title: str
     questions_count: int
     generation_time: float
-    source_type: str  # "document", "subject", "category", "custom_set"
-    source_id: Optional[str] = None
-    documents_used: List[str] = []  # List of document IDs used 
+    source_type: str
+    source_id: str
+    documents_used: Optional[List[str]] = None
+    status: str  # Added status field 

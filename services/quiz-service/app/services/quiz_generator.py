@@ -18,6 +18,7 @@ class QuizGenerator:
     def __init__(self):
         self.ollama_url = settings.OLLAMA_BASE_URL
         self.model = settings.OLLAMA_MODEL
+        logger.info(f"Initialized QuizGenerator with Ollama URL: {self.ollama_url}, Model: {self.model}")
     
     async def generate_quiz(
         self, 
@@ -105,22 +106,10 @@ class QuizGenerator:
         num_questions: int, 
         context: str
     ) -> str:
-        """Create a prompt for quiz generation"""
-        return f"""
-You are an expert quiz creator. Create a {difficulty} difficulty quiz about "{topic}" with {num_questions} multiple choice questions.
+        """Create a prompt for quiz generation using the working structure"""
+        return f"""You are an expert quiz creator. Based ONLY on the provided context, generate exactly {num_questions} multiple-choice questions to help a student learn about {topic}.
 
-Context information:
-{context}
-
-Instructions:
-1. Create exactly {num_questions} multiple choice questions
-2. Each question should have 4 options (A, B, C, D)
-3. Provide the correct answer (0-3, where 0=A, 1=B, 2=C, 3=D)
-4. Include a brief explanation for the correct answer
-5. Make questions relevant to the provided context
-6. Vary the difficulty appropriately for {difficulty} level
-
-Format your response as a JSON object with this structure:
+Your response MUST be a single JSON object with this exact structure:
 {{
     "title": "Quiz Title",
     "description": "Brief description of the quiz",
@@ -135,8 +124,19 @@ Format your response as a JSON object with this structure:
     ]
 }}
 
-Generate the quiz now:
-"""
+IMPORTANT RULES:
+1. Create exactly {num_questions} questions
+2. Each question must have exactly 4 options (A, B, C, D)
+3. correct_answer must be 0, 1, 2, or 3 (where 0=A, 1=B, 2=C, 3=D)
+4. Base ALL questions ONLY on the provided context - do not use external knowledge
+5. If the context is insufficient, create questions about what IS available in the context
+6. Vary the difficulty appropriately for {difficulty} level
+7. Make sure the JSON is valid and properly formatted
+
+Context:
+{context}
+
+Generate the quiz based ONLY on the provided context:"""
     
     def _create_context_quiz_prompt(
         self,
@@ -147,24 +147,9 @@ Generate the quiz now:
         source_type: str
     ) -> str:
         """Create a prompt for context-based quiz generation"""
-        return f"""
-You are an expert quiz creator. Create a {difficulty} difficulty quiz about "{topic}" with {num_questions} multiple choice questions.
+        return f"""You are an expert quiz creator. Based ONLY on the provided context from the {source_type}, generate exactly {num_questions} multiple-choice questions to help a student learn about {topic}.
 
-IMPORTANT: Base your questions ONLY on the provided context from the {source_type}. Do not use external knowledge.
-
-Context from {source_type}:
-{context}
-
-Instructions:
-1. Create exactly {num_questions} multiple choice questions
-2. Each question should have 4 options (A, B, C, D)
-3. Provide the correct answer (0-3, where 0=A, 1=B, 2=C, 3=D)
-4. Include a brief explanation for the correct answer
-5. Base ALL questions on the provided context - do not use external knowledge
-6. If the context is insufficient, create questions about what IS available in the context
-7. Vary the difficulty appropriately for {difficulty} level
-
-Format your response as a JSON object with this structure:
+Your response MUST be a single JSON object with this exact structure:
 {{
     "title": "Quiz Title",
     "description": "Brief description of the quiz",
@@ -179,31 +164,80 @@ Format your response as a JSON object with this structure:
     ]
 }}
 
-Generate the quiz based ONLY on the provided context:
-"""
+IMPORTANT RULES:
+1. Create exactly {num_questions} questions
+2. Each question must have exactly 4 options (A, B, C, D)
+3. correct_answer must be 0, 1, 2, or 3 (where 0=A, 1=B, 2=C, 3=D)
+4. Base ALL questions ONLY on the provided context from the {source_type} - do not use external knowledge
+5. If the context is insufficient, create questions about what IS available in the context
+6. Vary the difficulty appropriately for {difficulty} level
+7. Make sure the JSON is valid and properly formatted
+
+Context from {source_type}:
+{context}
+
+Generate the quiz based ONLY on the provided context:"""
     
     async def _call_ollama(self, prompt: str) -> str:
         """Call Ollama API to generate content"""
         try:
-            async with httpx.AsyncClient() as client:
+            logger.info(f"Calling Ollama at {self.ollama_url} with model {self.model}")
+            
+            # Use explicit timeout configuration for better control
+            timeout_config = httpx.Timeout(1200.0)  # 20 minute timeout
+            
+            async with httpx.AsyncClient(timeout=timeout_config) as client:
                 response = await client.post(
                     f"{self.ollama_url}/api/generate",
                     json={
                         "model": self.model,
                         "prompt": prompt,
-                        "stream": False
-                    },
-                    timeout=60.0
+                        "stream": False,
+                        "format": "json"  # Ensure JSON format is requested
+                    }
                 )
                 
+                logger.info(f"Ollama response status: {response.status_code}")
+                
                 if response.status_code != 200:
-                    raise Exception(f"Ollama API error: {response.status_code}")
+                    error_text = response.text if response.text else "No error text"
+                    logger.error(f"Ollama API error: {response.status_code} - {error_text}")
+                    raise Exception(f"Ollama API error: {response.status_code} - {error_text}")
                 
                 result = response.json()
-                return result.get("response", "")
+                response_text = result.get("response", "")
+                logger.info(f"Ollama response length: {len(response_text)} characters")
+                return response_text
+            
+            # For testing, return a mock response instead of calling Ollama
+            """
+            logger.info("Using mock response for testing")
+            mock_response = '''{
+                "title": "Tay Son Rebellion Quiz",
+                "description": "Test quiz about the Tay Son Rebellion",
+                "questions": [
+                    {
+                        "id": "q1",
+                        "question": "What was the main cause of the Tay Son Rebellion?",
+                        "options": ["Economic hardship", "Religious conflict", "Foreign invasion", "Natural disaster"],
+                        "correct_answer": 0,
+                        "explanation": "The rebellion was primarily caused by economic hardship and social inequality."
+                    }
+                ]
+            }'''
+            return mock_response
+            """
                 
+        except httpx.TimeoutException:
+            logger.error("Ollama request timed out")
+            raise Exception("Ollama request timed out")
+        except httpx.ConnectError:
+            logger.error(f"Failed to connect to Ollama at {self.ollama_url}")
+            raise Exception(f"Failed to connect to Ollama at {self.ollama_url}")
         except Exception as e:
             logger.error(f"Error calling Ollama: {str(e)}")
+            logger.error(f"Ollama URL: {self.ollama_url}")
+            logger.error(f"Model: {self.model}")
             raise
     
     def _parse_quiz_response(self, response: str) -> Dict[str, Any]:
@@ -233,6 +267,7 @@ Generate the quiz based ONLY on the provided context:
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse quiz response as JSON: {str(e)}")
+            logger.error(f"Response content: {response[:500]}...")
             # Return a fallback quiz structure
             return {
                 "title": "Generated Quiz",

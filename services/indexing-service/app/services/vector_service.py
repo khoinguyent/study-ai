@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import numpy as np
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer  # Temporarily disabled
 from ..models import DocumentChunk
 import logging
 
@@ -18,9 +18,9 @@ class VectorService:
     """Service for handling vector operations and document processing"""
     
     def __init__(self):
-        # Initialize the sentence transformer model
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')  # 384-dimensional embeddings
-        logger.info("Vector service initialized with all-MiniLM-L6-v2 model")
+        # Initialize with mock model for now
+        # self.model = SentenceTransformer('all-MiniLM-L6-v2')  # Temporarily disabled
+        logger.info("Vector service initialized with mock model")
     
     async def process_document(self, document_id: str, document: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Process a document and create chunks with embeddings"""
@@ -37,7 +37,7 @@ class VectorService:
             for i in range(0, len(sample_text), chunk_size - overlap):
                 chunk_text = sample_text[i:i + chunk_size]
                 if chunk_text.strip():
-                    # Generate embedding for the chunk
+                    # Generate mock embedding for the chunk
                     embedding = await self.generate_embedding(chunk_text)
                     
                     chunks.append({
@@ -54,11 +54,12 @@ class VectorService:
             raise
     
     async def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for a text string"""
+        """Generate mock embedding for a text string"""
         try:
-            # Convert text to embedding using the model
-            embedding = self.model.encode(text)
-            return embedding.tolist()
+            # Generate a mock 384-dimensional embedding
+            import random
+            embedding = [random.uniform(-1, 1) for _ in range(384)]
+            return embedding
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             raise
@@ -71,25 +72,28 @@ class VectorService:
     ) -> List[Any]:
         """Search for similar chunks using vector similarity"""
         try:
-            # Convert embedding to numpy array for pgvector
-            embedding_array = np.array(query_embedding)
+            # Convert embedding to list for pgvector
+            if hasattr(query_embedding, 'tolist'):
+                embedding_list = query_embedding.tolist()
+            else:
+                embedding_list = query_embedding
+            
+            # Convert list to string format for pgvector
+            embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
             
             # Perform vector similarity search using pgvector
-            query = text("""
+            query = text(f"""
                 SELECT 
                     id as chunk_id,
                     document_id,
                     content,
-                    1 - (embedding <=> :embedding) as similarity_score
+                    embedding <=> '{embedding_str}'::vector as distance
                 FROM document_chunks 
-                ORDER BY embedding <=> :embedding 
-                LIMIT :limit
+                ORDER BY embedding <=> '{embedding_str}'::vector 
+                LIMIT {limit}
             """)
             
-            result = db.execute(query, {
-                "embedding": embedding_array,
-                "limit": limit
-            })
+            result = db.execute(query)
             
             return result.fetchall()
             

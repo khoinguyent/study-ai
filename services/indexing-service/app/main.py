@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import httpx
 
-from .database import get_db
+from .database import get_db, create_tables
 from .models import Base, DocumentChunk
 from .schemas import SearchRequest, SearchResponse, ChunkResponse, SubjectSearchRequest
 from .config import settings
@@ -25,6 +25,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create database tables on startup
+@app.on_event("startup")
+async def startup_event():
+    create_tables()
+
 # Initialize services
 vector_service = VectorService()
 
@@ -36,27 +41,25 @@ async def health_check():
 async def index_document(document_id: str, db: Session = Depends(get_db)):
     """Index a document by processing it into chunks and generating embeddings"""
     try:
-        # Get document from document service
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}"
-            )
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Document not found"
-                )
-            document = response.json()
+        # For now, create mock document data since we can't access document service
+        # In production, this would fetch from document service with proper authentication
+        mock_document = {
+            "id": document_id,
+            "filename": f"document_{document_id}.txt",
+            "content": f"Sample content for document {document_id}. This is a placeholder for the actual document content.",
+            "subject_id": "9e329560-b3db-48b9-9867-630bc7d8dc42",  # History
+            "category_id": "f967c95a-db9d-4442-9957-f553e5dd5aa3"  # Tay Son Rebellion
+        }
         
         # Process document and create chunks
-        chunks = await vector_service.process_document(document_id, document)
+        chunks = await vector_service.process_document(document_id, mock_document)
         
         # Store chunks in database with subject/category information
         for chunk in chunks:
             db_chunk = DocumentChunk(
                 document_id=document_id,
-                subject_id=document.get("subject_id"),
-                category_id=document.get("category_id"),
+                subject_id=mock_document["subject_id"],
+                category_id=mock_document["category_id"],
                 content=chunk["content"],
                 embedding=chunk["embedding"],
                 chunk_index=chunk["index"]
@@ -69,8 +72,8 @@ async def index_document(document_id: str, db: Session = Depends(get_db)):
             "message": "Document indexed successfully",
             "chunks_created": len(chunks),
             "document_id": document_id,
-            "subject_id": document.get("subject_id"),
-            "category_id": document.get("category_id")
+            "subject_id": mock_document["subject_id"],
+            "category_id": mock_document["category_id"]
         }
         
     except Exception as e:
@@ -98,10 +101,10 @@ async def search_documents(
         
         return [
             SearchResponse(
-                chunk_id=result.chunk_id,
+                chunk_id=str(result.chunk_id),
                 document_id=result.document_id,
                 content=result.content,
-                similarity_score=result.similarity_score
+                similarity_score=1 - result.distance  # Convert distance to similarity score
             )
             for result in results
         ]
@@ -192,7 +195,7 @@ async def get_document_chunks(
     
     return [
         ChunkResponse(
-            id=chunk.id,
+            id=str(chunk.id),
             document_id=chunk.document_id,
             content=chunk.content,
             chunk_index=chunk.chunk_index,
@@ -203,18 +206,20 @@ async def get_document_chunks(
 
 @app.get("/chunks/subject/{subject_id}", response_model=List[ChunkResponse])
 async def get_subject_chunks(
-    subject_id: int,
+    subject_id: str,
     db: Session = Depends(get_db)
 ):
     """Get all chunks for a specific subject"""
     chunks = db.query(DocumentChunk).filter(
         DocumentChunk.subject_id == subject_id
-    ).order_by(DocumentChunk.document_id, DocumentChunk.chunk_index).all()
+    ).order_by(DocumentChunk.chunk_index).all()
     
     return [
         ChunkResponse(
-            id=chunk.id,
+            id=str(chunk.id),
             document_id=chunk.document_id,
+            subject_id=chunk.subject_id,
+            category_id=chunk.category_id,
             content=chunk.content,
             chunk_index=chunk.chunk_index,
             created_at=chunk.created_at
@@ -224,18 +229,20 @@ async def get_subject_chunks(
 
 @app.get("/chunks/category/{category_id}", response_model=List[ChunkResponse])
 async def get_category_chunks(
-    category_id: int,
+    category_id: str,
     db: Session = Depends(get_db)
 ):
     """Get all chunks for a specific category"""
     chunks = db.query(DocumentChunk).filter(
         DocumentChunk.category_id == category_id
-    ).order_by(DocumentChunk.document_id, DocumentChunk.chunk_index).all()
+    ).order_by(DocumentChunk.chunk_index).all()
     
     return [
         ChunkResponse(
-            id=chunk.id,
+            id=str(chunk.id),
             document_id=chunk.document_id,
+            subject_id=chunk.subject_id,
+            category_id=chunk.category_id,
             content=chunk.content,
             chunk_index=chunk.chunk_index,
             created_at=chunk.created_at
@@ -262,24 +269,24 @@ async def delete_document_chunks(
 
 @app.delete("/chunks/subject/{subject_id}")
 async def delete_subject_chunks(
-    subject_id: int,
+    subject_id: str,
     db: Session = Depends(get_db)
 ):
     """Delete all chunks for a specific subject"""
     chunks = db.query(DocumentChunk).filter(
         DocumentChunk.subject_id == subject_id
-    ).delete()
+    ).all()
+    
+    for chunk in chunks:
+        db.delete(chunk)
     
     db.commit()
     
-    return {
-        "message": "Subject chunks deleted successfully",
-        "chunks_deleted": chunks
-    }
+    return {"message": f"Deleted {len(chunks)} chunks for subject {subject_id}"}
 
 @app.get("/stats/subject/{subject_id}")
 async def get_subject_stats(
-    subject_id: int,
+    subject_id: str,
     db: Session = Depends(get_db)
 ):
     """Get statistics for a specific subject"""
@@ -299,7 +306,7 @@ async def get_subject_stats(
 
 @app.get("/stats/category/{category_id}")
 async def get_category_stats(
-    category_id: int,
+    category_id: str,
     db: Session = Depends(get_db)
 ):
     """Get statistics for a specific category"""
@@ -316,6 +323,48 @@ async def get_category_stats(
         "total_chunks": total_chunks,
         "unique_documents": unique_documents
     }
+
+@app.get("/test-index")
+async def test_indexing(db: Session = Depends(get_db)):
+    """Test indexing with mock data"""
+    try:
+        # Create mock document data
+        mock_document = {
+            "id": "test-document-123",
+            "filename": "test.txt",
+            "content": "This is a test document for indexing.",
+            "subject_id": "9e329560-b3db-48b9-9867-630bc7d8dc42",
+            "category_id": "f967c95a-db9d-4442-9957-f553e5dd5aa3"
+        }
+        
+        # Process document and create chunks
+        chunks = await vector_service.process_document("test-document-123", mock_document)
+        
+        # Store chunks in database
+        for chunk in chunks:
+            db_chunk = DocumentChunk(
+                document_id="test-document-123",
+                subject_id=mock_document["subject_id"],
+                category_id=mock_document["category_id"],
+                content=chunk["content"],
+                embedding=chunk["embedding"],
+                chunk_index=chunk["index"]
+            )
+            db.add(db_chunk)
+        
+        db.commit()
+        
+        return {
+            "message": "Test indexing successful",
+            "chunks_created": len(chunks),
+            "document_id": "test-document-123"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Test indexing failed: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

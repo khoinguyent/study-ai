@@ -23,5 +23,5 @@ def get_db():
 # Create all tables
 def create_tables():
     # Import models here to ensure they are registered with Base
-    from .models import Subject, Category, Document
+    from .models import DocumentChunk
     Base.metadata.create_all(bind=engine) 

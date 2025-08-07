@@ -1,18 +1,20 @@
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header, Query
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header, Query, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime
 import httpx
 from typing import List, Optional
+import json
+import asyncio
+from pydantic import BaseModel
 
-from .database import get_db
-from .models import Base, Document, Subject, Category
+from .database import get_db, create_tables
+from .models import Subject, Category, Document
 from .schemas import (
-    DocumentCreate, DocumentResponse, DocumentStatus, DocumentUploadResponse,
-    SubjectCreate, SubjectResponse, SubjectUpdate,
-    CategoryCreate, CategoryResponse, CategoryUpdate,
-    DocumentGroupResponse
+    SubjectCreate, SubjectUpdate, SubjectResponse,
+    CategoryCreate, CategoryUpdate, CategoryResponse,
+    DocumentResponse, DocumentUploadResponse, DocumentGroupResponse, DocumentStatus
 )
 from .config import settings
 from .services.document_processor import DocumentProcessor
@@ -33,11 +35,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create database tables on startup
+@app.on_event("startup")
+async def startup_event():
+    create_tables()
+
+# Simple Pydantic model for subject creation
+class SubjectCreateModel(BaseModel):
+    name: str
+    description: Optional[str] = None
+
 # Initialize services
 document_processor = DocumentProcessor()
 storage_service = StorageService()
 
-async def verify_auth_token(authorization: str = Depends(Header)):
+async def verify_auth_token(authorization: str = Header(alias="Authorization")):
     """Verify JWT token with auth service"""
     if not authorization:
         raise HTTPException(
@@ -67,14 +79,20 @@ async def verify_auth_token(authorization: str = Depends(Header)):
 async def health_check():
     return {"status": "healthy", "service": "document-service"}
 
-# Subject Management Endpoints
-@app.post("/subjects", response_model=SubjectResponse)
-async def create_subject(
-    subject: SubjectCreate,
-    user_id: str = Depends(verify_auth_token),
-    db: Session = Depends(get_db)
-):
-    """Create a new subject"""
+@app.post("/test-pydantic")
+async def test_pydantic(subject: SubjectCreateModel):
+    """Test Pydantic model without any dependencies"""
+    return {
+        "message": "Pydantic test successful",
+        "data": {
+            "name": subject.name,
+            "description": subject.description
+        }
+    }
+
+@app.post("/simple-subject")
+async def create_simple_subject(subject: SubjectCreateModel, user_id: str = Depends(verify_auth_token), db: Session = Depends(get_db)):
+    """Create a subject with proper Pydantic validation"""
     # Check if subject name already exists for this user
     existing_subject = db.query(Subject).filter(
         Subject.name == subject.name,
@@ -96,7 +114,60 @@ async def create_subject(
     db.commit()
     db.refresh(db_subject)
     
-    return db_subject
+    return {
+        "id": db_subject.id,
+        "name": db_subject.name,
+        "description": db_subject.description,
+        "user_id": db_subject.user_id,
+        "created_at": db_subject.created_at.isoformat() if db_subject.created_at else None
+    }
+
+# Subject Management Endpoints
+@app.post("/subjects")
+async def create_subject(
+    request: dict,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new subject"""
+    # Extract data from request
+    name = request.get("name")
+    description = request.get("description")
+    
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name is required"
+        )
+    
+    # Check if subject name already exists for this user
+    existing_subject = db.query(Subject).filter(
+        Subject.name == name,
+        Subject.user_id == user_id
+    ).first()
+    
+    if existing_subject:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subject with this name already exists"
+        )
+    
+    db_subject = Subject(
+        name=name,
+        description=description,
+        user_id=user_id
+    )
+    db.add(db_subject)
+    db.commit()
+    db.refresh(db_subject)
+    
+    return {
+        "id": db_subject.id,
+        "name": db_subject.name,
+        "description": db_subject.description,
+        "user_id": db_subject.user_id,
+        "created_at": db_subject.created_at.isoformat() if db_subject.created_at else None
+    }
 
 @app.get("/subjects", response_model=List[SubjectResponse])
 async def list_subjects(
@@ -109,7 +180,7 @@ async def list_subjects(
 
 @app.get("/subjects/{subject_id}", response_model=SubjectResponse)
 async def get_subject(
-    subject_id: int,
+    subject_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -129,7 +200,7 @@ async def get_subject(
 
 @app.put("/subjects/{subject_id}", response_model=SubjectResponse)
 async def update_subject(
-    subject_id: int,
+    subject_id: str,
     subject_update: SubjectUpdate,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
@@ -155,11 +226,11 @@ async def update_subject(
 
 @app.delete("/subjects/{subject_id}")
 async def delete_subject(
-    subject_id: int,
+    subject_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
-    """Delete a subject and all its categories"""
+    """Delete a subject"""
     subject = db.query(Subject).filter(
         Subject.id == subject_id,
         Subject.user_id == user_id
@@ -170,15 +241,6 @@ async def delete_subject(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Subject not found"
         )
-    
-    # Delete all categories in this subject
-    db.query(Category).filter(Category.subject_id == subject_id).delete()
-    
-    # Update documents to remove subject reference
-    db.query(Document).filter(Document.subject_id == subject_id).update({
-        Document.subject_id: None,
-        Document.category_id: None
-    })
     
     db.delete(subject)
     db.commit()
@@ -231,22 +293,20 @@ async def create_category(
 
 @app.get("/categories", response_model=List[CategoryResponse])
 async def list_categories(
-    subject_id: Optional[int] = Query(None),
+    subject_id: Optional[str] = Query(None),
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
-    """List categories, optionally filtered by subject"""
+    """List all categories for a user, optionally filtered by subject"""
     query = db.query(Category).join(Subject).filter(Subject.user_id == user_id)
-    
     if subject_id:
         query = query.filter(Category.subject_id == subject_id)
-    
     categories = query.all()
     return categories
 
 @app.get("/categories/{category_id}", response_model=CategoryResponse)
 async def get_category(
-    category_id: int,
+    category_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -266,7 +326,7 @@ async def get_category(
 
 @app.put("/categories/{category_id}", response_model=CategoryResponse)
 async def update_category(
-    category_id: int,
+    category_id: str,
     category_update: CategoryUpdate,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
@@ -292,7 +352,7 @@ async def update_category(
 
 @app.delete("/categories/{category_id}")
 async def delete_category(
-    category_id: int,
+    category_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -307,11 +367,6 @@ async def delete_category(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Category not found"
         )
-    
-    # Update documents to remove category reference
-    db.query(Document).filter(Document.category_id == category_id).update({
-        Document.category_id: None
-    })
     
     db.delete(category)
     db.commit()
@@ -347,7 +402,7 @@ async def list_document_groups(
 
 @app.get("/groups/{subject_id}", response_model=DocumentGroupResponse)
 async def get_document_group(
-    subject_id: int,
+    subject_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -380,8 +435,8 @@ async def get_document_group(
 @app.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    subject_id: Optional[int] = Query(None),
-    category_id: Optional[int] = Query(None),
+    subject_id: Optional[str] = Query(None),
+    category_id: Optional[str] = Query(None),
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -457,7 +512,7 @@ async def upload_document(
         db.commit()
         
         # Trigger processing task asynchronously
-        asyncio.create_task(document_processor.process_document(document.id, user_id, db))
+        asyncio.create_task(document_processor.process_document(str(document.id), user_id, db))
         
         return DocumentUploadResponse(
             id=document.id,
@@ -485,9 +540,14 @@ async def list_documents(
             id=doc.id,
             filename=doc.filename,
             content_type=doc.content_type,
-            status=doc.status,
             file_size=doc.file_size,
-            created_at=doc.created_at
+            file_path=doc.file_path,
+            status=doc.status,
+            user_id=doc.user_id,
+            subject_id=doc.subject_id,
+            category_id=doc.category_id,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at
         )
         for doc in documents
     ]
@@ -513,9 +573,14 @@ async def get_document(
         id=document.id,
         filename=document.filename,
         content_type=document.content_type,
-        status=document.status,
         file_size=document.file_size,
-        created_at=document.created_at
+        file_path=document.file_path,
+        status=document.status,
+        user_id=document.user_id,
+        subject_id=document.subject_id,
+        category_id=document.category_id,
+        created_at=document.created_at,
+        updated_at=document.updated_at
     )
 
 @app.delete("/documents/{document_id}")
@@ -547,7 +612,7 @@ async def delete_document(
 
 @app.get("/categories/{category_id}/documents", response_model=List[DocumentResponse])
 async def list_category_documents(
-    category_id: int,
+    category_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -570,11 +635,26 @@ async def list_category_documents(
         Document.user_id == user_id
     ).all()
     
-    return documents
+    return [
+        DocumentResponse(
+            id=doc.id,
+            filename=doc.filename,
+            content_type=doc.content_type,
+            file_size=doc.file_size,
+            file_path=doc.file_path,
+            status=doc.status,
+            user_id=doc.user_id,
+            subject_id=doc.subject_id,
+            category_id=doc.category_id,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at
+        )
+        for doc in documents
+    ]
 
 @app.get("/subjects/{subject_id}/documents", response_model=List[DocumentResponse])
 async def list_subject_documents(
-    subject_id: int,
+    subject_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
@@ -597,7 +677,22 @@ async def list_subject_documents(
         Document.user_id == user_id
     ).all()
     
-    return documents
+    return [
+        DocumentResponse(
+            id=doc.id,
+            filename=doc.filename,
+            content_type=doc.content_type,
+            file_size=doc.file_size,
+            file_path=doc.file_path,
+            status=doc.status,
+            user_id=doc.user_id,
+            subject_id=doc.subject_id,
+            category_id=doc.category_id,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at
+        )
+        for doc in documents
+    ]
 
 if __name__ == "__main__":
     import uvicorn

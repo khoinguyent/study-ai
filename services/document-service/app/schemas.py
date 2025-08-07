@@ -15,7 +15,7 @@ class SubjectUpdate(SubjectBase):
     pass
 
 class SubjectResponse(SubjectBase):
-    id: int
+    id: str
     user_id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -26,7 +26,7 @@ class SubjectResponse(SubjectBase):
 class CategoryBase(BaseModel):
     name: str
     description: Optional[str] = None
-    subject_id: int
+    subject_id: str
 
 class CategoryCreate(CategoryBase):
     pass
@@ -35,7 +35,7 @@ class CategoryUpdate(CategoryBase):
     pass
 
 class CategoryResponse(CategoryBase):
-    id: int
+    id: str
     user_id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -53,14 +53,14 @@ class DocumentBase(BaseModel):
     filename: str
     content_type: str
     file_size: int
-    subject_id: Optional[int] = None
-    category_id: Optional[int] = None
+    subject_id: Optional[str] = None
+    category_id: Optional[str] = None
 
 class DocumentCreate(DocumentBase):
     pass
 
 class DocumentResponse(DocumentBase):
-    id: int
+    id: str
     file_path: str
     status: str
     user_id: str
@@ -80,7 +80,7 @@ class DocumentGroupResponse(BaseModel):
     total_size: int
 
 class DocumentUploadResponse(BaseModel):
-    id: int
+    id: str
     filename: str
     status: str
     message: str 
