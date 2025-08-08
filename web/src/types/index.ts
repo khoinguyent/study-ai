@@ -1,10 +1,10 @@
 // User related types
 export interface User {
   id: string;
-  name: string;
+  username: string;
   email: string;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface LoginRequest {
@@ -24,21 +24,45 @@ export interface AuthResponse {
   user: User;
 }
 
-// Category/Subject related types
+// Subject/Category related types
+export interface Subject {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color_theme?: string;
+  user_id: string;
+  document_count: number;
+  avg_score: number;
+  created_at: string;
+  updated_at?: string;
+  categories?: Category[];
+}
+
 export interface Category {
   id: string;
   name: string;
   description?: string;
+  subject_id: string;
   user_id: string;
-  document_count?: number;
-  avg_score?: number;
+  document_count: number;
+  avg_score: number;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
+  documents?: Document[];
+}
+
+export interface SubjectCreate {
+  name: string;
+  description?: string;
+  icon?: string;
+  color_theme?: string;
 }
 
 export interface CategoryCreate {
   name: string;
   description?: string;
+  subject_id: string;
 }
 
 // Document related types

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header, Query, Request, Body
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header, Query, Request, Body, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
@@ -14,11 +14,79 @@ from .models import Subject, Category, Document
 from .schemas import (
     SubjectCreate, SubjectUpdate, SubjectResponse,
     CategoryCreate, CategoryUpdate, CategoryResponse,
-    DocumentResponse, DocumentUploadResponse, DocumentGroupResponse, DocumentStatus
+    DocumentResponse, DocumentUploadResponse, DocumentGroupResponse, DocumentStatus, PaginatedDocumentResponse
 )
 from .config import settings
 from .services.document_processor import DocumentProcessor
 from .services.storage_service import StorageService
+
+# Notification service helper
+class NotificationService:
+    def __init__(self):
+        self.notification_service_url = settings.NOTIFICATION_SERVICE_URL or "http://notification-service:8005"
+    
+    async def create_task_status(self, task_id: str, user_id: str, task_type: str, status: str = "pending", message: str = None):
+        """Create a new task status in the notification service"""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{self.notification_service_url}/task-status",
+                    json={
+                        "task_id": task_id,
+                        "user_id": user_id,
+                        "task_type": task_type,
+                        "status": status,
+                        "progress": 0,
+                        "message": message,
+                        "metadata": {}
+                    }
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"Failed to create task status: {e}")
+                return False
+    
+    async def update_task_status(self, task_id: str, status: str = None, progress: int = None, message: str = None, metadata: dict = None):
+        """Update task status in the notification service"""
+        async with httpx.AsyncClient() as client:
+            try:
+                update_data = {}
+                if status:
+                    update_data["status"] = status
+                if progress is not None:
+                    update_data["progress"] = progress
+                if message:
+                    update_data["message"] = message
+                if metadata:
+                    update_data["metadata"] = metadata
+                
+                response = await client.put(
+                    f"{self.notification_service_url}/task-status/{task_id}",
+                    json=update_data
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"Failed to update task status: {e}")
+                return False
+    
+    async def send_notification(self, user_id: str, title: str, message: str, notification_type: str = "task_status", metadata: dict = None):
+        """Send a notification to the user"""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{self.notification_service_url}/notifications",
+                    json={
+                        "user_id": user_id,
+                        "title": title,
+                        "message": message,
+                        "notification_type": notification_type,
+                        "metadata": metadata or {}
+                    }
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"Failed to send notification: {e}")
+                return False
 
 app = FastAPI(
     title="Document Service",
@@ -26,13 +94,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware with more specific configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, specify exact origins
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Create database tables on startup
@@ -48,6 +117,66 @@ class SubjectCreateModel(BaseModel):
 # Initialize services
 document_processor = DocumentProcessor()
 storage_service = StorageService()
+notification_service = NotificationService()
+
+async def process_document_with_notifications(document_id: str, user_id: str, task_id: str, db: Session):
+    """Process document with notification updates"""
+    try:
+        # Update status to processing
+        await notification_service.update_task_status(
+            task_id=task_id,
+            status="processing",
+            progress=80,
+            message="Processing document content..."
+        )
+        
+        # Call the original document processor
+        result = await document_processor.process_document(document_id, user_id, db)
+        
+        # Update status to completed
+        await notification_service.update_task_status(
+            task_id=task_id,
+            status="completed",
+            progress=100,
+            message="Document processing completed successfully"
+        )
+        
+        # Send success notification
+        await notification_service.send_notification(
+            user_id=user_id,
+            title="Document Processed",
+            message=f"Document {document_id} has been processed and is ready for indexing",
+            notification_type="processing_status",
+            metadata={"document_id": document_id, "processing_result": result}
+        )
+        
+        return result
+        
+    except Exception as e:
+        # Update status to failed
+        await notification_service.update_task_status(
+            task_id=task_id,
+            status="failed",
+            progress=100,
+            message=f"Document processing failed: {str(e)}"
+        )
+        
+        # Send failure notification
+        await notification_service.send_notification(
+            user_id=user_id,
+            title="Processing Failed",
+            message=f"Failed to process document {document_id}: {str(e)}",
+            notification_type="processing_status",
+            metadata={"document_id": document_id, "error": str(e)}
+        )
+        
+        # Update document status in database
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if document:
+            document.status = DocumentStatus.FAILED
+            db.commit()
+        
+        return None
 
 async def verify_auth_token(authorization: str = Header(alias="Authorization")):
     """Verify JWT token with auth service"""
@@ -133,6 +262,8 @@ async def create_subject(
     # Extract data from request
     name = request.get("name")
     description = request.get("description")
+    icon = request.get("icon", "microscope")
+    color_theme = request.get("color_theme", "green")
     
     if not name:
         raise HTTPException(
@@ -155,6 +286,8 @@ async def create_subject(
     db_subject = Subject(
         name=name,
         description=description,
+        icon=icon,
+        color_theme=color_theme,
         user_id=user_id
     )
     db.add(db_subject)
@@ -165,6 +298,8 @@ async def create_subject(
         "id": db_subject.id,
         "name": db_subject.name,
         "description": db_subject.description,
+        "icon": db_subject.icon,
+        "color_theme": db_subject.color_theme,
         "user_id": db_subject.user_id,
         "created_at": db_subject.created_at.isoformat() if db_subject.created_at else None
     }
@@ -175,8 +310,40 @@ async def list_subjects(
     db: Session = Depends(get_db)
 ):
     """List all subjects for a user"""
-    subjects = db.query(Subject).filter(Subject.user_id == user_id).all()
-    return subjects
+    from sqlalchemy import func
+    
+    # Add document count subquery
+    doc_count_subquery = db.query(
+        Document.subject_id,
+        func.count(Document.id).label('doc_count'),
+        func.avg(Document.file_size).label('avg_score')  # Using file_size as placeholder for avg_score
+    ).group_by(Document.subject_id).subquery()
+    
+    subjects = db.query(Subject).filter(Subject.user_id == user_id).outerjoin(
+        doc_count_subquery, Subject.id == doc_count_subquery.c.subject_id
+    ).all()
+    
+    # Convert to response models with document counts
+    result = []
+    for subject in subjects:
+        doc_count = getattr(subject, 'doc_count', 0) or 0
+        avg_score = getattr(subject, 'avg_score', 0.0) or 0.0
+        
+        subject_response = SubjectResponse(
+            id=subject.id,
+            name=subject.name,
+            description=subject.description,
+            icon=subject.icon,
+            color_theme=subject.color_theme,
+            user_id=subject.user_id,
+            document_count=doc_count,
+            avg_score=float(avg_score),
+            created_at=subject.created_at,
+            updated_at=subject.updated_at
+        )
+        result.append(subject_response)
+    
+    return result
 
 @app.get("/subjects/{subject_id}", response_model=SubjectResponse)
 async def get_subject(
@@ -298,11 +465,41 @@ async def list_categories(
     db: Session = Depends(get_db)
 ):
     """List all categories for a user, optionally filtered by subject"""
+    from sqlalchemy import func
+    
     query = db.query(Category).join(Subject).filter(Subject.user_id == user_id)
     if subject_id:
         query = query.filter(Category.subject_id == subject_id)
-    categories = query.all()
-    return categories
+    
+    # Add document count subquery
+    doc_count_subquery = db.query(
+        Document.category_id,
+        func.count(Document.id).label('doc_count'),
+        func.avg(Document.file_size).label('avg_score')  # Using file_size as placeholder for avg_score
+    ).group_by(Document.category_id).subquery()
+    
+    categories = query.outerjoin(doc_count_subquery, Category.id == doc_count_subquery.c.category_id).all()
+    
+    # Convert to response models with document counts
+    result = []
+    for category in categories:
+        doc_count = getattr(category, 'doc_count', 0) or 0
+        avg_score = getattr(category, 'avg_score', 0.0) or 0.0
+        
+        category_response = CategoryResponse(
+            id=category.id,
+            name=category.name,
+            description=category.description,
+            subject_id=category.subject_id,
+            user_id=category.user_id,
+            document_count=doc_count,
+            avg_score=float(avg_score),
+            created_at=category.created_at,
+            updated_at=category.updated_at
+        )
+        result.append(category_response)
+    
+    return result
 
 @app.get("/categories/{category_id}", response_model=CategoryResponse)
 async def get_category(
@@ -529,6 +726,175 @@ async def upload_document(
             detail=f"Upload failed: {str(e)}"
         )
 
+@app.post("/upload-multiple", response_model=List[DocumentUploadResponse])
+async def upload_multiple_documents(
+    files: List[UploadFile] = File(..., max_length=100 * 1024 * 1024),  # 100MB max per file
+    subject_id: Optional[str] = Form(None),
+    category_id: Optional[str] = Form(None),
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Upload multiple documents with optional subject and category assignment"""
+    if len(files) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 10 files allowed per upload"
+        )
+    
+    # Validate file types
+    allowed_types = [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain"
+    ]
+    
+    for file in files:
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type: {file.filename}"
+            )
+    
+    # Validate subject and category if provided
+    if subject_id:
+        subject = db.query(Subject).filter(
+            Subject.id == subject_id,
+            Subject.user_id == user_id
+        ).first()
+        if not subject:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Subject not found"
+            )
+    
+    if category_id:
+        category = db.query(Category).join(Subject).filter(
+            Category.id == category_id,
+            Subject.user_id == user_id
+        ).first()
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found"
+            )
+        # Ensure category belongs to the specified subject
+        if subject_id and category.subject_id != subject_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Category does not belong to the specified subject"
+            )
+    
+    uploaded_documents = []
+    
+    for file in files:
+        # Generate task ID for tracking
+        task_id = f"upload_{user_id}_{uuid.uuid4()}"
+        
+        # Create document record
+        document = Document(
+            user_id=user_id,
+            filename=file.filename,
+            content_type=file.content_type,
+            file_size=0,  # Will be updated after upload
+            file_path="",  # Will be updated after upload
+            status=DocumentStatus.UPLOADED,
+            subject_id=subject_id,
+            category_id=category_id
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        
+        # Create task status notification
+        await notification_service.create_task_status(
+            task_id=task_id,
+            user_id=user_id,
+            task_type="document_upload",
+            status="uploading",
+            message=f"Uploading {file.filename}..."
+        )
+        
+        try:
+            # Update progress: Starting upload
+            await notification_service.update_task_status(
+                task_id=task_id,
+                status="uploading",
+                progress=25,
+                message=f"Reading file {file.filename}..."
+            )
+            
+            # Upload to MinIO
+            file_content = await file.read()
+            
+            # Update progress: File read, starting storage
+            await notification_service.update_task_status(
+                task_id=task_id,
+                progress=50,
+                message=f"Storing {file.filename}..."
+            )
+            
+            s3_key = f"documents/{user_id}/{document.id}/{file.filename}"
+            await storage_service.upload_file(s3_key, file_content, file.content_type)
+            
+            # Update document with file size and path
+            document.file_size = len(file_content)
+            document.file_path = s3_key
+            document.status = DocumentStatus.PROCESSING
+            db.commit()
+            
+            # Update progress: Upload complete, starting processing
+            await notification_service.update_task_status(
+                task_id=task_id,
+                status="processing",
+                progress=75,
+                message=f"Processing {file.filename}...",
+                metadata={"document_id": str(document.id), "file_size": document.file_size}
+            )
+            
+            # Trigger processing task asynchronously with task tracking
+            asyncio.create_task(
+                document_processor.process_document(str(document.id), user_id, db)
+            )
+            
+            uploaded_documents.append(DocumentUploadResponse(
+                id=document.id,
+                filename=document.filename,
+                status=document.status,
+                message="Document uploaded successfully and processing started"
+            ))
+            
+        except Exception as e:
+            document.status = DocumentStatus.FAILED
+            db.commit()
+            
+            # Update task status to failed
+            await notification_service.update_task_status(
+                task_id=task_id,
+                status="failed",
+                progress=100,
+                message=f"Upload failed: {str(e)}"
+            )
+            
+            # Send failure notification
+            await notification_service.send_notification(
+                user_id=user_id,
+                title="Upload Failed",
+                message=f"Failed to upload {file.filename}: {str(e)}",
+                notification_type="upload_status",
+                metadata={"document_id": str(document.id), "error": str(e)}
+            )
+            
+            # Continue with other files but mark this one as failed
+            uploaded_documents.append(DocumentUploadResponse(
+                id=document.id,
+                filename=document.filename,
+                status=DocumentStatus.FAILED,
+                message=f"Upload failed: {str(e)}"
+            ))
+    
+    return uploaded_documents
+
 @app.get("/documents", response_model=list[DocumentResponse])
 async def list_documents(
     user_id: str = Depends(verify_auth_token),
@@ -610,13 +976,15 @@ async def delete_document(
     
     return {"message": "Document deleted successfully"}
 
-@app.get("/categories/{category_id}/documents", response_model=List[DocumentResponse])
+@app.get("/categories/{category_id}/documents", response_model=PaginatedDocumentResponse)
 async def list_category_documents(
     category_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
-    """List all documents in a specific category"""
+    """List documents in a specific category with pagination"""
     # Verify category exists and belongs to user
     category = db.query(Category).join(Subject).filter(
         Category.id == category_id,
@@ -629,13 +997,23 @@ async def list_category_documents(
             detail="Category not found"
         )
     
-    # Get all documents in this category
+    # Calculate offset
+    offset = (page - 1) * page_size
+    
+    # Get total count
+    total_count = db.query(Document).filter(
+        Document.category_id == category_id,
+        Document.user_id == user_id
+    ).count()
+    
+    # Get paginated documents
     documents = db.query(Document).filter(
         Document.category_id == category_id,
         Document.user_id == user_id
-    ).all()
+    ).order_by(Document.created_at.desc()).offset(offset).limit(page_size).all()
     
-    return [
+    # Convert to response models
+    document_responses = [
         DocumentResponse(
             id=doc.id,
             filename=doc.filename,
@@ -651,6 +1029,14 @@ async def list_category_documents(
         )
         for doc in documents
     ]
+    
+    return PaginatedDocumentResponse(
+        documents=document_responses,
+        total_count=total_count,
+        page=page,
+        page_size=page_size,
+        has_more=(offset + page_size) < total_count
+    )
 
 @app.get("/subjects/{subject_id}/documents", response_model=List[DocumentResponse])
 async def list_subject_documents(

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Crown, Brain } from 'lucide-react';
 import { LoginRequest } from '../types';
 import apiService from '../services/api';
+import authService from '../services/auth';
 import './LoginPage.css';
 
 const LoginPage: React.FC = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<LoginRequest>({
     email: '',
     password: ''
@@ -32,9 +34,9 @@ const LoginPage: React.FC = () => {
     
     try {
       const response = await apiService.login(formData);
-      localStorage.setItem('token', response.access_token);
-      // Redirect to dashboard
-      window.location.href = '/dashboard';
+      authService.setToken(response);
+      // Navigate to dashboard using React Router
+      navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
       setError(error instanceof Error ? error.message : 'Login failed. Please try again.');

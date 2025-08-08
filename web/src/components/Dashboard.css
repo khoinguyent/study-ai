@@ -33,14 +33,15 @@
 /* Header */
 .dashboard-header {
   background: white;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 16px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 12px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 }
 
 .header-left {
@@ -56,9 +57,9 @@
 
 .logo-icon {
   background: #3b82f6;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,7 +67,7 @@
 }
 
 .logo-text h1 {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
   color: #1f2937;
   margin: 0;
@@ -102,8 +103,8 @@
 }
 
 .user-avatar {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #3b82f6;
   color: white;
@@ -204,8 +205,8 @@
   font-weight: 500;
 }
 
-/* Categories Section */
-.categories-section {
+/* Subjects Section */
+.subjects-section {
   padding: 24px;
   max-width: 1200px;
   margin: 0 auto;
@@ -215,70 +216,66 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin: 0 0 24px 0;
 }
 
-.section-header h3 {
+.subjects-section h3 {
   font-size: 20px;
   font-weight: 600;
   color: #1f2937;
   margin: 0;
 }
 
-.create-subject-button {
+.subjects-container {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.create-subject-button:hover {
-  background: #2563eb;
-  transform: translateY(-1px);
-}
-
-.create-subject-button svg {
-  color: white;
-}
-
-.categories-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  flex-direction: column;
   gap: 20px;
 }
 
-.category-card {
+/* Subject Block */
+.subject-block {
   background: white;
-  border: 1px solid #e2e8f0;
+  border: 2px solid;
   border-radius: 12px;
-  padding: 24px;
-  cursor: pointer;
+  overflow: hidden;
   transition: all 0.2s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.category-card:hover {
-  transform: translateY(-2px);
+.subject-block:hover {
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-  border-color: #3b82f6;
 }
 
-.category-header {
+.subject-header {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.category-icon {
+.subject-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.select-button {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.2s ease;
+}
+
+.select-button:hover {
+  color: #3b82f6;
+}
+
+.subject-icon {
   width: 48px;
   height: 48px;
   border-radius: 12px;
@@ -288,54 +285,129 @@
   flex-shrink: 0;
 }
 
-.category-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.category-info h4 {
+.subject-info h4 {
   font-size: 18px;
   font-weight: 600;
   color: #1f2937;
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
   line-height: 1.3;
 }
 
-.category-tag {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
-  color: white;
-  text-transform: capitalize;
-}
-
-.arrow-icon {
-  color: #9ca3af;
-  flex-shrink: 0;
-  margin-top: 4px;
-}
-
-.category-description {
+.subject-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   color: #6b7280;
-  line-height: 1.5;
-  margin: 0 0 20px 0;
 }
 
-.category-footer {
+.subject-stats span {
   display: flex;
-  justify-content: space-between;
   align-items: center;
 }
 
-.category-stats {
+.subject-actions {
   display: flex;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
 }
 
-.stat-item {
+.add-category-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-category-button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.collapse-button {
+  background: none;
+  border: none;
+  padding: 8px;
+  border-radius: 8px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.collapse-button:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+/* Categories Container */
+.categories-container {
+  padding: 0;
+  background: #f8fafc;
+}
+
+/* Category Block */
+.category-block {
+  border-bottom: 1px solid #e2e8f0;
+  background: white;
+  transition: all 0.2s ease;
+}
+
+.category-block:last-child {
+  border-bottom: none;
+}
+
+.category-block:hover {
+  background: #f9fafb;
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+}
+
+.category-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.category-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.category-info h5 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+  line-height: 1.3;
+}
+
+.category-info p {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+}
+
+.category-stats {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -343,19 +415,73 @@
   color: #6b7280;
 }
 
-.stat-item svg {
-  color: #9ca3af;
+.category-stats span {
+  display: flex;
+  align-items: center;
 }
 
-.category-date {
+.category-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
   font-size: 13px;
-  color: #9ca3af;
-  font-weight: 500;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.upload-button:hover {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+/* Empty Categories */
+.empty-categories {
+  padding: 24px;
+  text-align: center;
+  background: white;
+}
+
+.empty-categories p {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0 0 16px 0;
+}
+
+.create-category-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 0 auto;
+}
+
+.create-category-button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
 /* Empty State */
 .empty-state {
-  grid-column: 1 / -1;
   text-align: center;
   padding: 60px 20px;
   background: white;
@@ -405,79 +531,110 @@
   color: white;
 }
 
+/* Create Subject Button in Header */
+.create-subject-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.create-subject-button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.create-subject-button svg {
+  color: white;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .dashboard-header {
     padding: 12px 16px;
   }
-  
+
   .logo-text h1 {
     font-size: 16px;
   }
-  
+
   .logo-text p {
     font-size: 12px;
   }
-  
+
   .welcome-section {
     padding: 24px 16px 20px;
   }
-  
+
   .welcome-section h2 {
     font-size: 24px;
   }
-  
+
   .stats-section {
     padding: 20px 16px;
   }
-  
+
   .stats-grid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  
+
   .stat-card {
     padding: 20px;
   }
-  
+
   .stat-content h3 {
     font-size: 28px;
   }
-  
-  .categories-section {
+
+  .subjects-section {
     padding: 20px 16px;
   }
-  
+
   .section-header {
     flex-direction: column;
     gap: 16px;
     align-items: flex-start;
   }
-  
-  .categories-grid {
-    grid-template-columns: 1fr;
+
+  .subject-header {
+    padding: 16px 20px;
+    flex-direction: column;
     gap: 16px;
+    align-items: flex-start;
   }
-  
-  .category-card {
-    padding: 20px;
+
+  .subject-left {
+    width: 100%;
   }
-  
+
+  .subject-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .category-header {
+    padding: 12px 20px;
+    flex-direction: column;
     gap: 12px;
+    align-items: flex-start;
   }
-  
-  .category-icon {
-    width: 40px;
-    height: 40px;
+
+  .category-left {
+    width: 100%;
   }
-  
-  .category-info h4 {
-    font-size: 16px;
-  }
-  
-  .category-stats {
-    gap: 12px;
+
+  .category-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 
@@ -485,53 +642,62 @@
   .header-right {
     gap: 12px;
   }
-  
+
   .icon-button {
     padding: 6px;
   }
-  
+
   .user-avatar {
     width: 36px;
     height: 36px;
     font-size: 12px;
   }
-  
+
   .welcome-section h2 {
     font-size: 22px;
   }
-  
+
   .welcome-section p {
     font-size: 14px;
   }
-  
+
   .stat-card {
     padding: 16px;
   }
-  
+
   .stat-icon {
     width: 40px;
     height: 40px;
   }
-  
+
   .stat-content h3 {
     font-size: 24px;
   }
-  
-  .category-card {
-    padding: 16px;
+
+  .subject-header {
+    padding: 12px 16px;
   }
-  
-  .category-description {
+
+  .category-header {
+    padding: 10px 16px;
+  }
+
+  .category-info p {
     font-size: 13px;
   }
 }
 
 /* Focus states for accessibility */
 .icon-button:focus-visible,
-.category-card:focus-visible,
+.subject-block:focus-visible,
 .create-button:focus-visible,
 .create-subject-button:focus-visible,
-.user-avatar:focus-visible {
+.user-avatar:focus-visible,
+.select-button:focus-visible,
+.add-category-button:focus-visible,
+.collapse-button:focus-visible,
+.upload-button:focus-visible,
+.create-category-button:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
 } 

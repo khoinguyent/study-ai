@@ -1,22 +1,78 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import Dashboard from './components/Dashboard';
 import CreateSubject from './components/CreateSubject';
-import { ProtectedRouteProps, PublicRouteProps } from './types';
+import NotificationSystem from './components/NotificationSystem';
+import { ProtectedRouteProps, PublicRouteProps, User } from './types';
+import authService from './services/auth';
+import apiService from './services/api';
 
-// Protected Route Component
+// Protected Route Component with Notifications
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const token = localStorage.getItem('token');
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+  const isAuthenticated = authService.isAuthenticated();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (isAuthenticated) {
+        try {
+          const cachedUser = authService.getCurrentUser();
+          if (cachedUser) {
+            setUser(cachedUser);
+          }
+          
+          // Fetch fresh user data from API
+          const userData = await apiService.getCurrentUser();
+          setUser(userData);
+          authService.updateUser(userData);
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+          authService.clearToken();
+          window.location.href = '/login';
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
+      }
+    };
+    
+    loadUserData();
+  }, [isAuthenticated]);
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Main Content */}
+      <main>
+        {children}
+      </main>
+    </div>
+  );
 };
 
 // Public Route Component (redirects to dashboard if already logged in)
 const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
-  const token = localStorage.getItem('token');
-  return token ? <Navigate to="/dashboard" replace /> : <>{children}</>;
+  const isAuthenticated = authService.isAuthenticated();
+  return isAuthenticated ? <Navigate to="/dashboard" replace /> : <>{children}</>;
 };
 
 const App: React.FC = () => {
@@ -45,7 +101,6 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>
     </Router>

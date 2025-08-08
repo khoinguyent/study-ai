@@ -1,25 +1,24 @@
-import { 
-  User, 
-  LoginRequest, 
-  RegisterRequest, 
-  AuthResponse, 
-  Category, 
+import {
+  User,
+  LoginRequest,
+  RegisterRequest,
+  AuthResponse,
+  Subject,
+  Category,
+  SubjectCreate,
   CategoryCreate,
   Document,
   Quiz,
   ApiResponse,
-  ApiError 
+  ApiError
 } from '../types';
+import authService from './auth'; // Import the new auth service
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost';
 
 class ApiService {
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem('token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` })
-    };
+    return authService.getAuthHeaders(); // Use authService to get headers
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {
@@ -60,16 +59,63 @@ class ApiService {
     return this.handleResponse<User>(response);
   }
 
-  // Categories/Subjects endpoints
-  async getCategories(): Promise<Category[]> {
+  // Subjects endpoints
+  async getSubjects(): Promise<Subject[]> {
     const response = await fetch(`${API_BASE_URL}/subjects`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse<Subject[]>(response);
+  }
+
+  async createSubject(subjectData: SubjectCreate): Promise<Subject> {
+    const response = await fetch(`${API_BASE_URL}/subjects`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(subjectData),
+    });
+    return this.handleResponse<Subject>(response);
+  }
+
+  async getSubject(id: string): Promise<Subject> {
+    const response = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse<Subject>(response);
+  }
+
+  async updateSubject(id: string, subjectData: Partial<SubjectCreate>): Promise<Subject> {
+    const response = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(subjectData),
+    });
+    return this.handleResponse<Subject>(response);
+  }
+
+  async deleteSubject(id: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to delete subject: ${response.status}`);
+    }
+  }
+
+  // Categories endpoints
+  async getCategories(subjectId?: string): Promise<Category[]> {
+    const url = subjectId 
+      ? `${API_BASE_URL}/subjects/${subjectId}/categories`
+      : `${API_BASE_URL}/categories`;
+    
+    const response = await fetch(url, {
       headers: this.getAuthHeaders(),
     });
     return this.handleResponse<Category[]>(response);
   }
 
   async createCategory(categoryData: CategoryCreate): Promise<Category> {
-    const response = await fetch(`${API_BASE_URL}/subjects`, {
+    const response = await fetch(`${API_BASE_URL}/categories`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(categoryData),
@@ -78,14 +124,14 @@ class ApiService {
   }
 
   async getCategory(id: string): Promise<Category> {
-    const response = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
       headers: this.getAuthHeaders(),
     });
     return this.handleResponse<Category>(response);
   }
 
   async updateCategory(id: string, categoryData: Partial<CategoryCreate>): Promise<Category> {
-    const response = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
       method: 'PUT',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(categoryData),
@@ -94,7 +140,7 @@ class ApiService {
   }
 
   async deleteCategory(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
       method: 'DELETE',
       headers: this.getAuthHeaders(),
     });
@@ -115,19 +161,49 @@ class ApiService {
     return this.handleResponse<Document[]>(response);
   }
 
+  async getCategoryDocuments(categoryId: string, page: number = 1, pageSize: number = 10): Promise<{
+    documents: Document[];
+    total_count: number;
+    page: number;
+    page_size: number;
+    has_more: boolean;
+  }> {
+    const response = await fetch(
+      `${API_BASE_URL}/categories/${categoryId}/documents?page=${page}&page_size=${pageSize}`,
+      {
+        headers: this.getAuthHeaders(),
+      }
+    );
+    return this.handleResponse(response);
+  }
+
   async uploadDocument(file: File, categoryId: string): Promise<Document> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('category_id', categoryId);
 
-    const response = await fetch(`${API_BASE_URL}/documents/upload`, {
+    const response = await fetch(`${API_BASE_URL}/upload`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Authorization': `Bearer ${authService.getToken()}`, // Use authService to get token
       },
       body: formData,
     });
     return this.handleResponse<Document>(response);
+  }
+
+  async uploadDocuments(formData: FormData): Promise<Document[]> {
+    const token = authService.getToken();
+    const headers: HeadersInit = {
+      'Authorization': `Bearer ${token}`,
+    };
+    
+    const response = await fetch(`${API_BASE_URL}/upload-multiple`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    return this.handleResponse<Document[]>(response);
   }
 
   async deleteDocument(id: string): Promise<void> {
@@ -161,10 +237,10 @@ class ApiService {
   }
 
   async getQuizzes(categoryId?: string): Promise<Quiz[]> {
-    const url = categoryId 
+    const url = categoryId
       ? `${API_BASE_URL}/quiz?category_id=${categoryId}`
       : `${API_BASE_URL}/quiz`;
-    
+
     const response = await fetch(url, {
       headers: this.getAuthHeaders(),
     });

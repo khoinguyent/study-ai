@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Crown, Brain, User } from 'lucide-react';
 import { RegisterRequest } from '../types';
 import apiService from '../services/api';
+import authService from '../services/auth';
 import './LoginPage.css'; // Reuse the same styles
 
 interface FormData extends RegisterRequest {
@@ -17,6 +18,7 @@ interface FormErrors {
 }
 
 const SignupPage: React.FC = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
@@ -80,9 +82,9 @@ const SignupPage: React.FC = () => {
     try {
       const { confirmPassword, ...registerData } = formData;
       const response = await apiService.register(registerData);
-      localStorage.setItem('token', response.access_token);
-      // Redirect to dashboard
-      window.location.href = '/dashboard';
+      authService.setToken(response);
+      // Navigate to dashboard using React Router
+      navigate('/dashboard');
     } catch (error) {
       console.error('Registration error:', error);
       setErrors({

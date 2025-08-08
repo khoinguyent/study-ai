@@ -21,6 +21,8 @@ services:
   auth-db:
     image: postgres:15
     container_name: study-ai-auth-db
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: auth_db
       POSTGRES_USER: postgres
@@ -34,6 +36,8 @@ services:
   document-db:
     image: postgres:15
     container_name: study-ai-document-db
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_DB: document_db
       POSTGRES_USER: postgres
@@ -47,6 +51,8 @@ services:
   indexing-db:
     image: pgvector/pgvector:pg15
     container_name: study-ai-indexing-db
+    ports:
+      - "5434:5432"
     environment:
       POSTGRES_DB: indexing_db
       POSTGRES_USER: postgres
@@ -60,6 +66,8 @@ services:
   quiz-db:
     image: postgres:15
     container_name: study-ai-quiz-db
+    ports:
+      - "5435:5432"
     environment:
       POSTGRES_DB: quiz_db
       POSTGRES_USER: postgres
@@ -190,6 +198,8 @@ services:
   leaf-quiz-db:
     image: postgres:15
     container_name: study-ai-leaf-quiz-db
+    ports:
+      - "5436:5432"
     environment:
       POSTGRES_DB: leaf_quiz_db
       POSTGRES_USER: postgres
@@ -236,17 +246,46 @@ services:
       dockerfile: Dockerfile
     container_name: study-ai-web
     ports:
-      - "3001:3001"
+      - "3001:3000"
     environment:
-      NODE_ENV: development
-      REACT_APP_API_URL: http://localhost:8000
-      REACT_APP_WS_URL: ws://localhost:8000/ws
-    depends_on:
-      - api-gateway
-      - auth-service
+      REACT_APP_API_URL: http://localhost
     volumes:
       - ./web:/app
       - /app/node_modules
+    networks:
+      - study-ai-network
+
+  # Notification Service Database
+  notification-db:
+    image: postgres:15
+    container_name: study-ai-notification-db
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+    networks:
+      - study-ai-network
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: study-ai-notification-service
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@notification-db:5432/notification_db
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - notification-db
+      - redis
+    volumes:
+      - ./services/notification-service:/app
     networks:
       - study-ai-network
 
@@ -258,6 +297,7 @@ volumes:
   leaf_quiz_postgres_data:
   leaf_quiz_cache:
   minio_data:
+  notification_postgres_data:
 
 networks:
   study-ai-network:
