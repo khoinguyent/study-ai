@@ -31,6 +31,11 @@ const useWebSocket = (userId: string | null) => {
     if (!userId) return;
 
     const connectWebSocket = () => {
+      // Close existing connection if any
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
+      }
+      
       // Use environment variable if available, otherwise fallback to localhost:8000
       const wsBaseUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
       const wsUrl = `${wsBaseUrl}/${userId}`;
@@ -103,7 +108,9 @@ const useWebSocket = (userId: string | null) => {
 
     return () => {
       if (wsRef.current) {
+        console.log('Cleaning up WebSocket connection');
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, [userId]);

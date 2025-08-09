@@ -702,13 +702,19 @@ async def upload_document(
         
         # Trigger upload task asynchronously
         from .tasks import upload_document_to_s3
-        task = upload_document_to_s3.delay(
-            str(document.id),
-            user_id,
-            file_content,
-            file.filename,
-            file.content_type
-        )
+        print(f"Queuing task for document {document.id}")
+        try:
+            task = upload_document_to_s3.delay(
+                str(document.id),
+                user_id,
+                file_content,
+                file.filename,
+                file.content_type
+            )
+            print(f"Task queued successfully: {task.id}")
+        except Exception as e:
+            print(f"Error queuing task: {e}")
+            raise
         
         return DocumentUploadResponse(
             id=document.id,
