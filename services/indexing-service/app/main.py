@@ -3,12 +3,81 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import httpx
+import uuid
 
 from .database import get_db, create_tables
 from .models import Base, DocumentChunk
 from .schemas import SearchRequest, SearchResponse, ChunkResponse, SubjectSearchRequest
 from .config import settings
 from .services.vector_service import VectorService
+
+# Notification service helper
+class NotificationService:
+    def __init__(self):
+        self.notification_service_url = settings.NOTIFICATION_SERVICE_URL or "http://notification-service:8005"
+    
+    async def create_task_status(self, task_id: str, user_id: str, task_type: str, status: str = "pending", message: str = None):
+        """Create a new task status in the notification service"""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{self.notification_service_url}/task-status",
+                    json={
+                        "task_id": task_id,
+                        "user_id": user_id,
+                        "task_type": task_type,
+                        "status": status,
+                        "progress": 0,
+                        "message": message,
+                        "metadata": {}
+                    }
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"Failed to create task status: {e}")
+                return False
+    
+    async def update_task_status(self, task_id: str, status: str = None, progress: int = None, message: str = None, metadata: dict = None):
+        """Update task status in the notification service"""
+        async with httpx.AsyncClient() as client:
+            try:
+                update_data = {}
+                if status:
+                    update_data["status"] = status
+                if progress is not None:
+                    update_data["progress"] = progress
+                if message:
+                    update_data["message"] = message
+                if metadata:
+                    update_data["metadata"] = metadata
+                
+                response = await client.put(
+                    f"{self.notification_service_url}/task-status/{task_id}",
+                    json=update_data
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"Failed to update task status: {e}")
+                return False
+    
+    async def send_notification(self, user_id: str, title: str, message: str, notification_type: str = "task_status", metadata: dict = None):
+        """Send a notification to the user"""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{self.notification_service_url}/notifications",
+                    json={
+                        "user_id": user_id,
+                        "title": title,
+                        "message": message,
+                        "notification_type": notification_type,
+                        "metadata": metadata or {}
+                    }
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"Failed to send notification: {e}")
+                return False
 
 app = FastAPI(
     title="Indexing Service",
@@ -32,15 +101,40 @@ async def startup_event():
 
 # Initialize services
 vector_service = VectorService()
+notification_service = NotificationService()
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "indexing-service"}
 
 @app.post("/index", response_model=dict)
-async def index_document(document_id: str, db: Session = Depends(get_db)):
+async def index_document(
+    document_id: str, 
+    user_id: str = Query(..., description="User ID for notifications"),
+    db: Session = Depends(get_db)
+):
     """Index a document by processing it into chunks and generating embeddings"""
+    # Generate task ID for tracking
+    task_id = f"index_{user_id}_{uuid.uuid4()}"
+    
     try:
+        # Create task status notification
+        await notification_service.create_task_status(
+            task_id=task_id,
+            user_id=user_id,
+            task_type="document_indexing",
+            status="indexing",
+            message=f"Starting indexing for document {document_id}..."
+        )
+        
+        # Update progress: Starting indexing
+        await notification_service.update_task_status(
+            task_id=task_id,
+            status="indexing",
+            progress=10,
+            message="Fetching document content..."
+        )
+        
         # For now, create mock document data since we can't access document service
         # In production, this would fetch from document service with proper authentication
         mock_document = {
@@ -51,11 +145,25 @@ async def index_document(document_id: str, db: Session = Depends(get_db)):
             "category_id": "f967c95a-db9d-4442-9957-f553e5dd5aa3"  # Tay Son Rebellion
         }
         
+        # Update progress: Processing document
+        await notification_service.update_task_status(
+            task_id=task_id,
+            progress=30,
+            message="Processing document into chunks..."
+        )
+        
         # Process document and create chunks
         chunks = await vector_service.process_document(document_id, mock_document)
         
+        # Update progress: Generating embeddings
+        await notification_service.update_task_status(
+            task_id=task_id,
+            progress=60,
+            message="Generating vector embeddings..."
+        )
+        
         # Store chunks in database with subject/category information
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             db_chunk = DocumentChunk(
                 document_id=document_id,
                 subject_id=mock_document["subject_id"],
@@ -65,18 +173,62 @@ async def index_document(document_id: str, db: Session = Depends(get_db)):
                 chunk_index=chunk["index"]
             )
             db.add(db_chunk)
+            
+            # Update progress during chunk storage
+            progress = 60 + (30 * (i + 1) / len(chunks))
+            await notification_service.update_task_status(
+                task_id=task_id,
+                progress=int(progress),
+                message=f"Storing chunk {i + 1} of {len(chunks)}..."
+            )
         
         db.commit()
+        
+        # Update status to completed
+        await notification_service.update_task_status(
+            task_id=task_id,
+            status="completed",
+            progress=100,
+            message="Document indexing completed successfully",
+            metadata={"chunks_created": len(chunks), "document_id": document_id}
+        )
+        
+        # Send success notification
+        await notification_service.send_notification(
+            user_id=user_id,
+            title="Document Indexed",
+            message=f"Document {document_id} has been indexed successfully with {len(chunks)} chunks",
+            notification_type="indexing_status",
+            metadata={"document_id": document_id, "chunks_created": len(chunks)}
+        )
         
         return {
             "message": "Document indexed successfully",
             "chunks_created": len(chunks),
             "document_id": document_id,
             "subject_id": mock_document["subject_id"],
-            "category_id": mock_document["category_id"]
+            "category_id": mock_document["category_id"],
+            "task_id": task_id
         }
         
     except Exception as e:
+        # Update task status to failed
+        await notification_service.update_task_status(
+            task_id=task_id,
+            status="failed",
+            progress=100,
+            message=f"Indexing failed: {str(e)}"
+        )
+        
+        # Send failure notification
+        await notification_service.send_notification(
+            user_id=user_id,
+            title="Indexing Failed",
+            message=f"Failed to index document {document_id}: {str(e)}",
+            notification_type="indexing_status",
+            metadata={"document_id": document_id, "error": str(e)}
+        )
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Indexing failed: {str(e)}"

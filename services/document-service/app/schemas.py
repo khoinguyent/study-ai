@@ -7,6 +7,8 @@ from enum import Enum
 class SubjectBase(BaseModel):
     name: str
     description: Optional[str] = None
+    icon: Optional[str] = 'microscope'
+    color_theme: Optional[str] = 'green'
 
 class SubjectCreate(SubjectBase):
     pass
@@ -17,6 +19,8 @@ class SubjectUpdate(SubjectBase):
 class SubjectResponse(SubjectBase):
     id: str
     user_id: str
+    document_count: int = 0
+    avg_score: float = 0.0
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -37,6 +41,8 @@ class CategoryUpdate(CategoryBase):
 class CategoryResponse(CategoryBase):
     id: str
     user_id: str
+    document_count: int = 0
+    avg_score: float = 0.0
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -83,4 +89,11 @@ class DocumentUploadResponse(BaseModel):
     id: str
     filename: str
     status: str
-    message: str 
+    message: str
+
+class PaginatedDocumentResponse(BaseModel):
+    documents: List[DocumentResponse]
+    total_count: int
+    page: int
+    page_size: int
+    has_more: bool 
