@@ -4,6 +4,14 @@ import { useNotification } from './NotificationManager';
 const NotificationModalTest: React.FC = () => {
   const { showNotification } = useNotification();
 
+  const showExactImageNotification = () => {
+    showNotification({
+      title: 'Document Indexed',
+      message: 'Document 04174666-ccf1-4ef9-9c8b-3b3a9aa9d93d has been indexed successfully with 1 chunks',
+      status: 'indexing',
+    });
+  };
+
   const showUploadFailedNotification = () => {
     showNotification({
       title: 'Upload Failed',
@@ -34,13 +42,22 @@ const NotificationModalTest: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Notification Modal Test</h1>
         
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Modal-Style Notifications</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Exact Image Design</h2>
           <p className="text-gray-600 mb-6">
-            These notifications match the design from the image - rectangular popups with colored backgrounds, 
-            icons with background circles, status tags, and timestamps.
+            This button will show the exact notification from the new image - "Document Indexed" with solid dark background and white text.
           </p>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              onClick={showExactImageNotification}
+              className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors duration-200"
+            >
+              <div className="text-center">
+                <div className="text-lg font-semibold text-indigo-600 mb-2">Exact Image Notification</div>
+                <div className="text-sm text-indigo-500">Shows the exact "Document Indexed" notification from the new image</div>
+              </div>
+            </button>
+            
             <button
               onClick={showUploadFailedNotification}
               className="p-4 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 transition-colors duration-200"
@@ -74,16 +91,16 @@ const NotificationModalTest: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Design Features</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">New Design Features</h2>
           <ul className="space-y-2 text-gray-700">
-            <li>✅ <strong>Modal-style popup</strong> - Rectangular design with rounded corners</li>
-            <li>✅ <strong>Colored backgrounds</strong> - Different colors for each status type</li>
-            <li>✅ <strong>Icon with background circle</strong> - Icons are placed in colored circles</li>
-            <li>✅ <strong>Status tags</strong> - Small colored badges showing the status</li>
-            <li>✅ <strong>Timestamps</strong> - Shows when the notification was created</li>
-            <li>✅ <strong>Close button</strong> - X button in the top right corner</li>
-            <li>✅ <strong>Positioned in top right</strong> - Matches the image layout</li>
-            <li>✅ <strong>Smooth animations</strong> - Slide-in from right with hover effects</li>
+            <li>✅ <strong>Solid Dark Background</strong> - Dark colored backgrounds (red, green, blue, etc.)</li>
+            <li>✅ <strong>White Text</strong> - All text is white for contrast</li>
+            <li>✅ <strong>White Lightning Bolt Icon</strong> - For indexing notifications</li>
+            <li>✅ <strong>No Status Tag</strong> - Removed status badges like in the image</li>
+            <li>✅ <strong>Timestamp with Seconds</strong> - Shows "12:16:36 PM" format</li>
+            <li>✅ <strong>White Close Button</strong> - X button in white</li>
+            <li>✅ <strong>Exact Message</strong> - "Document Indexed" with specific document ID</li>
+            <li>✅ <strong>Top Right Positioning</strong> - Matches the image layout exactly</li>
           </ul>
         </div>
       </div>

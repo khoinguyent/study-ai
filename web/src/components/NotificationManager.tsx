@@ -73,7 +73,7 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ children }) =
       {children}
       
       {/* Notification Container */}
-      <div className="fixed top-4 right-4 z-50 space-y-3 max-w-md">
+      <div className="notification-modal-container space-y-3">
         {notifications.map((notification) => (
           <NotificationModal
             key={notification.id}

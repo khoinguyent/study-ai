@@ -24,6 +24,16 @@ code {
   }
 }
 
+/* Modal-style notification positioning */
+.notification-modal-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
+  max-width: 400px;
+  min-width: 320px;
+}
+
 @keyframes slideOutRight {
   from {
     transform: translateX(0);

@@ -33,82 +33,82 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
     }
   }, [autoClose, autoCloseDelay, onClose, status]);
 
-  // Get status-specific styling based on the image design
+  // Get status-specific styling based on the exact image design
   const getStatusStyles = () => {
     switch (status) {
       case 'error':
       case 'failed':
         return {
-          background: 'bg-red-50',
-          border: 'border-red-200',
-          icon: <AlertCircle className="w-5 h-5 text-red-600" />,
-          statusColor: 'bg-red-100 border-red-300 text-red-700',
-          titleColor: 'text-red-900',
-          iconBackground: 'bg-red-500'
+          background: 'bg-red-600',
+          iconBackground: 'bg-red-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <AlertCircle className="w-4 h-4" />
         };
       case 'success':
       case 'completed':
         return {
-          background: 'bg-green-50',
-          border: 'border-green-200',
-          icon: <CheckCircle className="w-5 h-5 text-green-600" />,
-          statusColor: 'bg-green-100 border-green-300 text-green-700',
-          titleColor: 'text-green-900',
-          iconBackground: 'bg-green-500'
+          background: 'bg-green-600',
+          iconBackground: 'bg-green-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <CheckCircle className="w-4 h-4" />
         };
       case 'warning':
         return {
-          background: 'bg-yellow-50',
-          border: 'border-yellow-200',
-          icon: <AlertCircle className="w-5 h-5 text-yellow-600" />,
-          statusColor: 'bg-yellow-100 border-yellow-300 text-yellow-700',
-          titleColor: 'text-yellow-900',
-          iconBackground: 'bg-yellow-500'
+          background: 'bg-yellow-600',
+          iconBackground: 'bg-yellow-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <AlertCircle className="w-4 h-4" />
         };
       case 'info':
         return {
-          background: 'bg-blue-50',
-          border: 'border-blue-200',
-          icon: <Info className="w-5 h-5 text-blue-600" />,
-          statusColor: 'bg-blue-100 border-blue-300 text-blue-700',
-          titleColor: 'text-blue-900',
-          iconBackground: 'bg-blue-500'
+          background: 'bg-blue-600',
+          iconBackground: 'bg-blue-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <Info className="w-4 h-4" />
         };
       case 'uploading':
         return {
-          background: 'bg-blue-50',
-          border: 'border-blue-200',
-          icon: <Upload className="w-5 h-5 text-blue-600" />,
-          statusColor: 'bg-blue-100 border-blue-300 text-blue-700',
-          titleColor: 'text-blue-900',
-          iconBackground: 'bg-blue-500'
+          background: 'bg-blue-600',
+          iconBackground: 'bg-blue-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <Upload className="w-4 h-4" />
         };
       case 'processing':
         return {
-          background: 'bg-purple-50',
-          border: 'border-purple-200',
-          icon: <FileText className="w-5 h-5 text-purple-600" />,
-          statusColor: 'bg-purple-100 border-purple-300 text-purple-700',
-          titleColor: 'text-purple-900',
-          iconBackground: 'bg-purple-500'
+          background: 'bg-purple-600',
+          iconBackground: 'bg-purple-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <FileText className="w-4 h-4" />
         };
       case 'indexing':
         return {
-          background: 'bg-indigo-50',
-          border: 'border-indigo-200',
-          icon: <Zap className="w-5 h-5 text-indigo-600" />,
-          statusColor: 'bg-indigo-100 border-indigo-300 text-indigo-700',
-          titleColor: 'text-indigo-900',
-          iconBackground: 'bg-indigo-500'
+          background: 'bg-indigo-600',
+          iconBackground: 'bg-indigo-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <Zap className="w-4 h-4" />
         };
       default:
         return {
-          background: 'bg-gray-50',
-          border: 'border-gray-200',
-          icon: <Clock className="w-5 h-5 text-gray-600" />,
-          statusColor: 'bg-gray-100 border-gray-300 text-gray-700',
-          titleColor: 'text-gray-900',
-          iconBackground: 'bg-gray-500'
+          background: 'bg-gray-600',
+          iconBackground: 'bg-gray-600',
+          iconColor: 'text-white',
+          titleColor: 'text-white',
+          messageColor: 'text-white',
+          icon: <Clock className="w-4 h-4" />
         };
     }
   };
@@ -117,32 +117,20 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
 
   return (
     <div
-      className={`${styles.background} ${styles.border} rounded-lg shadow-lg p-4 max-w-md transition-all duration-300 ease-in-out transform hover:scale-105`}
-      style={{ animation: 'slideInRight 0.3s ease-out' }}
+      className={`${styles.background} rounded-lg shadow-lg p-4 max-w-sm transition-all duration-300 ease-in-out`}
+      style={{ 
+        animation: 'slideInRight 0.3s ease-out',
+        minWidth: '320px',
+        maxWidth: '400px'
+      }}
     >
-      {/* Header with Icon and Close Button */}
+      {/* Header with Icon and Close Button - Exact layout from image */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center space-x-3">
-          {/* Icon with background circle - matching the image design */}
-          <div className={`${styles.iconBackground} rounded-full p-1`}>
-            <div className="text-white">
-              {status === 'error' || status === 'failed' ? (
-                <AlertCircle className="w-4 h-4" />
-              ) : status === 'success' || status === 'completed' ? (
-                <CheckCircle className="w-4 h-4" />
-              ) : status === 'warning' ? (
-                <AlertCircle className="w-4 h-4" />
-              ) : status === 'info' ? (
-                <Info className="w-4 h-4" />
-              ) : status === 'uploading' ? (
-                <Upload className="w-4 h-4" />
-              ) : status === 'processing' ? (
-                <FileText className="w-4 h-4" />
-              ) : status === 'indexing' ? (
-                <Zap className="w-4 h-4" />
-              ) : (
-                <Clock className="w-4 h-4" />
-              )}
+          {/* Icon with background circle - exactly like the image */}
+          <div className={`${styles.iconBackground} rounded-full p-1.5 flex items-center justify-center`}>
+            <div className={styles.iconColor}>
+              {styles.icon}
             </div>
           </div>
           <h3 className={`text-sm font-semibold ${styles.titleColor}`}>
@@ -151,43 +139,24 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+          className="text-white hover:text-gray-200 transition-colors duration-200"
           aria-label="Close notification"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Message */}
-      <p className="text-sm text-gray-700 mb-3 leading-relaxed">
+      {/* Message - Exact styling from image */}
+      <p className={`text-sm ${styles.messageColor} mb-3 leading-relaxed`}>
         {message}
       </p>
 
-      {/* Footer with Status Tag and Timestamp */}
-      <div className="flex items-center justify-between">
-        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${styles.statusColor}`}>
-          {status.charAt(0).toUpperCase() + status.slice(1)}
-        </span>
-        <span className="text-xs text-gray-500">
-          {timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      {/* Footer with Timestamp only - No status tag like in the image */}
+      <div className="flex items-center justify-end">
+        <span className="text-xs text-white opacity-75">
+          {timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
         </span>
       </div>
-
-      {/* Progress bar for ongoing processes */}
-      {(status === 'uploading' || status === 'processing' || status === 'indexing') && (
-        <div className="mt-3">
-          <div className="w-full bg-gray-200 rounded-full h-1">
-            <div
-              className={`h-1 rounded-full transition-all duration-500 ${
-                status === 'uploading' ? 'bg-blue-500' :
-                status === 'processing' ? 'bg-purple-500' :
-                'bg-indigo-500'
-              }`}
-              style={{ width: '60%' }} // You can make this dynamic based on actual progress
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };
