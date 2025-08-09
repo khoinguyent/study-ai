@@ -42,46 +42,19 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     
-    # Dead Letter Queue settings
+    # Simple queue configuration (temporarily disable DLQ for testing)
     task_queues={
         'document_queue': {
             'exchange': 'document_queue',
             'routing_key': 'document_queue',
-            'queue_arguments': {
-                'x-dead-letter-exchange': 'dlq_exchange',
-                'x-dead-letter-routing-key': 'dlq_document',
-                'x-message-ttl': 300000,  # 5 minutes TTL
-            }
         },
         'indexing_queue': {
             'exchange': 'indexing_queue',
             'routing_key': 'indexing_queue',
-            'queue_arguments': {
-                'x-dead-letter-exchange': 'dlq_exchange',
-                'x-dead-letter-routing-key': 'dlq_indexing',
-                'x-message-ttl': 300000,  # 5 minutes TTL
-            }
         },
         'quiz_queue': {
             'exchange': 'quiz_queue',
             'routing_key': 'quiz_queue',
-            'queue_arguments': {
-                'x-dead-letter-exchange': 'dlq_exchange',
-                'x-dead-letter-routing-key': 'dlq_quiz',
-                'x-message-ttl': 300000,  # 5 minutes TTL
-            }
-        },
-        'dlq_document': {
-            'exchange': 'dlq_exchange',
-            'routing_key': 'dlq_document',
-        },
-        'dlq_indexing': {
-            'exchange': 'dlq_exchange',
-            'routing_key': 'dlq_indexing',
-        },
-        'dlq_quiz': {
-            'exchange': 'dlq_exchange',
-            'routing_key': 'dlq_quiz',
         },
     },
     
