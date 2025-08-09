@@ -6,17 +6,17 @@ const NotificationModalTest: React.FC = () => {
 
   const showExactImageNotification = () => {
     showNotification({
-      title: 'Document Indexed',
-      message: 'Document 04174666-ccf1-4ef9-9c8b-3b3a9aa9d93d has been indexed successfully with 1 chunks',
-      status: 'indexing',
-    });
-  };
-
-  const showUploadFailedNotification = () => {
-    showNotification({
       title: 'Upload Failed',
       message: 'Failed to upload "GT học phần Lịch sử Đảng cộng sản VN (C) Tr63-Tr140.pdf": Network error occurred',
       status: 'error',
+    });
+  };
+
+  const showDocumentIndexedNotification = () => {
+    showNotification({
+      title: 'Document Indexed',
+      message: 'Document 04174666-ccf1-4ef9-9c8b-3b3a9aa9d93d has been indexed successfully with 1 chunks',
+      status: 'indexing',
     });
   };
 
@@ -44,27 +44,27 @@ const NotificationModalTest: React.FC = () => {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Exact Image Design</h2>
           <p className="text-gray-600 mb-6">
-            This button will show the exact notification from the new image - "Document Indexed" with solid dark background and white text.
+            This button will show the exact notification from the image - "Upload Failed" with light red background, white icon with red exclamation mark, and status tag.
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button
               onClick={showExactImageNotification}
-              className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors duration-200"
+              className="p-4 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 transition-colors duration-200"
             >
               <div className="text-center">
-                <div className="text-lg font-semibold text-indigo-600 mb-2">Exact Image Notification</div>
-                <div className="text-sm text-indigo-500">Shows the exact "Document Indexed" notification from the new image</div>
+                <div className="text-lg font-semibold text-red-600 mb-2">Exact Image Notification</div>
+                <div className="text-sm text-red-500">Shows the exact "Upload Failed" notification from the image</div>
               </div>
             </button>
             
             <button
-              onClick={showUploadFailedNotification}
-              className="p-4 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 transition-colors duration-200"
+              onClick={showDocumentIndexedNotification}
+              className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors duration-200"
             >
               <div className="text-center">
-                <div className="text-lg font-semibold text-red-600 mb-2">Upload Failed</div>
-                <div className="text-sm text-red-500">Test the error notification</div>
+                <div className="text-lg font-semibold text-indigo-600 mb-2">Document Indexed</div>
+                <div className="text-sm text-indigo-500">Test the indexing notification</div>
               </div>
             </button>
             
@@ -91,15 +91,15 @@ const NotificationModalTest: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">New Design Features</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Image Design Features</h2>
           <ul className="space-y-2 text-gray-700">
-            <li>✅ <strong>Solid Dark Background</strong> - Dark colored backgrounds (red, green, blue, etc.)</li>
-            <li>✅ <strong>White Text</strong> - All text is white for contrast</li>
-            <li>✅ <strong>White Lightning Bolt Icon</strong> - For indexing notifications</li>
-            <li>✅ <strong>No Status Tag</strong> - Removed status badges like in the image</li>
-            <li>✅ <strong>Timestamp with Seconds</strong> - Shows "12:16:36 PM" format</li>
-            <li>✅ <strong>White Close Button</strong> - X button in white</li>
-            <li>✅ <strong>Exact Message</strong> - "Document Indexed" with specific document ID</li>
+            <li>✅ <strong>Light Colored Background</strong> - Light red, green, blue backgrounds (not solid dark)</li>
+            <li>✅ <strong>White Circular Icon</strong> - Icons in white circles with colored symbols</li>
+            <li>✅ <strong>Dark Text</strong> - All text is dark grey/black for readability</li>
+            <li>✅ <strong>Status Tags</strong> - Colored badges with white text (e.g., "Failed")</li>
+            <li>✅ <strong>Timestamp</strong> - Shows time in bottom right corner</li>
+            <li>✅ <strong>Close Button</strong> - X button in top right corner</li>
+            <li>✅ <strong>Exact Message</strong> - "Upload Failed" with specific error message</li>
             <li>✅ <strong>Top Right Positioning</strong> - Matches the image layout exactly</li>
           </ul>
         </div>
