@@ -78,7 +78,7 @@ class DocumentProcessor:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    f"{self.indexing_url}/index?document_id={document_id}"
+                    f"{self.indexing_url}/index?document_id={document_id}&user_id={user_id}"
                 )
                 if response.status_code != 200:
                     raise Exception(f"Indexing service error: {response.text}")

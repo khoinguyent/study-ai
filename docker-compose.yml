@@ -30,6 +30,11 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - study-ai-network
 
@@ -45,6 +50,11 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - document_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - study-ai-network
 
@@ -60,6 +70,11 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - indexing_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - study-ai-network
 
@@ -75,6 +90,11 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - quiz_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - study-ai-network
 
@@ -90,6 +110,11 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - notification_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - study-ai-network
 
@@ -99,6 +124,11 @@ services:
     container_name: study-ai-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - study-ai-network
 
@@ -115,6 +145,11 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - study-ai-network
 
@@ -142,8 +177,10 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET_KEY: your-secret-key-change-in-production
     depends_on:
-      - auth-db
-      - redis
+      auth-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./services/auth-service:/app
     networks:
@@ -170,10 +207,14 @@ services:
       INDEXING_SERVICE_URL: http://indexing-service:8003
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
     depends_on:
-      - document-db
-      - redis
-      - minio
-      - auth-service
+      document-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
     volumes:
       - ./services/document-service:/app
     networks:
@@ -193,9 +234,12 @@ services:
       DOCUMENT_SERVICE_URL: http://document-service:8002
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
     depends_on:
-      - indexing-db
-      - redis
-      - document-service
+      indexing-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      document-service:
+        condition: service_started
     volumes:
       - ./services/indexing-service:/app
     networks:
@@ -219,11 +263,16 @@ services:
       INDEXING_SERVICE_URL: http://indexing-service:8003
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
     depends_on:
-      - quiz-db
-      - redis
-      - ollama
-      - auth-service
-      - indexing-service
+      quiz-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      indexing-service:
+        condition: service_started
     volumes:
       - ./services/quiz-service:/app
     networks:
@@ -242,9 +291,12 @@ services:
       REDIS_URL: redis://redis:6379
       AUTH_SERVICE_URL: http://auth-service:8001
     depends_on:
-      - notification-db
-      - redis
-      - auth-service
+      notification-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
     volumes:
       - ./services/notification-service:/app
       - ./services/shared:/app/shared
@@ -293,10 +345,14 @@ services:
       INDEXING_SERVICE_URL: http://indexing-service:8003
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
     depends_on:
-      - document-db
-      - redis
-      - minio
-      - auth-service
+      document-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
     volumes:
       - ./services/document-service:/app
       - ./services/shared:/app/shared
@@ -321,9 +377,12 @@ services:
       # HuggingFace Configuration (for embedding model)
       HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
     depends_on:
-      - indexing-db
-      - redis
-      - document-service
+      indexing-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      document-service:
+        condition: service_started
     volumes:
       - ./services/indexing-service:/app
       - ./services/shared:/app/shared
@@ -353,11 +412,16 @@ services:
       INDEXING_SERVICE_URL: http://indexing-service:8003
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
     depends_on:
-      - quiz-db
-      - redis
-      - ollama
-      - auth-service
-      - indexing-service
+      quiz-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      indexing-service:
+        condition: service_started
     volumes:
       - ./services/quiz-service:/app
       - ./services/shared:/app/shared
@@ -374,7 +438,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - ./services/shared:/app/shared
     networks:
@@ -392,7 +457,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - ./services/shared:/app/shared
     networks:
