@@ -407,6 +407,40 @@ services:
     networks:
       - study-ai-network
 
+  # Dead Letter Queue Monitor Service
+  dlq-monitor:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-dlq-monitor
+    command: python /app/shared/dlq_monitor_service.py
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
+  # Dead Letter Queue Management API
+  dlq-api:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-dlq-api
+    command: python /app/shared/dlq_api.py
+    ports:
+      - "8006:8006"
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
 volumes:
   auth_postgres_data:
   document_postgres_data:

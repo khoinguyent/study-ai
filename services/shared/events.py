@@ -31,6 +31,10 @@ class EventType(str, Enum):
     # System Events
     TASK_STATUS_UPDATE = "task.status.update"
     USER_NOTIFICATION = "user.notification"
+    
+    # Dead Letter Queue Events
+    DLQ_MESSAGE = "dlq.message"
+    DLQ_PROCESSED = "dlq.processed"
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -155,6 +159,25 @@ class UserNotificationEvent(BaseEvent):
     message: str
     priority: str = "normal"  # low, normal, high, urgent
 
+class DLQMessageEvent(BaseEvent):
+    """Event published when a message is moved to dead letter queue"""
+    event_type: EventType = EventType.DLQ_MESSAGE
+    task_id: str
+    task_name: str
+    error_message: str
+    original_queue: str
+    retry_count: int = 0
+    original_args: Optional[Dict[str, Any]] = None
+    original_kwargs: Optional[Dict[str, Any]] = None
+
+class DLQProcessedEvent(BaseEvent):
+    """Event published when a DLQ message is processed"""
+    event_type: EventType = EventType.DLQ_PROCESSED
+    task_id: str
+    task_name: str
+    processing_result: str  # "retried", "discarded", "manual_review"
+    processing_notes: Optional[str] = None
+
 # Event factory function
 def create_event(event_type: EventType, **kwargs) -> BaseEvent:
     """Factory function to create events based on type"""
@@ -173,6 +196,8 @@ def create_event(event_type: EventType, **kwargs) -> BaseEvent:
         EventType.QUIZ_GENERATION_FAILED: QuizGenerationFailedEvent,
         EventType.TASK_STATUS_UPDATE: TaskStatusUpdateEvent,
         EventType.USER_NOTIFICATION: UserNotificationEvent,
+        EventType.DLQ_MESSAGE: DLQMessageEvent,
+        EventType.DLQ_PROCESSED: DLQProcessedEvent,
     }
     
     event_class = event_classes.get(event_type)

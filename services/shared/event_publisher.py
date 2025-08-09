@@ -224,4 +224,37 @@ class EventPublisher:
             message=message,
             priority=priority
         )
+        return self.publish_event(event)
+    
+    def publish_dlq_event(self, task_id: str, task_name: str, error_message: str,
+                         original_queue: str, retry_count: int = 0,
+                         original_args: Dict[str, Any] = None, original_kwargs: Dict[str, Any] = None,
+                         service_name: str = "system") -> bool:
+        """Publish dead letter queue event"""
+        event = create_event(
+            EventType.DLQ_MESSAGE,
+            user_id="system",
+            service_name=service_name,
+            task_id=task_id,
+            task_name=task_name,
+            error_message=error_message,
+            original_queue=original_queue,
+            retry_count=retry_count,
+            original_args=original_args,
+            original_kwargs=original_kwargs
+        )
+        return self.publish_event(event)
+    
+    def publish_dlq_processed(self, task_id: str, task_name: str, processing_result: str,
+                            processing_notes: str = None, service_name: str = "system") -> bool:
+        """Publish DLQ processed event"""
+        event = create_event(
+            EventType.DLQ_PROCESSED,
+            user_id="system",
+            service_name=service_name,
+            task_id=task_id,
+            task_name=task_name,
+            processing_result=processing_result,
+            processing_notes=processing_notes
+        )
         return self.publish_event(event) 
