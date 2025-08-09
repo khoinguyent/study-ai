@@ -6,10 +6,10 @@ Handles document processing tasks using Celery and event-driven architecture
 import asyncio
 import time
 from celery import current_task
-from ..models import Document
-from ..database import get_db
-from ..services.storage_service import StorageService
-from ..services.document_processor import DocumentProcessor
+from app.models import Document
+from app.database import get_db
+from app.services.storage_service import StorageService
+from app.services.document_processor import DocumentProcessor
 from shared.celery_app import celery_app, EventDrivenTask, document_task
 from shared.event_publisher import EventPublisher
 from shared.events import EventType, create_event

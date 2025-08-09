@@ -316,6 +316,97 @@ services:
     networks:
       - study-ai-network
 
+  # Celery Workers for Background Tasks
+  document-worker:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-document-worker
+    command: celery -A app.celery_app worker --loglevel=info --queues=document_queue
+    environment:
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_db
+      REDIS_URL: redis://redis:6379
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: study-ai-documents
+      MINIO_SECURE: false
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      - document-db
+      - redis
+      - minio
+      - auth-service
+    volumes:
+      - ./services/document-service:/app
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
+  indexing-worker:
+    build:
+      context: ./services/indexing-service
+      dockerfile: Dockerfile
+    container_name: study-ai-indexing-worker
+    command: celery -A app.celery_app worker --loglevel=info --queues=indexing_queue
+    environment:
+      DATABASE_URL: postgresql://postgres:password@indexing-db:5432/indexing_db
+      REDIS_URL: redis://redis:6379
+      DOCUMENT_SERVICE_URL: http://document-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+      # Vector model settings
+      EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      CHUNK_SIZE: 1000
+      CHUNK_OVERLAP: 200
+      # HuggingFace Configuration (for embedding model)
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+    depends_on:
+      - indexing-db
+      - redis
+      - document-service
+    volumes:
+      - ./services/indexing-service:/app
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
+  quiz-worker:
+    build:
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-quiz-worker
+    command: celery -A app.celery_app worker --loglevel=info --queues=quiz_queue
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      REDIS_URL: redis://redis:6379
+      # Quiz Generation Strategy
+      QUIZ_GENERATION_STRATEGY: auto  # Options: "ollama", "huggingface", "auto"
+      # Ollama configuration
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama2:7b-chat
+      # HuggingFace configuration
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+      HUGGINGFACE_API_URL: https://api-inference.huggingface.co/models
+      QUESTION_GENERATION_MODEL: google/flan-t5-base
+      DISTRACTOR_GENERATION_MODEL: google/flan-t5-base
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      - quiz-db
+      - redis
+      - ollama
+      - auth-service
+      - indexing-service
+    volumes:
+      - ./services/quiz-service:/app
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
 volumes:
   auth_postgres_data:
   document_postgres_data:

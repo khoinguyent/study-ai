@@ -18,9 +18,7 @@ celery_app = Celery(
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
     include=[
-        'services.document_service.tasks',
-        'services.indexing_service.tasks',
-        'services.quiz_service.tasks'
+        'app.tasks'
     ]
 )
 
@@ -41,9 +39,7 @@ celery_app.conf.update(
 
 # Task routing
 celery_app.conf.task_routes = {
-    'services.document_service.tasks.*': {'queue': 'document_queue'},
-    'services.indexing_service.tasks.*': {'queue': 'indexing_queue'},
-    'services.quiz_service.tasks.*': {'queue': 'quiz_queue'},
+    'app.tasks.*': {'queue': 'document_queue'},
 }
 
 # Event publisher for tasks

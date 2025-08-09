@@ -6,9 +6,9 @@ Handles document indexing tasks using Celery and event-driven architecture
 import asyncio
 import time
 from celery import current_task
-from ..models import Document
-from ..database import get_db
-from ..services.vector_service import VectorService
+from app.models import Document
+from app.database import get_db
+from app.services.vector_service import VectorService
 from shared.celery_app import celery_app, EventDrivenTask, indexing_task
 from shared.event_publisher import EventPublisher
 from shared.events import EventType, create_event
@@ -56,7 +56,7 @@ def index_document(document_id: str, user_id: str):
             # Process chunks in batches
             for batch in range(0, total_chunks, 2):
                 # Simulate chunk processing
-                await asyncio.sleep(1)
+                time.sleep(1)
                 processed_chunks += 2
                 progress = min((processed_chunks / total_chunks) * 100, 100)
                 
