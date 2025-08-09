@@ -1,0 +1,412 @@
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+/* Modal Content */
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Modal Header */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 24px 0 24px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 16px;
+}
+
+.modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  padding: 8px;
+  border-radius: 8px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover:not(:disabled) {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.close-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Modal Description */
+.modal-description {
+  padding: 0 24px 20px 24px;
+  margin: 0;
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+/* Modal Form */
+.modal-form {
+  padding: 0 24px 24px 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+/* Form Inputs */
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  background: white;
+  font-family: inherit;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-input.error,
+.form-textarea.error {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+  color: #9ca3af;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Error Messages */
+.error-message {
+  color: #ef4444;
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
+}
+
+/* Character Count */
+.char-count {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+  text-align: right;
+}
+
+/* Dropdown Container */
+.dropdown-container {
+  position: relative;
+}
+
+.dropdown-button {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+}
+
+.dropdown-button:hover {
+  border-color: #9ca3af;
+}
+
+.dropdown-button:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.selected-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.option-icon {
+  font-size: 18px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.option-label {
+  font-size: 16px;
+  color: #1f2937;
+}
+
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid #e5e7eb;
+}
+
+.chevron {
+  color: #6b7280;
+  transition: transform 0.2s ease;
+}
+
+.chevron.rotated {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Menu */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.dropdown-item {
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  transition: background-color 0.2s ease;
+  font-size: 16px;
+}
+
+.dropdown-item:hover {
+  background-color: #f9fafb;
+}
+
+.dropdown-item:first-child {
+  border-radius: 8px 8px 0 0;
+}
+
+.dropdown-item:last-child {
+  border-radius: 0 0 8px 8px;
+}
+
+.dropdown-item .selected-option {
+  flex: 1;
+}
+
+.checkmark {
+  color: #10b981;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.cancel-button {
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.create-button {
+  background: #6b7280;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-button:hover:not(:disabled) {
+  background: #4b5563;
+  transform: translateY(-1px);
+}
+
+.create-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95%;
+    max-width: none;
+    margin: 20px;
+  }
+
+  .modal-header {
+    padding: 20px 20px 0 20px;
+  }
+
+  .modal-description {
+    padding: 0 20px 16px 20px;
+  }
+
+  .modal-form {
+    padding: 0 20px 20px 20px;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .cancel-button,
+  .create-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dropdown-menu {
+    max-height: 150px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-header h2 {
+    font-size: 18px;
+  }
+
+  .form-input,
+  .form-textarea,
+  .dropdown-button {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  .selected-option {
+    gap: 8px;
+  }
+
+  .option-icon {
+    font-size: 16px;
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* Focus states for accessibility */
+.close-button:focus-visible,
+.form-input:focus-visible,
+.form-textarea:focus-visible,
+.dropdown-button:focus-visible,
+.cancel-button:focus-visible,
+.create-button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Scrollbar styling for dropdown */
+.dropdown-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdown-menu::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+} 

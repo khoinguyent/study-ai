@@ -14,7 +14,6 @@ services:
       - document-service
       - indexing-service
       - quiz-service
-      - leaf-quiz-service
       - notification-service
     networks:
       - study-ai-network
@@ -23,6 +22,8 @@ services:
   auth-db:
     image: postgres:15
     container_name: study-ai-auth-db
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: auth_db
       POSTGRES_USER: postgres
@@ -36,6 +37,8 @@ services:
   document-db:
     image: postgres:15
     container_name: study-ai-document-db
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_DB: document_db
       POSTGRES_USER: postgres
@@ -49,6 +52,8 @@ services:
   indexing-db:
     image: pgvector/pgvector:pg15
     container_name: study-ai-indexing-db
+    ports:
+      - "5434:5432"
     environment:
       POSTGRES_DB: indexing_db
       POSTGRES_USER: postgres
@@ -62,6 +67,8 @@ services:
   quiz-db:
     image: postgres:15
     container_name: study-ai-quiz-db
+    ports:
+      - "5435:5432"
     environment:
       POSTGRES_DB: quiz_db
       POSTGRES_USER: postgres
@@ -75,25 +82,14 @@ services:
   notification-db:
     image: postgres:15
     container_name: study-ai-notification-db
+    ports:
+      - "5437:5432"
     environment:
       POSTGRES_DB: notification_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     volumes:
       - notification_postgres_data:/var/lib/postgresql/data
-    networks:
-      - study-ai-network
-
-  # Leaf Quiz Service Database
-  leaf-quiz-db:
-    image: postgres:15
-    container_name: study-ai-leaf-quiz-db
-    environment:
-      POSTGRES_DB: leaf_quiz_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-    volumes:
-      - leaf_quiz_postgres_data:/var/lib/postgresql/data
     networks:
       - study-ai-network
 
@@ -218,7 +214,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Ollama configuration
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llama2:7b
+      OLLAMA_MODEL: llama2
       AUTH_SERVICE_URL: http://auth-service:8001
       INDEXING_SERVICE_URL: http://indexing-service:8003
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
@@ -236,8 +232,8 @@ services:
   # Notification Service
   notification-service:
     build:
-      context: ./services/notification-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/notification-service/Dockerfile
     container_name: study-ai-notification-service
     ports:
       - "8005:8005"
@@ -252,6 +248,21 @@ services:
     volumes:
       - ./services/notification-service:/app
       - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
+  # Leaf Quiz Service Database
+  leaf-quiz-db:
+    image: postgres:15
+    container_name: study-ai-leaf-quiz-db
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_DB: leaf_quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - leaf_quiz_postgres_data:/var/lib/postgresql/data
     networks:
       - study-ai-network
 
@@ -292,7 +303,7 @@ services:
       dockerfile: Dockerfile
     container_name: study-ai-web
     ports:
-      - "3001:3001"
+      - "3001:3000"
     environment:
       NODE_ENV: development
       REACT_APP_API_URL: http://localhost:8000
@@ -310,10 +321,10 @@ volumes:
   document_postgres_data:
   indexing_postgres_data:
   quiz_postgres_data:
-  notification_postgres_data:
   leaf_quiz_postgres_data:
   leaf_quiz_cache:
   minio_data:
+  notification_postgres_data:
   ollama_data:
 
 networks:

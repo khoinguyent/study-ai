@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     
     # Services
     DOCUMENT_SERVICE_URL: str = "http://document-service:8002"
+    NOTIFICATION_SERVICE_URL: str = "http://notification-service:8005"
     
     # Vector model settings
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
