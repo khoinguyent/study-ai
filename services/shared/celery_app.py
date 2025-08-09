@@ -16,10 +16,7 @@ CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 celery_app = Celery(
     'study_ai',
     broker=CELERY_BROKER_URL,
-    backend=CELERY_RESULT_BACKEND,
-    include=[
-        'app.tasks'
-    ]
+    backend=CELERY_RESULT_BACKEND
 )
 
 # Celery configuration
@@ -40,6 +37,8 @@ celery_app.conf.update(
 # Task routing
 celery_app.conf.task_routes = {
     'app.tasks.*': {'queue': 'document_queue'},
+    'app.indexing_tasks.*': {'queue': 'indexing_queue'},
+    'app.quiz_tasks.*': {'queue': 'quiz_queue'},
 }
 
 # Event publisher for tasks
@@ -99,21 +98,12 @@ class EventDrivenTask:
 # Task decorators
 def document_task(func):
     """Decorator for document processing tasks"""
-    @celery_app.task(bind=True, queue='document_queue')
-    def wrapper(self, *args, **kwargs):
-        return func(self, *args, **kwargs)
-    return wrapper
+    return celery_app.task(bind=True, queue='document_queue')(func)
 
 def indexing_task(func):
     """Decorator for indexing tasks"""
-    @celery_app.task(bind=True, queue='indexing_queue')
-    def wrapper(self, *args, **kwargs):
-        return func(self, *args, **kwargs)
-    return wrapper
+    return celery_app.task(bind=True, queue='indexing_queue')(func)
 
 def quiz_task(func):
     """Decorator for quiz generation tasks"""
-    @celery_app.task(bind=True, queue='quiz_queue')
-    def wrapper(self, *args, **kwargs):
-        return func(self, *args, **kwargs)
-    return wrapper 
+    return celery_app.task(bind=True, queue='quiz_queue')(func) 
