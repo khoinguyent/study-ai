@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
     
+    # HuggingFace Configuration (for embedding model)
+    HUGGINGFACE_TOKEN: str = ""
+    
     # Service
     SERVICE_NAME: str = "indexing-service"
     SERVICE_PORT: int = 8003
