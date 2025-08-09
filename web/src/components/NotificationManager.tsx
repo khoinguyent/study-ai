@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import NotificationPopup, { NotificationPopupProps } from './NotificationPopup';
+import NotificationModal, { NotificationModalProps } from './NotificationModal';
 
 export interface NotificationData {
   id: string;
   title: string;
   message: string;
-  status: NotificationPopupProps['status'];
+  status: NotificationModalProps['status'];
   timestamp: Date;
   autoClose?: boolean;
   autoCloseDelay?: number;
@@ -75,7 +75,7 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ children }) =
       {/* Notification Container */}
       <div className="fixed top-4 right-4 z-50 space-y-3 max-w-md">
         {notifications.map((notification) => (
-          <NotificationPopup
+          <NotificationModal
             key={notification.id}
             {...notification}
             onClose={() => clearNotification(notification.id)}

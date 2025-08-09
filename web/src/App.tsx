@@ -9,6 +9,7 @@ import NotificationSystem from './components/NotificationSystem';
 import UploadNotificationManager from './components/UploadNotificationManager';
 import NotificationManager from './components/NotificationManager';
 import NotificationTest from './components/NotificationTest';
+import NotificationModalTest from './components/NotificationModalTest';
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
 import apiService from './services/api';
@@ -108,6 +109,11 @@ const App: React.FC = () => {
               <Route path="/test-notifications" element={
                 <ProtectedRoute>
                   <NotificationTest />
+                </ProtectedRoute>
+              } />
+              <Route path="/test-modal-notifications" element={
+                <ProtectedRoute>
+                  <NotificationModalTest />
                 </ProtectedRoute>
               } />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

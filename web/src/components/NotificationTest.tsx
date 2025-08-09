@@ -12,7 +12,7 @@ const NotificationTest: React.FC = () => {
     },
     {
       title: 'Upload Failed',
-      message: 'Failed to upload "document.pdf": Network error occurred',
+      message: 'Failed to upload "GT học phần Lịch sử Đảng cộng sản VN (C) Tr63-Tr140.pdf": Network error occurred',
       status: 'error' as const,
     },
     {
