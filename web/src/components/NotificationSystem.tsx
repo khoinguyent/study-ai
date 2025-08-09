@@ -45,6 +45,18 @@ const useWebSocket = (userId: string | null) => {
       ws.onopen = () => {
         console.log('WebSocket connected');
         setIsConnected(true);
+        
+        // Send periodic ping to keep connection alive
+        const pingInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('ping');
+          } else {
+            clearInterval(pingInterval);
+          }
+        }, 30000); // Send ping every 30 seconds
+        
+        // Store interval for cleanup
+        (ws as any).pingInterval = pingInterval;
       };
 
       ws.onmessage = (event) => {
@@ -109,6 +121,10 @@ const useWebSocket = (userId: string | null) => {
     return () => {
       if (wsRef.current) {
         console.log('Cleaning up WebSocket connection');
+        // Clear ping interval if it exists
+        if ((wsRef.current as any).pingInterval) {
+          clearInterval((wsRef.current as any).pingInterval);
+        }
         wsRef.current.close();
         wsRef.current = null;
       }

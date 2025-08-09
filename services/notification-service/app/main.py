@@ -248,10 +248,19 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await websocket_manager.connect(websocket, user_id)
     try:
         while True:
-            # Keep connection alive
-            await websocket.receive_text()
+            # Keep connection alive - wait for any message or ping
+            try:
+                data = await websocket.receive_text()
+                # Handle ping messages
+                if data == "ping":
+                    await websocket.send_text("pong")
+            except Exception as e:
+                print(f"WebSocket error for user {user_id}: {e}")
+                break
     except WebSocketDisconnect:
-        websocket_manager.disconnect(user_id)
+        print(f"WebSocket disconnected for user {user_id}")
+    finally:
+        websocket_manager.disconnect(websocket)
 
 @app.post("/notifications", response_model=NotificationResponse)
 async def create_notification(

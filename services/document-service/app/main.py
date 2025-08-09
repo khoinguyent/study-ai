@@ -809,11 +809,15 @@ async def upload_multiple_documents(
         db.refresh(document)
         
         try:
+            print(f"Processing file: {file.filename}")
             # Read file content
             file_content = await file.read()
+            print(f"File content read, size: {len(file_content)} bytes")
             
             # Trigger upload task asynchronously
+            print(f"Importing tasks module...")
             from .tasks import upload_document_to_s3
+            print(f"Queuing task for document {document.id}")
             task = upload_document_to_s3.delay(
                 str(document.id),
                 user_id,
@@ -821,6 +825,7 @@ async def upload_multiple_documents(
                 file.filename,
                 file.content_type
             )
+            print(f"Task queued successfully: {task.id}")
             
             uploaded_documents.append(DocumentUploadResponse(
                 id=document.id,
@@ -830,6 +835,11 @@ async def upload_multiple_documents(
             ))
             
         except Exception as e:
+            print(f"Error processing file {file.filename}: {str(e)}")
+            print(f"Exception type: {type(e).__name__}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            
             document.status = DocumentStatus.FAILED
             db.commit()
             

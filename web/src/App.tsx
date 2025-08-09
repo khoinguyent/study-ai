@@ -7,6 +7,8 @@ import Dashboard from './components/Dashboard';
 import CreateSubject from './components/CreateSubject';
 import NotificationSystem from './components/NotificationSystem';
 import UploadNotificationManager from './components/UploadNotificationManager';
+import NotificationManager from './components/NotificationManager';
+import NotificationTest from './components/NotificationTest';
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
 import apiService from './services/api';
@@ -78,35 +80,42 @@ const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
 
 const App: React.FC = () => {
   return (
-    <UploadNotificationManager>
-      <Router>
-        <div className="App">
-          <Routes>
-            <Route path="/login" element={
-              <PublicRoute>
-                <LoginPage />
-              </PublicRoute>
-            } />
-            <Route path="/signup" element={
-              <PublicRoute>
-                <SignupPage />
-              </PublicRoute>
-            } />
-            <Route path="/dashboard" element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            } />
-            <Route path="/create-subject" element={
-              <ProtectedRoute>
-                <CreateSubject />
-              </ProtectedRoute>
-            } />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </div>
-      </Router>
-    </UploadNotificationManager>
+    <NotificationManager>
+      <UploadNotificationManager>
+        <Router>
+          <div className="App">
+            <Routes>
+              <Route path="/login" element={
+                <PublicRoute>
+                  <LoginPage />
+                </PublicRoute>
+              } />
+              <Route path="/signup" element={
+                <PublicRoute>
+                  <SignupPage />
+                </PublicRoute>
+              } />
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/create-subject" element={
+                <ProtectedRoute>
+                  <CreateSubject />
+                </ProtectedRoute>
+              } />
+              <Route path="/test-notifications" element={
+                <ProtectedRoute>
+                  <NotificationTest />
+                </ProtectedRoute>
+              } />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </div>
+        </Router>
+      </UploadNotificationManager>
+    </NotificationManager>
   );
 };
 

@@ -10,7 +10,16 @@ from app.models import Document
 from app.database import get_db
 from app.services.storage_service import StorageService
 from app.services.document_processor import DocumentProcessor
-from shared.celery_app import celery_app, EventDrivenTask, document_task
+import sys
+import os
+
+# Add the shared directory to the Python path
+shared_path = os.path.join(os.path.dirname(__file__), '..', 'shared')
+if shared_path not in sys.path:
+    sys.path.insert(0, shared_path)
+
+from .celery_app import celery_app
+from shared.celery_app import EventDrivenTask, document_task
 from shared.event_publisher import EventPublisher
 from shared.events import EventType, create_event
 import logging
@@ -23,11 +32,11 @@ document_processor = DocumentProcessor()
 event_publisher = EventPublisher()
 
 @document_task
-def upload_document_to_s3(document_id: str, user_id: str, file_content: bytes, filename: str, content_type: str):
+def upload_document_to_s3(self, document_id: str, user_id: str, file_content: bytes, filename: str, content_type: str):
     """
     Upload document to S3 storage
     """
-    task_id = current_task.request.id
+    task_id = self.request.id
     
     try:
         # Publish upload started event
@@ -40,7 +49,7 @@ def upload_document_to_s3(document_id: str, user_id: str, file_content: bytes, f
         )
         
         # Update task status
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'progress': 25, 'message': f'Uploading {filename} to S3...'}
         )
@@ -116,11 +125,11 @@ def upload_document_to_s3(document_id: str, user_id: str, file_content: bytes, f
         raise
 
 @document_task
-def process_document(document_id: str, user_id: str):
+def process_document(self, document_id: str, user_id: str):
     """
     Process document content (extract text, chunk, etc.)
     """
-    task_id = current_task.request.id
+    task_id = self.request.id
     
     try:
         # Publish processing started event
@@ -131,7 +140,7 @@ def process_document(document_id: str, user_id: str):
         )
         
         # Update task status
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'progress': 0, 'message': 'Starting document processing...'}
         )
@@ -151,19 +160,19 @@ def process_document(document_id: str, user_id: str):
             start_time = time.time()
             
             # Simulate processing steps
-            current_task.update_state(
+            self.update_state(
                 state='PROGRESS',
                 meta={'progress': 25, 'message': 'Extracting text...'}
             )
             asyncio.run(document_processor._extract_text(document_id, user_id))
             
-            current_task.update_state(
+            self.update_state(
                 state='PROGRESS',
                 meta={'progress': 50, 'message': 'Chunking document...'}
             )
             asyncio.run(document_processor._chunk_document(document_id, user_id))
             
-            current_task.update_state(
+            self.update_state(
                 state='PROGRESS',
                 meta={'progress': 75, 'message': 'Preparing for indexing...'}
             )
@@ -241,7 +250,7 @@ def process_document(document_id: str, user_id: str):
         raise
 
 @document_task
-def cleanup_failed_document(document_id: str, user_id: str):
+def cleanup_failed_document(self, document_id: str, user_id: str):
     """
     Clean up failed document (remove from S3, update database)
     """
