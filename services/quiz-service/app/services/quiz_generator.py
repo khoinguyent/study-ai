@@ -157,7 +157,8 @@ Your response MUST be a single JSON object with this exact structure:
         {{
             "id": "q1",
             "question": "Question text?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "options": [
+            "Option A", "Option B", "Option C", "Option D"],
             "correct_answer": 0,
             "explanation": "Why this answer is correct"
         }}

@@ -131,7 +131,7 @@ async def process_document_with_notifications(document_id: str, user_id: str, ta
         )
         
         # Call the original document processor
-        result = await document_processor.process_document(document_id, user_id, db)
+        result = await document_processor.process_document(document_id, user_id)
         
         # Update status to completed
         await notification_service.update_task_status(
@@ -628,7 +628,7 @@ async def get_document_group(
         total_size=total_size
     )
 
-# Updated Document Upload with Subject/Category Support
+# Updated Document Upload with Event-Driven Architecture
 @app.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
@@ -697,25 +697,24 @@ async def upload_document(
     db.refresh(document)
     
     try:
-        # Upload to MinIO
+        # Read file content
         file_content = await file.read()
-        s3_key = f"documents/{user_id}/{document.id}/{file.filename}"
-        await storage_service.upload_file(s3_key, file_content, file.content_type)
         
-        # Update document with file size and path
-        document.file_size = len(file_content)
-        document.file_path = s3_key
-        document.status = DocumentStatus.PROCESSING
-        db.commit()
-        
-        # Trigger processing task asynchronously
-        asyncio.create_task(document_processor.process_document(str(document.id), user_id, db))
+        # Trigger upload task asynchronously
+        from .tasks import upload_document_to_s3
+        task = upload_document_to_s3.delay(
+            str(document.id),
+            user_id,
+            file_content,
+            file.filename,
+            file.content_type
+        )
         
         return DocumentUploadResponse(
             id=document.id,
             filename=document.filename,
             status=document.status,
-            message="Document uploaded successfully and processing started"
+            message="Document upload started"
         )
         
     except Exception as e:
@@ -788,9 +787,6 @@ async def upload_multiple_documents(
     uploaded_documents = []
     
     for file in files:
-        # Generate task ID for tracking
-        task_id = f"upload_{user_id}_{uuid.uuid4()}"
-        
         # Create document record
         document = Document(
             user_id=user_id,
@@ -806,86 +802,31 @@ async def upload_multiple_documents(
         db.commit()
         db.refresh(document)
         
-        # Create task status notification
-        await notification_service.create_task_status(
-            task_id=task_id,
-            user_id=user_id,
-            task_type="document_upload",
-            status="uploading",
-            message=f"Uploading {file.filename}..."
-        )
-        
         try:
-            # Update progress: Starting upload
-            await notification_service.update_task_status(
-                task_id=task_id,
-                status="uploading",
-                progress=25,
-                message=f"Reading file {file.filename}..."
-            )
-            
-            # Upload to MinIO
+            # Read file content
             file_content = await file.read()
             
-            # Update progress: File read, starting storage
-            await notification_service.update_task_status(
-                task_id=task_id,
-                progress=50,
-                message=f"Storing {file.filename}..."
-            )
-            
-            s3_key = f"documents/{user_id}/{document.id}/{file.filename}"
-            await storage_service.upload_file(s3_key, file_content, file.content_type)
-            
-            # Update document with file size and path
-            document.file_size = len(file_content)
-            document.file_path = s3_key
-            document.status = DocumentStatus.PROCESSING
-            db.commit()
-            
-            # Update progress: Upload complete, starting processing
-            await notification_service.update_task_status(
-                task_id=task_id,
-                status="processing",
-                progress=75,
-                message=f"Processing {file.filename}...",
-                metadata={"document_id": str(document.id), "file_size": document.file_size}
-            )
-            
-            # Trigger processing task asynchronously with task tracking
-            asyncio.create_task(
-                document_processor.process_document(str(document.id), user_id, db)
+            # Trigger upload task asynchronously
+            from .tasks import upload_document_to_s3
+            task = upload_document_to_s3.delay(
+                str(document.id),
+                user_id,
+                file_content,
+                file.filename,
+                file.content_type
             )
             
             uploaded_documents.append(DocumentUploadResponse(
                 id=document.id,
                 filename=document.filename,
                 status=document.status,
-                message="Document uploaded successfully and processing started"
+                message="Document upload started"
             ))
             
         except Exception as e:
             document.status = DocumentStatus.FAILED
             db.commit()
             
-            # Update task status to failed
-            await notification_service.update_task_status(
-                task_id=task_id,
-                status="failed",
-                progress=100,
-                message=f"Upload failed: {str(e)}"
-            )
-            
-            # Send failure notification
-            await notification_service.send_notification(
-                user_id=user_id,
-                title="Upload Failed",
-                message=f"Failed to upload {file.filename}: {str(e)}",
-                notification_type="upload_status",
-                metadata={"document_id": str(document.id), "error": str(e)}
-            )
-            
-            # Continue with other files but mark this one as failed
             uploaded_documents.append(DocumentUploadResponse(
                 id=document.id,
                 filename=document.filename,

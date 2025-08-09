@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { X, Upload, FileText, Trash2 } from 'lucide-react';
 import { Subject, Category } from '../types';
 import apiService from '../services/api';
+import { useUploadNotifications } from './UploadNotificationManager';
 import './UploadDocumentsModal.css';
 
 interface UploadDocumentsModalProps {
@@ -10,6 +11,7 @@ interface UploadDocumentsModalProps {
   onSuccess: () => void;
   subject?: Subject;
   category?: Category;
+  onRefreshDocuments?: () => void; // New prop for refreshing documents
 }
 
 interface SelectedFile {
@@ -24,13 +26,15 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
   onClose,
   onSuccess,
   subject,
-  category
+  category,
+  onRefreshDocuments
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { addNotification, updateNotification } = useUploadNotifications();
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -125,27 +129,18 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       formData.append('subject_id', subject.id);
       formData.append('category_id', category.id);
 
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 200);
-
+      // Upload documents using the event-driven system
       await apiService.uploadDocuments(formData);
       
-      clearInterval(progressInterval);
       setUploadProgress(100);
-
-      // Reset state
       setSelectedFiles([]);
       setUploadProgress(0);
       onSuccess();
       onClose();
+      
+      // Show success message
+      console.log('Documents uploaded successfully. Processing will continue in the background.');
+      
     } catch (error) {
       console.error('Upload error:', error);
       setErrors([error instanceof Error ? error.message : 'Upload failed. Please try again.']);

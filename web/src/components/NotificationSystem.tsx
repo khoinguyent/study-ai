@@ -6,7 +6,7 @@ interface Notification {
   id: string;
   title: string;
   message: string;
-  type: 'upload_status' | 'processing_status' | 'indexing_status' | 'task_status' | 'system';
+  type: 'upload_status' | 'processing_status' | 'indexing_status' | 'task_status' | 'system' | 'document_ready';
   status: 'unread' | 'read';
   timestamp: Date;
   metadata?: any;
@@ -31,7 +31,9 @@ const useWebSocket = (userId: string | null) => {
     if (!userId) return;
 
     const connectWebSocket = () => {
-      const wsUrl = `ws://localhost/ws/${userId}`;
+      // Use environment variable if available, otherwise fallback to localhost:8000
+      const wsBaseUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
+      const wsUrl = `${wsBaseUrl}/${userId}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -47,25 +49,38 @@ const useWebSocket = (userId: string | null) => {
           if (data.type === 'notification') {
             const notification: Notification = {
               id: Date.now().toString(),
-              title: data.data.title,
-              message: data.data.message,
-              type: data.data.notification_type,
+              title: data.title,
+              message: data.message,
+              type: data.notification_type || 'system',
               status: 'unread',
-              timestamp: new Date(),
-              metadata: data.data.metadata
+              timestamp: new Date(data.timestamp || Date.now()),
+              metadata: data.metadata
             };
             
             setNotifications(prev => [notification, ...prev]);
-          } else if (data.type === 'task_status') {
+          } else if (data.type === 'task_status_update') {
             const taskStatus: TaskStatus = {
-              task_id: data.data.task_id,
-              status: data.data.status,
-              progress: data.data.progress,
-              message: data.data.message,
-              timestamp: new Date()
+              task_id: data.task_id,
+              status: data.status,
+              progress: data.progress || 0,
+              message: data.message || '',
+              timestamp: new Date(data.timestamp || Date.now())
             };
             
-            setTaskStatuses(prev => new Map(prev.set(data.data.task_id, taskStatus)));
+            setTaskStatuses(prev => new Map(prev.set(data.task_id, taskStatus)));
+          } else if (data.type === 'document_ready') {
+            // Handle document ready notification
+            const notification: Notification = {
+              id: Date.now().toString(),
+              title: 'Document Ready',
+              message: data.message || 'Document is ready for quiz generation',
+              type: 'document_ready',
+              status: 'unread',
+              timestamp: new Date(data.timestamp || Date.now()),
+              metadata: data.metadata
+            };
+            
+            setNotifications(prev => [notification, ...prev]);
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -158,12 +173,13 @@ const NotificationToast: React.FC<{
       case 'upload_status': return <Upload className="w-5 h-5" />;
       case 'processing_status': return <FileText className="w-5 h-5" />;
       case 'indexing_status': return <Zap className="w-5 h-5" />;
+      case 'document_ready': return <CheckCircle className="w-5 h-5" />;
       default: return <Bell className="w-5 h-5" />;
     }
   };
 
   const getNotificationColor = () => {
-    if (notification.message.includes('success') || notification.message.includes('completed')) {
+    if (notification.type === 'document_ready' || notification.message.includes('success') || notification.message.includes('completed')) {
       return 'bg-green-50 border-green-200 text-green-800';
     }
     if (notification.message.includes('failed') || notification.message.includes('error')) {

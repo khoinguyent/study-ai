@@ -185,6 +185,11 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleDocumentsUploaded = (): void => {
+    // Refresh the data after uploading documents
+    fetchSubjects();
+  };
+
   const handleSubjectSelect = (subjectId: string, checked: boolean): void => {
     // Handle subject selection logic
     console.log(`Subject ${subjectId} selected: ${checked}`);
@@ -482,13 +487,10 @@ const Dashboard: React.FC = () => {
       <UploadDocumentsModal
         isOpen={isUploadDocumentsModalOpen}
         onClose={() => setIsUploadDocumentsModalOpen(false)}
-        onSuccess={() => {
-          // Refresh data after successful upload
-          fetchSubjects();
-          setIsUploadDocumentsModalOpen(false);
-        }}
+        onSuccess={handleDocumentsUploaded}
         subject={selectedSubject}
         category={selectedCategory}
+        onRefreshDocuments={handleDocumentsUploaded}
       />
     </div>
   );

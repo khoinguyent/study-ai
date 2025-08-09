@@ -14,7 +14,7 @@ import {
 } from '../types';
 import authService from './auth'; // Import the new auth service
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 class ApiService {
   private getAuthHeaders(): HeadersInit {

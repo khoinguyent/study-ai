@@ -4,6 +4,7 @@ from typing import List
 import httpx
 from ..config import settings
 from ..models import Document
+from ..database import get_db
 from sqlalchemy.orm import Session
 
 class DocumentProcessor:
@@ -13,9 +14,13 @@ class DocumentProcessor:
         self.notification_url = settings.NOTIFICATION_SERVICE_URL
         self.indexing_url = settings.INDEXING_SERVICE_URL
     
-    async def process_document(self, document_id: str, user_id: str, db: Session):
+    async def process_document(self, document_id: str, user_id: str, db: Session = None):
         """Process document asynchronously"""
         start_time = time.time()
+        
+        # Create a new database session if none provided
+        if db is None:
+            db = next(get_db())
         
         try:
             # Get document from database
@@ -23,7 +28,7 @@ class DocumentProcessor:
             if not document:
                 raise Exception(f"Document {document_id} not found")
             
-            # Update document status
+            # Update document status to processing
             document.status = "processing"
             db.commit()
             
@@ -35,15 +40,24 @@ class DocumentProcessor:
             # Calculate processing time
             processing_time = time.time() - start_time
             
-            # Update document status
+            # Update document status to completed
             document.status = "completed"
             db.commit()
             
+            print(f"Document {document_id} processing completed successfully in {processing_time:.2f}s")
+            
         except Exception as e:
-            # Update document status
-            document.status = "failed"
-            db.commit()
+            # Update document status to failed
+            document = db.query(Document).filter(Document.id == document_id).first()
+            if document:
+                document.status = "failed"
+                db.commit()
+            print(f"Document {document_id} processing failed: {str(e)}")
             raise
+        finally:
+            # Close the database session
+            if db:
+                db.close()
     
     async def _extract_text(self, document_id: str, user_id: str):
         """Extract text from document"""

@@ -36,6 +36,22 @@ class WebSocketManager:
             
             print(f"User {user_id} disconnected. Remaining connections: {len(self.active_connections.get(user_id, set()))}")
     
+    async def send_notification(self, user_id: str, message: dict):
+        """Send a notification message to a specific user"""
+        if user_id in self.active_connections:
+            disconnected_websockets = set()
+            
+            for websocket in self.active_connections[user_id]:
+                try:
+                    await websocket.send_text(json.dumps(message))
+                except Exception as e:
+                    print(f"Error sending notification to user {user_id}: {e}")
+                    disconnected_websockets.add(websocket)
+            
+            # Clean up disconnected websockets
+            for websocket in disconnected_websockets:
+                self.disconnect(websocket)
+    
     async def send_personal_message(self, message: WebSocketMessage, user_id: str):
         """Send a message to a specific user"""
         if user_id in self.active_connections:

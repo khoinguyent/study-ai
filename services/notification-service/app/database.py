@@ -13,4 +13,9 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+def create_tables():
+    # Import models here to ensure they are registered with Base
+    from .models import Notification, TaskStatus
+    Base.metadata.create_all(bind=engine) 
