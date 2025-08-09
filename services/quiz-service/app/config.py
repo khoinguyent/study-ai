@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://ollama:11434"
     OLLAMA_MODEL: str = "llama2:7b"
     
+    # Quiz Generation Strategy
+    QUIZ_GENERATION_STRATEGY: str = "auto"  # Options: "ollama", "huggingface", "auto"
+    
+    # HuggingFace Configuration
+    HUGGINGFACE_TOKEN: str = ""
+    HUGGINGFACE_API_URL: str = "https://api-inference.huggingface.co/models"
+    QUESTION_GENERATION_MODEL: str = "google/flan-t5-base"
+    DISTRACTOR_GENERATION_MODEL: str = "google/flan-t5-base"
+    
     # Services
     AUTH_SERVICE_URL: str = "http://auth-service:8001"
     DOCUMENT_SERVICE_URL: str = "http://document-service:8002"
