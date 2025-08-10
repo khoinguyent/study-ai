@@ -216,6 +216,38 @@ class ApiService {
     }
   }
 
+  async downloadDocument(documentId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/download`, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download document: ${response.status}`);
+    }
+
+    // Get filename from Content-Disposition header
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = 'download';
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename=([^;]+)/);
+      if (filenameMatch) {
+        filename = filenameMatch[1].replace(/"/g, '');
+      }
+    }
+
+    // Create blob and download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }
+
   // Quiz endpoints
   async generateQuiz(categoryId: string, numQuestions: number = 5): Promise<Quiz> {
     const response = await fetch(`${API_BASE_URL}/quiz/generate/category`, {

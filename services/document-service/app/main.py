@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header, Query, Request, Body, Form
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, status, Header, Query, Request, Body, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
@@ -906,12 +906,13 @@ async def get_document(
         updated_at=document.updated_at
     )
 
-@app.delete("/documents/{document_id}")
-async def delete_document(
+@app.get("/documents/{document_id}/download")
+async def download_document(
     document_id: str,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
+    """Download a document file"""
     document = db.query(Document).filter(
         Document.id == document_id,
         Document.user_id == user_id
@@ -923,15 +924,138 @@ async def delete_document(
             detail="Document not found"
         )
     
-    # Delete from S3
-    if document.file_path:
-        await storage_service.delete_file(document.file_path)
+    if document.status != DocumentStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document is not ready for download"
+        )
     
-    # Delete from database
-    db.delete(document)
-    db.commit()
+    try:
+        # Extract the key from the file_path (remove minio:// prefix and bucket name)
+        file_path = document.file_path
+        if file_path.startswith("minio://"):
+            # Parse minio://bucket_name/key to get just the key
+            key = file_path.split("/", 3)[-1]  # Get everything after bucket name
+        else:
+            key = file_path
+        
+        # Download file content from MinIO
+        storage_service = StorageService()
+        file_content = await storage_service.download_file(key)
+        
+        # Return file as response
+        return Response(
+            content=file_content,
+            media_type=document.content_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename={document.filename}",
+                "Content-Length": str(len(file_content))
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download file: {str(e)}"
+        )
+
+@app.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Delete a document asynchronously along with all related data"""
+    # Check if document exists and belongs to user
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == user_id
+    ).first()
     
-    return {"message": "Document deleted successfully"}
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    try:
+        # Import the delete task
+        from .tasks import delete_document_async
+        
+        # Queue the async deletion task
+        task = delete_document_async.delay(document_id, user_id)
+        
+        # Return immediately with task info
+        return {
+            "message": "Document deletion initiated",
+            "task_id": task.id,
+            "document_id": document_id,
+            "filename": document.filename,
+            "status": "queued"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initiate document deletion: {str(e)}"
+        )
+
+@app.delete("/documents/bulk-delete")
+async def bulk_delete_documents(
+    request: Request,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Bulk delete multiple documents asynchronously"""
+    try:
+        # Parse request body
+        body = await request.json()
+        document_ids = body.get('document_ids', [])
+        
+        if not document_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No document IDs provided"
+            )
+        
+        if len(document_ids) > 50:  # Limit bulk operations
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete more than 50 documents at once"
+            )
+        
+        # Verify documents exist and belong to user
+        documents = db.query(Document).filter(
+            Document.id.in_(document_ids),
+            Document.user_id == user_id
+        ).all()
+        
+        if not documents:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No documents found"
+            )
+        
+        # Import the bulk delete task
+        from .tasks import bulk_delete_documents_async
+        
+        # Queue the async bulk deletion task
+        task = bulk_delete_documents_async.delay(document_ids, user_id)
+        
+        # Return immediately with task info
+        return {
+            "message": "Bulk document deletion initiated",
+            "task_id": task.id,
+            "document_count": len(documents),
+            "document_ids": document_ids,
+            "status": "queued"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initiate bulk deletion: {str(e)}"
+        )
 
 @app.get("/categories/{category_id}/documents", response_model=PaginatedDocumentResponse)
 async def list_category_documents(
