@@ -23,7 +23,8 @@ import CreateCategoryModal from './CreateCategoryModal';
 import CreateSubjectModal from './CreateSubjectModal';
 import UploadDocumentsModal from './UploadDocumentsModal';
 import CategoryDocumentsList from './CategoryDocumentsList';
-import NotificationSystem from './NotificationSystem';
+import { NotificationProvider, useNotifications } from './notifications/NotificationContext';
+import { Bell } from 'lucide-react';
 import './Dashboard.css';
 
 interface CollapsedState {
@@ -33,6 +34,25 @@ interface CollapsedState {
 interface CollapsedCategoryState {
   [categoryId: string]: boolean;
 }
+
+// Notification Bell Component
+const NotificationBell: React.FC = () => {
+  const { notifications } = useNotifications();
+  const unreadCount = notifications.filter(n => n.state !== 'completed').length;
+  
+  return (
+    <div className="relative">
+      <button className="relative p-2 text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded-full">
+        <Bell className="w-6 h-6" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+            {unreadCount}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+};
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -220,7 +240,8 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="dashboard">
+    <NotificationProvider>
+      <div className="dashboard">
       {/* Dashboard Header */}
       <header className="dashboard-header">
         <div className="header-left">
@@ -237,7 +258,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
         <div className="header-right">
-          <NotificationSystem userId={user?.id || null} />
+          <NotificationBell />
           <button className="icon-button">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -493,6 +514,7 @@ const Dashboard: React.FC = () => {
         onRefreshDocuments={handleDocumentsUploaded}
       />
     </div>
+    </NotificationProvider>
   );
 };
 

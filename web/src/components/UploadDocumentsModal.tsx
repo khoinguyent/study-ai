@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { X, Upload, FileText, Trash2 } from 'lucide-react';
 import { Subject, Category } from '../types';
 import apiService from '../services/api';
-import { useUploadNotifications } from './UploadNotificationManager';
+import { useDocumentNotifications } from './notifications/NotificationContext';
 import './UploadDocumentsModal.css';
 
 interface UploadDocumentsModalProps {
@@ -34,7 +34,7 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addNotification, updateNotification } = useUploadNotifications();
+  const { startUpload, updateUploadProgress, startProcessing, startIndexing, completeDocument, failDocument } = useDocumentNotifications();
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -121,6 +121,12 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
     setUploadProgress(0);
     setErrors([]);
 
+    // Create notifications for each file
+    const uploadNotifications = selectedFiles.map(selectedFile => ({
+      file: selectedFile.file,
+      notificationId: startUpload(selectedFile.file.name, category.name)
+    }));
+
     try {
       const formData = new FormData();
       selectedFiles.forEach((selectedFile, index) => {
@@ -129,21 +135,51 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       formData.append('subject_id', subject.id);
       formData.append('category_id', category.id);
 
-      // Upload documents using the event-driven system
-      await apiService.uploadDocuments(formData);
+      // Upload documents using the event-driven system with progress tracking
+      const documents = await apiService.uploadDocuments(formData);
+      const documentId = documents[0].id; // Get first document ID for now
       
+      // Update notifications for each file
+      uploadNotifications.forEach(({ notificationId, file }) => {
+        // Start processing with 0% progress
+        startProcessing(notificationId, documentId);
+        
+        // Simulate processing progress (in real app, this would come from WebSocket)
+        let progress = 0;
+        const processingInterval = setInterval(() => {
+          progress += 10;
+          if (progress <= 90) {
+            updateUploadProgress(notificationId, progress);
+          } else {
+            clearInterval(processingInterval);
+            
+            // Start indexing
+            startIndexing(notificationId);
+            
+            // Simulate indexing progress (in real app, this would come from WebSocket)
+            setTimeout(() => {
+              // Complete document
+              completeDocument(notificationId, documentId, 1);
+            }, 2000);
+          }
+        }, 500);
+      });
+
       setUploadProgress(100);
       setSelectedFiles([]);
       setUploadProgress(0);
       onSuccess();
       onClose();
       
-      // Show success message
-      console.log('Documents uploaded successfully. Processing will continue in the background.');
-      
     } catch (error) {
       console.error('Upload error:', error);
-      setErrors([error instanceof Error ? error.message : 'Upload failed. Please try again.']);
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
+      setErrors([errorMessage]);
+      
+      // Update notifications with error
+      uploadNotifications.forEach(({ notificationId }) => {
+        failDocument(notificationId, errorMessage);
+      });
     } finally {
       setIsUploading(false);
     }

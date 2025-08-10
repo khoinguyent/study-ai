@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import UploadNotification, { UploadNotificationData } from './UploadNotification';
-import { useNotification } from './NotificationManager';
+import { useDocumentNotifications } from './notifications/NotificationContext';
 
 interface UploadNotificationManagerProps {
   children?: React.ReactNode;
@@ -25,7 +25,7 @@ export const useUploadNotifications = () => {
 
 const UploadNotificationManager: React.FC<UploadNotificationManagerProps> = ({ children }) => {
   const [notifications, setNotifications] = useState<UploadNotificationData[]>([]);
-  const { showNotification } = useNotification();
+  const { startUpload, updateUploadProgress, startProcessing, startIndexing, completeDocument, failDocument } = useDocumentNotifications();
 
   const addNotification = useCallback((notificationData: Omit<UploadNotificationData, 'id' | 'timestamp'>) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -37,16 +37,11 @@ const UploadNotificationManager: React.FC<UploadNotificationManagerProps> = ({ c
     
     setNotifications(prev => [notification, ...prev]);
     
-    // Also show the new notification popup
-    showNotification({
-      title: `Upload ${notificationData.fileName}`,
-      message: notificationData.message,
-      status: notificationData.status as any,
-      autoClose: notificationData.status !== 'uploading' && notificationData.status !== 'processing',
-    });
+    // Use the new notification system
+    const notificationId = startUpload(notificationData.fileName, 'Unknown Category');
     
     return id;
-  }, [showNotification]);
+  }, [startUpload]);
 
   const updateNotification = useCallback((id: string, updates: Partial<UploadNotificationData>) => {
     setNotifications(prev => 
@@ -57,16 +52,12 @@ const UploadNotificationManager: React.FC<UploadNotificationManagerProps> = ({ c
       )
     );
     
-    // Also update the notification popup if status changed
+    // Use the new notification system for status updates
     if (updates.status) {
-      showNotification({
-        title: 'Upload Update',
-        message: updates.message || 'Upload status has been updated',
-        status: updates.status as any,
-        autoClose: updates.status !== 'uploading' && updates.status !== 'processing',
-      });
+      // This will be handled by the UploadDocumentsModal directly
+      console.log('Status update:', updates.status);
     }
-  }, [showNotification]);
+  }, []);
 
   const removeNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(notification => notification.id !== id));
