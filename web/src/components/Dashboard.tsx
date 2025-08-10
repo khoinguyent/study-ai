@@ -9,6 +9,10 @@ import {
   Plus,
   Upload,
   Square,
+  Check,
+  Minus,
+  Trash2,
+  Play,
   Microscope,
   Atom,
   BookOpen,
@@ -34,6 +38,41 @@ interface CollapsedState {
 interface CollapsedCategoryState {
   [categoryId: string]: boolean;
 }
+
+interface SelectionState {
+  subjects: Set<string>;
+  categories: Set<string>;
+  documents: Set<string>;
+}
+
+// Hierarchical Checkbox Component
+interface HierarchicalCheckboxProps {
+  state: 'checked' | 'unchecked' | 'indeterminate';
+  onChange: (checked: boolean) => void;
+  size?: number;
+}
+
+const HierarchicalCheckbox: React.FC<HierarchicalCheckboxProps> = ({ 
+  state, 
+  onChange, 
+  size = 16 
+}) => {
+  const handleClick = () => {
+    onChange(state !== 'checked');
+  };
+
+  return (
+    <button
+      className={`hierarchical-checkbox ${state}`}
+      onClick={handleClick}
+      type="button"
+    >
+      {state === 'checked' && <Check size={size} />}
+      {state === 'unchecked' && <Square size={size} />}
+      {state === 'indeterminate' && <Minus size={size} />}
+    </button>
+  );
+};
 
 // Notification Bell Component
 const NotificationBell: React.FC = () => {
@@ -62,6 +101,11 @@ const Dashboard: React.FC = () => {
   const [documents, setDocuments] = useState<{ [categoryId: string]: Document[] }>({});
   const [collapsedSubjects, setCollapsedSubjects] = useState<CollapsedState>({});
   const [collapsedCategories, setCollapsedCategories] = useState<CollapsedCategoryState>({});
+  const [selections, setSelections] = useState<SelectionState>({
+    subjects: new Set(),
+    categories: new Set(),
+    documents: new Set()
+  });
   const [stats, setStats] = useState<DashboardStats>({
     documentSets: 0,
     documents: 0,
@@ -210,14 +254,254 @@ const Dashboard: React.FC = () => {
     fetchSubjects();
   };
 
-  const handleSubjectSelect = (subjectId: string, checked: boolean): void => {
-    // Handle subject selection logic
-    console.log(`Subject ${subjectId} selected: ${checked}`);
+  const getDocumentsBySubject = (subjectId: string): string[] => {
+    const subjectCategories = categories[subjectId] || [];
+    const allDocuments: string[] = [];
+    subjectCategories.forEach(category => {
+      const categoryDocs = documents[category.id] || [];
+      categoryDocs.forEach(doc => allDocuments.push(doc.id));
+    });
+    return allDocuments;
+  };
+
+  const getDocumentsByCategory = (categoryId: string): string[] => {
+    const categoryDocs = documents[categoryId] || [];
+    return categoryDocs.map(doc => doc.id);
+  };
+
+  const getCategoriesBySubject = (subjectId: string): string[] => {
+    const subjectCategories = categories[subjectId] || [];
+    return subjectCategories.map(cat => cat.id);
+  };
+
+  const handleDocumentSelect = (documentId: string, checked: boolean): void => {
+    setSelections(prev => {
+      const newSelections = { ...prev };
+      
+      if (checked) {
+        newSelections.documents.add(documentId);
+      } else {
+        newSelections.documents.delete(documentId);
+      }
+      
+      return newSelections;
+    });
   };
 
   const handleCategorySelect = (categoryId: string, checked: boolean): void => {
-    // Handle category selection logic
-    console.log(`Category ${categoryId} selected: ${checked}`);
+    setSelections(prev => {
+      const newSelections = { ...prev };
+      const categoryDocuments = getDocumentsByCategory(categoryId);
+      
+      if (checked) {
+        newSelections.categories.add(categoryId);
+        // Select all documents in this category
+        categoryDocuments.forEach(docId => newSelections.documents.add(docId));
+      } else {
+        newSelections.categories.delete(categoryId);
+        // Deselect all documents in this category
+        categoryDocuments.forEach(docId => newSelections.documents.delete(docId));
+      }
+      
+      return newSelections;
+    });
+  };
+
+  const handleSubjectSelect = (subjectId: string, checked: boolean): void => {
+    setSelections(prev => {
+      const newSelections = { ...prev };
+      const subjectCategories = getCategoriesBySubject(subjectId);
+      const subjectDocuments = getDocumentsBySubject(subjectId);
+      
+      if (checked) {
+        newSelections.subjects.add(subjectId);
+        // Select all categories in this subject
+        subjectCategories.forEach(catId => newSelections.categories.add(catId));
+        // Select all documents in this subject
+        subjectDocuments.forEach(docId => newSelections.documents.add(docId));
+      } else {
+        newSelections.subjects.delete(subjectId);
+        // Deselect all categories in this subject
+        subjectCategories.forEach(catId => newSelections.categories.delete(catId));
+        // Deselect all documents in this subject
+        subjectDocuments.forEach(docId => newSelections.documents.delete(docId));
+      }
+      
+      return newSelections;
+    });
+  };
+
+  const getCheckboxState = (type: 'subject' | 'category', id: string) => {
+    if (type === 'subject') {
+      const isSelected = selections.subjects.has(id);
+      const subjectCategories = getCategoriesBySubject(id);
+      const selectedCategories = subjectCategories.filter(catId => selections.categories.has(catId));
+      
+      if (isSelected || selectedCategories.length === subjectCategories.length) {
+        return 'checked';
+      } else if (selectedCategories.length > 0) {
+        return 'indeterminate';
+      }
+      return 'unchecked';
+    } else {
+      const isSelected = selections.categories.has(id);
+      const categoryDocuments = getDocumentsByCategory(id);
+      const selectedDocuments = categoryDocuments.filter(docId => selections.documents.has(docId));
+      
+      if (isSelected || selectedDocuments.length === categoryDocuments.length) {
+        return 'checked';
+      } else if (selectedDocuments.length > 0) {
+        return 'indeterminate';
+      }
+      return 'unchecked';
+    }
+  };
+
+  const getReadySelectedDocuments = (): string[] => {
+    const selectedDocIds = Array.from(selections.documents);
+    const readyDocIds: string[] = [];
+    
+    // Check all categories for documents and their status
+    Object.values(documents).forEach(categoryDocs => {
+      categoryDocs.forEach(doc => {
+        if (selectedDocIds.includes(doc.id) && doc.status === 'completed') {
+          readyDocIds.push(doc.id);
+        }
+      });
+    });
+    
+    return readyDocIds;
+  };
+
+  const getTotalSelectedDocuments = (): number => {
+    return selections.documents.size;
+  };
+
+  const getReadySelectedDocumentsCount = (): number => {
+    return getReadySelectedDocuments().length;
+  };
+
+  const getSelectedDocumentsInCategory = (categoryId: string): number => {
+    const categoryDocuments = getDocumentsByCategory(categoryId);
+    return categoryDocuments.filter(docId => selections.documents.has(docId)).length;
+  };
+
+  const getReadySelectedDocumentsInCategory = (categoryId: string): number => {
+    const categoryDocs = documents[categoryId] || [];
+    return categoryDocs.filter(doc => 
+      selections.documents.has(doc.id) && doc.status === 'completed'
+    ).length;
+  };
+
+  const handleCategoryBulkDelete = async (categoryId: string): Promise<void> => {
+    const categoryDocuments = getDocumentsByCategory(categoryId);
+    const selectedDocIds = categoryDocuments.filter(docId => selections.documents.has(docId));
+    
+    if (selectedDocIds.length === 0) return;
+    
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${selectedDocIds.length} selected documents from this category? This action cannot be undone.`
+    );
+    
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/documents/bulk-delete`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          document_ids: selectedDocIds
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete documents: ${response.status}`);
+      }
+
+      // Clear selections for deleted documents
+      setSelections(prev => {
+        const newSelections = { ...prev };
+        selectedDocIds.forEach(docId => {
+          newSelections.documents.delete(docId);
+        });
+        return newSelections;
+      });
+
+      // Refresh data
+      fetchSubjects();
+      
+    } catch (error) {
+      console.error('Error deleting documents:', error);
+      alert('Failed to delete documents. Please try again.');
+    }
+  };
+
+  const handleBulkDelete = async (): Promise<void> => {
+    const selectedDocIds = Array.from(selections.documents);
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${selectedDocIds.length} selected documents? This action cannot be undone.`
+    );
+    
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/documents/bulk-delete`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          document_ids: selectedDocIds
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete documents: ${response.status}`);
+      }
+
+      // Clear selections
+      setSelections({
+        subjects: new Set(),
+        categories: new Set(),
+        documents: new Set()
+      });
+
+      // Refresh data
+      fetchSubjects();
+      
+    } catch (error) {
+      console.error('Error deleting documents:', error);
+      alert('Failed to delete documents. Please try again.');
+    }
+  };
+
+  const clearAllSelections = (): void => {
+    setSelections({
+      subjects: new Set(),
+      categories: new Set(),
+      documents: new Set()
+    });
+  };
+
+  const handleStartStudySession = (): void => {
+    const readyDocIds = getReadySelectedDocuments();
+    if (readyDocIds.length === 0) {
+      alert('No ready documents selected. Please select documents that have been processed.');
+      return;
+    }
+    
+    // Navigate to quiz page with ready documents only
+    // For now, we'll just log the action
+    console.log('Starting study session with ready documents:', readyDocIds);
+    
+    // TODO: Implement navigation to quiz page
+    // navigate('/quiz', { state: { documentIds: readyDocIds } });
+    
+    alert(`Starting quiz with ${readyDocIds.length} ready documents!`);
   };
 
   const handleCategoryCreated = (): void => {
@@ -270,6 +554,8 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </header>
+
+
 
       {/* Welcome Section */}
       <section className="welcome-section">
@@ -338,6 +624,33 @@ const Dashboard: React.FC = () => {
         </div>
       </section>
 
+      {/* Selection Summary Section */}
+      {getReadySelectedDocumentsCount() > 0 && (
+        <section className="selection-summary-section">
+          <div className="selection-summary-card">
+            <div className="selection-summary-content">
+              <div className="selection-info">
+                <h3 className="selection-title">
+                  {getReadySelectedDocumentsCount()} document{getReadySelectedDocumentsCount() !== 1 ? 's' : ''} selected
+                </h3>
+                <p className="selection-description">
+                  Ready to generate questions from your selection
+                </p>
+              </div>
+              <div className="selection-action">
+                <button 
+                  className="start-study-button"
+                  onClick={handleStartStudySession}
+                >
+                  <Play size={16} />
+                  <span>Start Study Session</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Subjects Section */}
       <section className="subjects-section">
         <div className="section-header">
@@ -359,12 +672,11 @@ const Dashboard: React.FC = () => {
                 <div key={subject.id} className="subject-block" style={{ borderColor: color }}>
                   <div className="subject-header">
                     <div className="subject-left">
-                      <button 
-                        className="select-button"
-                        onClick={() => handleSubjectSelect(subject.id, true)}
-                      >
-                        <Square size={16} />
-                      </button>
+                      <HierarchicalCheckbox
+                        state={getCheckboxState('subject', subject.id)}
+                        onChange={(checked) => handleSubjectSelect(subject.id, checked)}
+                        size={16}
+                      />
                       <div 
                         className="subject-icon"
                         style={{ backgroundColor: `${color}20`, color: color }}
@@ -411,12 +723,11 @@ const Dashboard: React.FC = () => {
                             <div key={category.id} className="category-block">
                               <div className="category-header">
                                 <div className="category-left">
-                                  <button 
-                                    className="select-button"
-                                    onClick={() => handleCategorySelect(category.id, true)}
-                                  >
-                                    <Square size={16} />
-                                  </button>
+                                  <HierarchicalCheckbox
+                                    state={getCheckboxState('category', category.id)}
+                                    onChange={(checked) => handleCategorySelect(category.id, checked)}
+                                    size={16}
+                                  />
                                   <div 
                                     className="category-icon"
                                     style={{ backgroundColor: `${color}20`, color: color }}
@@ -444,6 +755,16 @@ const Dashboard: React.FC = () => {
                                     <Upload size={16} />
                                     <span>Upload</span>
                                   </button>
+                                  {getSelectedDocumentsInCategory(category.id) > 0 && (
+                                    <button 
+                                      className="delete-selected-button"
+                                      onClick={() => handleCategoryBulkDelete(category.id)}
+                                      title={`Delete ${getSelectedDocumentsInCategory(category.id)} selected documents`}
+                                    >
+                                      <Trash2 size={16} />
+                                      <span>Delete ({getSelectedDocumentsInCategory(category.id)})</span>
+                                    </button>
+                                  )}
                                   <button 
                                     className="collapse-button"
                                     onClick={() => toggleCategoryCollapse(category.id)}
@@ -454,12 +775,14 @@ const Dashboard: React.FC = () => {
                               </div>
 
                               {!isCategoryCollapsed && (
-                                <CategoryDocumentsList
-                                  categoryId={category.id}
-                                  isExpanded={!isCategoryCollapsed}
-                                  onToggle={() => toggleCategoryCollapse(category.id)}
-                                  documentCount={category.document_count}
-                                />
+                                                                  <CategoryDocumentsList
+                                    categoryId={category.id}
+                                    isExpanded={!isCategoryCollapsed}
+                                    onToggle={() => toggleCategoryCollapse(category.id)}
+                                    documentCount={category.document_count}
+                                    selectedDocuments={selections.documents}
+                                    onDocumentSelect={handleDocumentSelect}
+                                  />
                               )}
                             </div>
                           );

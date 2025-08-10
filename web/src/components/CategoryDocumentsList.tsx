@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, FileText, Download, Trash2, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Download, Trash2, Loader2, Check, Square } from 'lucide-react';
 import { Document } from '../types';
 import apiService from '../services/api';
+import { useDocumentNotifications } from './notifications/NotificationContext';
 import './CategoryDocumentsList.css';
 
 interface CategoryDocumentsListProps {
@@ -9,13 +10,17 @@ interface CategoryDocumentsListProps {
   isExpanded: boolean;
   onToggle: () => void;
   documentCount: number;
+  selectedDocuments: Set<string>;
+  onDocumentSelect: (documentId: string, checked: boolean) => void;
 }
 
 const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   categoryId,
   isExpanded,
   onToggle,
-  documentCount
+  documentCount,
+  selectedDocuments,
+  onDocumentSelect
 }) => {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -23,6 +28,8 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   const [page, setPage] = useState<number>(1);
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [totalCount, setTotalCount] = useState<number>(0);
+  const isSelectionMode = selectedDocuments.size > 0;
+  const { startDeletion, updateDeletionProgress, completeDeletion, failDeletion } = useDocumentNotifications();
 
   const loadDocuments = async (pageNum: number = 1, append: boolean = false) => {
     if (pageNum === 1) {
@@ -80,6 +87,70 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
     });
   };
 
+  const handleDownload = async (document: Document) => {
+    try {
+      await apiService.downloadDocument(document.id);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      alert('Failed to download document. Please try again.');
+    }
+  };
+
+  const toggleSelection = (documentId: string) => {
+    const isSelected = selectedDocuments.has(documentId);
+    onDocumentSelect(documentId, !isSelected);
+  };
+
+
+
+  const handleDelete = async (document: Document) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${document.filename}"? This action cannot be undone.`
+    );
+    
+    if (!confirmDelete) return;
+
+    // Start deletion notification
+    const notificationId = startDeletion(document.filename);
+    
+    try {
+      // Call the delete API
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/documents/${document.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete document: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      // Update notification with task info
+      updateDeletionProgress(notificationId, 20, 'Deletion initiated...');
+      
+      // Remove document from local state immediately for better UX
+      setDocuments(prev => prev.filter(doc => doc.id !== document.id));
+      
+      // Simulate progress updates (since we don't have real-time task status yet)
+      setTimeout(() => updateDeletionProgress(notificationId, 50, 'Removing file from storage...'), 1000);
+      setTimeout(() => updateDeletionProgress(notificationId, 80, 'Deleting document chunks...'), 2000);
+      setTimeout(() => completeDeletion(notificationId, document.filename), 3000);
+      
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      failDeletion(notificationId, document.filename, error instanceof Error ? error.message : 'Unknown error');
+      
+      // Reload documents to restore the list if deletion failed
+      loadDocuments(1, false);
+    }
+  };
+
+
+
   const getStatusColor = (status: string): string => {
     switch (status) {
       case 'completed':
@@ -133,8 +204,16 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
       ) : (
         <>
           <div className="documents-grid">
-            {documents.map((document) => (
-              <div key={document.id} className="document-item">
+            {documents.filter(document => document.status !== 'failed').map((document) => (
+              <div key={document.id} className={`document-item ${selectedDocuments.has(document.id) ? 'selected' : ''}`}>
+                <div className="document-checkbox">
+                  <button
+                    className={`checkbox-button ${selectedDocuments.has(document.id) ? 'checked' : ''}`}
+                    onClick={() => toggleSelection(document.id)}
+                  >
+                    {selectedDocuments.has(document.id) ? <Check size={14} /> : <Square size={14} />}
+                  </button>
+                </div>
                 <div className="document-icon">
                   <FileText size={20} />
                 </div>
@@ -152,10 +231,19 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
                   </div>
                 </div>
                 <div className="document-actions">
-                  <button className="action-button download-button" title="Download">
+                  <button 
+                    className="action-button download-button" 
+                    title="Download"
+                    onClick={() => handleDownload(document)}
+                    disabled={document.status !== 'completed'}
+                  >
                     <Download size={16} />
                   </button>
-                  <button className="action-button delete-button" title="Delete">
+                  <button 
+                    className="action-button delete-button" 
+                    title="Delete"
+                    onClick={() => handleDelete(document)}
+                  >
                     <Trash2 size={16} />
                   </button>
                 </div>

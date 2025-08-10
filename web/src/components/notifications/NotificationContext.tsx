@@ -4,11 +4,11 @@ import { createContext, useContext, useState, useCallback, ReactNode } from 'rea
 import { Button } from "../ui/button"
 import { Card, CardContent } from "../ui/card"
 import { Badge } from "../ui/badge"
-import { X, CheckCircle, AlertCircle, Loader2, Upload, FileText, Zap } from 'lucide-react'
+import { X, CheckCircle, AlertCircle, Loader2, Upload, FileText, Zap, Trash2 } from 'lucide-react'
 
 // Document processing specific notification types
-export type NotificationType = 'upload' | 'processing' | 'indexing' | 'general'
-export type NotificationState = 'uploading' | 'processing' | 'indexing' | 'completed' | 'failed'
+export type NotificationType = 'upload' | 'processing' | 'indexing' | 'deletion' | 'general'
+export type NotificationState = 'uploading' | 'processing' | 'indexing' | 'deleting' | 'completed' | 'failed'
 
 export interface Notification {
   id: string
@@ -158,6 +158,8 @@ function NotificationCard({ notification, onClose }: { notification: Notificatio
         return <FileText className="h-4 w-4" />
       case 'indexing':
         return <Zap className="h-4 w-4" />
+      case 'deleting':
+        return <Trash2 className="h-4 w-4" />
       case 'completed':
         return <CheckCircle className="h-4 w-4" />
       case 'failed':
@@ -266,6 +268,18 @@ function NotificationCard({ notification, onClose }: { notification: Notificatio
           badgeBg: '#ede9fe',
           badgeColor: '#7c2d12'
         }
+      case 'deleting':
+        return {
+          bg: '#fef2f2',
+          border: '#f87171',
+          iconBg: '#f87171',
+          iconColor: '#ffffff',
+          titleColor: '#b91c1c',
+          messageColor: '#dc2626',
+          progressBg: '#f87171',
+          badgeBg: '#fecaca',
+          badgeColor: '#991b1b'
+        }
       case 'completed':
         return {
           bg: '#f0fdf4',
@@ -347,7 +361,7 @@ function NotificationCard({ notification, onClose }: { notification: Notificatio
                 </p>
                 
                 {/* Progress bar for ongoing processes */}
-                {['uploading', 'processing', 'indexing'].includes(notification.state) && notification.progress !== undefined && (
+                {['uploading', 'processing', 'indexing', 'deleting'].includes(notification.state) && notification.progress !== undefined && (
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-xs mb-2">
                       <span style={{ color: stateColors.messageColor, fontWeight: '500' }}>
@@ -386,6 +400,7 @@ function NotificationCard({ notification, onClose }: { notification: Notificatio
                     {notification.state === 'uploading' ? 'uploading' :
                      notification.state === 'processing' ? 'processing' :
                      notification.state === 'indexing' ? 'indexing' :
+                     notification.state === 'deleting' ? 'deleting' :
                      notification.state === 'completed' ? 'success' : 'failed'}
                   </Badge>
                   <span 
@@ -480,12 +495,55 @@ export function useDocumentNotifications() {
     })
   }, [updateNotification])
 
+  const startDeletion = useCallback((fileName: string) => {
+    return addNotification({
+      type: 'deletion',
+      state: 'deleting',
+      title: 'Deleting Document',
+      message: `Deleting "${fileName}"...`,
+      progress: 0,
+      autoClose: false,
+      fileName
+    })
+  }, [addNotification])
+
+  const updateDeletionProgress = useCallback((id: string, progress: number, message?: string) => {
+    updateNotification(id, { 
+      progress,
+      message: message || `Deleting document... ${progress}%`
+    })
+  }, [updateNotification])
+
+  const completeDeletion = useCallback((id: string, fileName: string) => {
+    updateNotification(id, {
+      state: 'completed',
+      title: 'Document Deleted',
+      message: `"${fileName}" has been deleted successfully`,
+      progress: 100,
+      autoClose: true,
+      duration: 3000
+    })
+  }, [updateNotification])
+
+  const failDeletion = useCallback((id: string, fileName: string, error: string) => {
+    updateNotification(id, {
+      state: 'failed',
+      title: 'Deletion Failed',
+      message: `Failed to delete "${fileName}": ${error}`,
+      autoClose: false
+    })
+  }, [updateNotification])
+
   return {
     startUpload,
     updateUploadProgress,
     startProcessing,
     startIndexing,
     completeDocument,
-    failDocument
+    failDocument,
+    startDeletion,
+    updateDeletionProgress,
+    completeDeletion,
+    failDeletion
   }
 }

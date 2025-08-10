@@ -687,6 +687,154 @@
   }
 }
 
+/* Selection Summary Section */
+.selection-summary-section {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.selection-summary-card {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.selection-summary-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.selection-info {
+  flex: 1;
+}
+
+.selection-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: white;
+}
+
+.selection-description {
+  font-size: 14px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 400;
+}
+
+.selection-action {
+  flex-shrink: 0;
+}
+
+.start-study-button {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.start-study-button:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.start-study-button:active {
+  transform: translateY(0);
+}
+
+/* Category Delete Button */
+
+.delete-selected-button {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.delete-selected-button:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.category-actions .delete-selected-button {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.category-actions .delete-selected-button:hover {
+  background: #b91c1c;
+}
+
+
+
+/* Hierarchical Checkbox */
+.hierarchical-checkbox {
+  background: none;
+  border: none;
+  padding: 2px;
+  margin-right: 12px;
+  border-radius: 3px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hierarchical-checkbox:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.hierarchical-checkbox.checked {
+  color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.hierarchical-checkbox.indeterminate {
+  color: #f59e0b;
+  background-color: #fffbeb;
+}
+
 /* Focus states for accessibility */
 .icon-button:focus-visible,
 .subject-block:focus-visible,
@@ -697,7 +845,37 @@
 .add-category-button:focus-visible,
 .collapse-button:focus-visible,
 .upload-button:focus-visible,
-.create-category-button:focus-visible {
+.create-category-button:focus-visible,
+.hierarchical-checkbox:focus-visible,
+.delete-selected-button:focus-visible,
+.clear-selection-button:focus-visible,
+.start-study-button:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
+}
+
+/* Responsive Design for Selection Summary */
+@media (max-width: 768px) {
+  .selection-summary-section {
+    padding: 20px 16px;
+  }
+
+  .selection-summary-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .selection-info {
+    text-align: center;
+  }
+
+  .selection-action {
+    align-self: stretch;
+  }
+
+  .start-study-button {
+    width: 100%;
+    justify-content: center;
+  }
 } 
