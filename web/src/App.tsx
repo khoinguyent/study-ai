@@ -5,11 +5,11 @@ import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import Dashboard from './components/Dashboard';
 import CreateSubject from './components/CreateSubject';
-import NotificationTest from './components/NotificationTest';
-import NotificationModalTest from './components/NotificationModalTest';
+
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
 import apiService from './services/api';
+import { NotificationProvider } from './components/notifications/NotificationContext';
 
 // Protected Route Component with Notifications
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
@@ -24,9 +24,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
           const cachedUser = authService.getCurrentUser();
           if (cachedUser) {
             setUser(cachedUser);
+            setLoading(false);
+            return; // Don't make API call if we have valid cached user
           }
           
-          // Fetch fresh user data from API
+          // Only fetch from API if no cached user
           const userData = await apiService.getCurrentUser();
           setUser(userData);
           authService.updateUser(userData);
@@ -61,12 +63,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Main Content */}
-      <main>
-        {children}
-      </main>
-    </div>
+    <NotificationProvider>
+      <div className="min-h-screen bg-gray-50">
+        {/* Main Content */}
+        <main>
+          {children}
+        </main>
+      </div>
+    </NotificationProvider>
   );
 };
 
@@ -101,16 +105,7 @@ const App: React.FC = () => {
               <CreateSubject />
             </ProtectedRoute>
           } />
-          <Route path="/test-notifications" element={
-            <ProtectedRoute>
-              <NotificationTest />
-            </ProtectedRoute>
-          } />
-          <Route path="/test-modal-notifications" element={
-            <ProtectedRoute>
-              <NotificationModalTest />
-            </ProtectedRoute>
-          } />
+
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>

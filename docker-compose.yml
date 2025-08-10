@@ -8,7 +8,13 @@ services:
       dockerfile: Dockerfile
     container_name: study-ai-api-gateway
     ports:
-      - "8000:80"
+      - "8000:8000"
+    environment:
+      - DOCUMENT_SERVICE_URL=http://document-service:8002
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - QUIZ_SERVICE_URL=http://quiz-service:8004
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+      - INDEXING_SERVICE_URL=http://indexing-service:8003
     depends_on:
       - auth-service
       - document-service
