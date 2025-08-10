@@ -14,7 +14,9 @@ import {
 } from '../types';
 import authService from './auth'; // Import the new auth service
 
+// Use GraphQL API Gateway for all endpoints
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const AUTH_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 class ApiService {
   private getAuthHeaders(): HeadersInit {
@@ -29,9 +31,9 @@ class ApiService {
     return response.json();
   }
 
-  // Auth endpoints
+  // Auth endpoints - use direct auth service
   async login(credentials: LoginRequest): Promise<AuthResponse> {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    const response = await fetch(`${AUTH_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -42,7 +44,7 @@ class ApiService {
   }
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    const response = await fetch(`${AUTH_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -53,7 +55,7 @@ class ApiService {
   }
 
   async getCurrentUser(): Promise<User> {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    const response = await fetch(`${AUTH_BASE_URL}/auth/me`, {
       headers: this.getAuthHeaders(),
     });
     return this.handleResponse<User>(response);

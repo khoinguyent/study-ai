@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Folder, 
@@ -23,11 +23,12 @@ import {
 import { User, Subject, Category, Document, DashboardStats } from '../types';
 import apiService from '../services/api';
 import authService from '../services/auth';
+import { graphqlClient, DashboardData } from '../services/graphql';
 import CreateCategoryModal from './CreateCategoryModal';
 import CreateSubjectModal from './CreateSubjectModal';
 import UploadDocumentsModal from './UploadDocumentsModal';
 import CategoryDocumentsList from './CategoryDocumentsList';
-import { NotificationProvider, useNotifications } from './notifications/NotificationContext';
+import { useNotifications } from './notifications/NotificationContext';
 import { Bell } from 'lucide-react';
 import './Dashboard.css';
 
@@ -77,7 +78,7 @@ const HierarchicalCheckbox: React.FC<HierarchicalCheckboxProps> = ({
 // Notification Bell Component
 const NotificationBell: React.FC = () => {
   const { notifications } = useNotifications();
-  const unreadCount = notifications.filter(n => n.state !== 'completed').length;
+  const unreadCount = notifications?.filter(n => n && n.status !== 'success')?.length || 0;
   
   return (
     <div className="relative">
@@ -118,19 +119,18 @@ const Dashboard: React.FC = () => {
   const [isUploadDocumentsModalOpen, setIsUploadDocumentsModalOpen] = useState<boolean>(false);
   const [selectedSubject, setSelectedSubject] = useState<Subject | undefined>(undefined);
   const [selectedCategory, setSelectedCategory] = useState<Category | undefined>(undefined);
-
-  useEffect(() => {
-    fetchUserData();
-    fetchSubjects();
-  }, []);
+  const { addNotification } = useNotifications();
 
   const fetchUserData = async (): Promise<void> => {
     try {
       const cachedUser = authService.getCurrentUser();
       if (cachedUser) {
+        console.log('Using cached user:', cachedUser);
         setUser(cachedUser);
+        return; // Don't make API call if we have valid cached user
       }
 
+      console.log('No cached user, fetching from API...');
       const userData = await apiService.getCurrentUser();
       setUser(userData);
       authService.updateUser(userData);
@@ -141,50 +141,143 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const fetchSubjects = async (): Promise<void> => {
+  const fetchSubjects = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiService.getSubjects();
-      setSubjects(data);
+      if (!user?.id) {
+        console.error('No user ID available');
+        setLoading(false);
+        return;
+      }
+
+      console.log('🔍 [' + new Date().toISOString() + '] Fetching dashboard data via GraphQL for user:', user.id);
+      const response = await graphqlClient.getDashboardData(user.id);
+      console.log('📊 Raw GraphQL response:', response);
+      console.log('📊 Raw GraphQL response type:', typeof response);
+      console.log('📊 Raw GraphQL response keys:', Object.keys(response || {}));
       
-      // Fetch all categories
-      const allCategories = await apiService.getCategories();
+      // Extract dashboard data from response
+      const dashboardData = response?.dashboard || response;
+      console.log('📊 Extracted dashboard data:', dashboardData);
+      console.log('📊 Extracted dashboard data type:', typeof dashboardData);
+      console.log('📊 Extracted dashboard data keys:', Object.keys(dashboardData || {}));
+      console.log('📈 Dashboard data stats:', dashboardData?.stats);
+      console.log('📚 Dashboard data subjects:', dashboardData?.subjects);
+      console.log('🔢 Subjects array length:', dashboardData?.subjects?.length);
+      console.log('🔢 Is subjects an array?:', Array.isArray(dashboardData?.subjects));
       
-      // Group categories by subject_id
+      if (!dashboardData) {
+        console.error('No dashboard data returned');
+        setLoading(false);
+        return;
+      }
+
+      // Process subjects
+      const subjectsData = dashboardData.subjects || [];
+      console.log('🔄 Processing subjects data:', subjectsData);
+      console.log('🔄 Subjects data length:', subjectsData.length);
+      
+      const processedSubjects = subjectsData.map((subject: any) => ({
+        id: subject.id,
+        name: subject.name,
+        description: subject.description,
+        user_id: user.id,
+        color_theme: subject.color_theme || null,
+        icon: subject.icon || null,
+        document_count: subject.total_documents || 0,
+        avg_score: subject.avg_score || 0,
+        created_at: subject.created_at || new Date().toISOString(),
+        updated_at: subject.updated_at || null
+      }));
+      
+      console.log('✅ Processed subjects:', processedSubjects);
+      console.log('⚡ About to setSubjects with:', processedSubjects.length, 'subjects');
+      setSubjects(processedSubjects);
+      
+      // Verify state update in next tick
+      setTimeout(() => {
+        console.log('🔄 State verification - current subjects in state:', subjects.length);
+      }, 100);
+
+      // Process categories grouped by subject
       const categoriesData: { [subjectId: string]: Category[] } = {};
-      for (const subject of data) {
-        categoriesData[subject.id] = allCategories.filter(cat => cat.subject_id === subject.id);
-        
-        // Fetch documents for each category
-        const documentsData: { [categoryId: string]: Document[] } = {};
-        for (const category of categoriesData[subject.id]) {
-          try {
-            const categoryDocuments = await apiService.getDocuments(category.id);
-            documentsData[category.id] = categoryDocuments;
-          } catch (error) {
-            console.error(`Error fetching documents for category ${category.id}:`, error);
-            documentsData[category.id] = [];
+      const documentsData: { [categoryId: string]: Document[] } = {};
+      
+      for (const subject of subjectsData) {
+        if (subject && subject.id) {
+          categoriesData[subject.id] = (subject.categories || []).map((category: any) => ({
+            id: category.id,
+            name: category.name,
+            description: category.description || '',
+            subject_id: subject.id,
+            user_id: user.id,
+            document_count: category.total_documents || 0,
+            created_at: category.created_at || new Date().toISOString(),
+            updated_at: category.updated_at || null
+          }));
+
+          // Process documents for each category
+          for (const category of (subject.categories || [])) {
+            if (category && category.id) {
+              documentsData[category.id] = (category.documents || []).map((doc: any) => ({
+                id: doc.id,
+                filename: doc.name || doc.filename || 'Unknown',
+                original_filename: doc.name || doc.filename || 'Unknown',
+                status: doc.status || 'pending',
+                file_path: doc.s3_url || '',
+                category_id: category.id,
+                user_id: user.id,
+                file_size: doc.file_size || 0,
+                content_type: doc.content_type || 'application/pdf',
+                created_at: doc.created_at || new Date().toISOString(),
+                updated_at: doc.updated_at || null
+              }));
+            }
           }
         }
-        setDocuments(prev => ({ ...prev, ...documentsData }));
       }
+      
       setCategories(categoriesData);
+      setDocuments(documentsData);
       
-      // Calculate stats
-      const totalDocs = data.reduce((sum, subject) => sum + (subject.document_count || 0), 0);
-      const avgScore = data.length > 0 ? 
-        Math.round(data.reduce((sum, subject) => sum + (subject.avg_score || 0), 0) / data.length) : 0;
+      // Use stats from GraphQL - snake_case mapping
+      const newStats = {
+        documentSets: dashboardData.stats?.total_subjects || 0,
+        documents: dashboardData.stats?.total_documents || 0,
+        avgScore: Math.round(dashboardData.stats?.avg_score || 0)
+      };
+      console.log('📊 Setting stats:', newStats);
+      console.log('📚 Setting subjects count:', subjectsData.length);
+      console.log('💾 About to setStats with:', newStats);
+      setStats(newStats);
       
-      setStats({
-        documentSets: data.length,
-        documents: totalDocs,
-        avgScore: avgScore
-      });
+      // Verify stats state update
+      setTimeout(() => {
+        console.log('📈 Stats verification - current stats in state:', stats);
+      }, 100);
+      
+      console.log('🎉 Dashboard data processing completed successfully!');
     } catch (error) {
-      console.error('Error fetching subjects:', error);
+      console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    console.log('🚀 [' + new Date().toISOString() + '] Dashboard mounted, fetching user data...');
+    fetchUserData();
+  }, []);
+
+  useEffect(() => {
+    console.log('👤 User effect triggered, user:', user);
+    console.log('🆔 User ID:', user?.id);
+    if (user?.id) {
+      console.log('✅ User ID available, calling fetchSubjects...');
+      fetchSubjects();
+    } else {
+      console.log('❌ No user ID available, skipping fetchSubjects');
+    }
+  }, [user?.id, fetchSubjects]); // Include fetchSubjects to ensure latest version
 
   const getSubjectIcon = (subjectName: string): React.ReactNode => {
     const icons: { [key: string]: React.ReactNode } = {
@@ -265,13 +358,15 @@ const Dashboard: React.FC = () => {
   };
 
   const getDocumentsByCategory = (categoryId: string): string[] => {
+    if (!documents || !categoryId) return [];
     const categoryDocs = documents[categoryId] || [];
-    return categoryDocs.map(doc => doc.id);
+    return categoryDocs.filter(doc => doc && doc.id).map(doc => doc.id);
   };
 
   const getCategoriesBySubject = (subjectId: string): string[] => {
+    if (!categories || !subjectId) return [];
     const subjectCategories = categories[subjectId] || [];
-    return subjectCategories.map(cat => cat.id);
+    return subjectCategories.filter(cat => cat && cat.id).map(cat => cat.id);
   };
 
   const handleDocumentSelect = (documentId: string, checked: boolean): void => {
@@ -358,23 +453,27 @@ const Dashboard: React.FC = () => {
   };
 
   const getReadySelectedDocuments = (): string[] => {
+    if (!selections?.documents || !documents) return [];
+    
     const selectedDocIds = Array.from(selections.documents);
     const readyDocIds: string[] = [];
     
     // Check all categories for documents and their status
     Object.values(documents).forEach(categoryDocs => {
-      categoryDocs.forEach(doc => {
-        if (selectedDocIds.includes(doc.id) && doc.status === 'completed') {
-          readyDocIds.push(doc.id);
-        }
-      });
+      if (Array.isArray(categoryDocs)) {
+        categoryDocs.forEach(doc => {
+          if (doc && selectedDocIds.includes(doc.id) && doc.status === 'completed') {
+            readyDocIds.push(doc.id);
+          }
+        });
+      }
     });
     
     return readyDocIds;
   };
 
   const getTotalSelectedDocuments = (): number => {
-    return selections.documents.size;
+    return selections?.documents?.size || 0;
   };
 
   const getReadySelectedDocumentsCount = (): number => {
@@ -382,14 +481,16 @@ const Dashboard: React.FC = () => {
   };
 
   const getSelectedDocumentsInCategory = (categoryId: string): number => {
+    if (!selections?.documents || !categoryId) return 0;
     const categoryDocuments = getDocumentsByCategory(categoryId);
     return categoryDocuments.filter(docId => selections.documents.has(docId)).length;
   };
 
   const getReadySelectedDocumentsInCategory = (categoryId: string): number => {
+    if (!documents || !categoryId || !selections?.documents) return 0;
     const categoryDocs = documents[categoryId] || [];
     return categoryDocs.filter(doc => 
-      selections.documents.has(doc.id) && doc.status === 'completed'
+      doc && selections.documents.has(doc.id) && doc.status === 'completed'
     ).length;
   };
 
@@ -435,7 +536,17 @@ const Dashboard: React.FC = () => {
       
     } catch (error) {
       console.error('Error deleting documents:', error);
-      alert('Failed to delete documents. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete documents. Please try again.';
+      
+      // Use custom notification instead of alert
+      addNotification({
+        type: 'document',
+        status: 'error',
+        title: 'Bulk Delete Failed',
+        message: `Failed to delete selected documents: ${errorMessage}`,
+        autoClose: true,
+        autoCloseDelay: 5000
+      });
     }
   };
 
@@ -475,7 +586,17 @@ const Dashboard: React.FC = () => {
       
     } catch (error) {
       console.error('Error deleting documents:', error);
-      alert('Failed to delete documents. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete documents. Please try again.';
+      
+      // Use custom notification instead of alert
+      addNotification({
+        type: 'document',
+        status: 'error',
+        title: 'Bulk Delete Failed',
+        message: `Failed to delete selected documents: ${errorMessage}`,
+        autoClose: true,
+        autoCloseDelay: 5000
+      });
     }
   };
 
@@ -490,7 +611,15 @@ const Dashboard: React.FC = () => {
   const handleStartStudySession = (): void => {
     const readyDocIds = getReadySelectedDocuments();
     if (readyDocIds.length === 0) {
-      alert('No ready documents selected. Please select documents that have been processed.');
+      // Use custom notification instead of alert
+      addNotification({
+        type: 'quiz',
+        status: 'error',
+        title: 'No Ready Documents',
+        message: 'No ready documents selected. Please select documents that have been processed.',
+        autoClose: true,
+        autoCloseDelay: 4000
+      });
       return;
     }
     
@@ -501,7 +630,15 @@ const Dashboard: React.FC = () => {
     // TODO: Implement navigation to quiz page
     // navigate('/quiz', { state: { documentIds: readyDocIds } });
     
-    alert(`Starting quiz with ${readyDocIds.length} ready documents!`);
+    // Use custom notification instead of alert
+    addNotification({
+      type: 'quiz',
+      status: 'success',
+      title: 'Study Session Started',
+      message: `Starting quiz with ${readyDocIds.length} ready documents!`,
+      autoClose: true,
+      autoCloseDelay: 3000
+    });
   };
 
   const handleCategoryCreated = (): void => {
@@ -524,8 +661,7 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <NotificationProvider>
-      <div className="dashboard">
+    <div className="dashboard">
       {/* Dashboard Header */}
       <header className="dashboard-header">
         <div className="header-left">
@@ -775,14 +911,15 @@ const Dashboard: React.FC = () => {
                               </div>
 
                               {!isCategoryCollapsed && (
-                                                                  <CategoryDocumentsList
-                                    categoryId={category.id}
-                                    isExpanded={!isCategoryCollapsed}
-                                    onToggle={() => toggleCategoryCollapse(category.id)}
-                                    documentCount={category.document_count}
+                                <CategoryDocumentsList
+                                  categoryId={category.id}
+                                  isExpanded={!isCategoryCollapsed}
+                                  onToggle={() => toggleCategoryCollapse(category.id)}
+                                  documentCount={category.document_count}
+                                    documents={documents[category.id] || []}
                                     selectedDocuments={selections.documents}
                                     onDocumentSelect={handleDocumentSelect}
-                                  />
+                                />
                               )}
                             </div>
                           );
@@ -837,7 +974,6 @@ const Dashboard: React.FC = () => {
         onRefreshDocuments={handleDocumentsUploaded}
       />
     </div>
-    </NotificationProvider>
   );
 };
 

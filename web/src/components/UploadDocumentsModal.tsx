@@ -142,7 +142,7 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       // Update notifications for each file
       uploadNotifications.forEach(({ notificationId, file }) => {
         // Start processing with 0% progress
-        startProcessing(notificationId, documentId);
+        startProcessing(notificationId, file.name);
         
         // Simulate processing progress (in real app, this would come from WebSocket)
         let progress = 0;
@@ -154,12 +154,12 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
             clearInterval(processingInterval);
             
             // Start indexing
-            startIndexing(notificationId);
+            startIndexing(notificationId, file.name);
             
             // Simulate indexing progress (in real app, this would come from WebSocket)
             setTimeout(() => {
-              // Complete document
-              completeDocument(notificationId, documentId, 1);
+                          // Complete document
+            completeDocument(notificationId, file.name);
             }, 2000);
           }
         }, 500);
@@ -177,8 +177,8 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       setErrors([errorMessage]);
       
       // Update notifications with error
-      uploadNotifications.forEach(({ notificationId }) => {
-        failDocument(notificationId, errorMessage);
+      uploadNotifications.forEach(({ notificationId, file }) => {
+        failDocument(notificationId, file.name, errorMessage);
       });
     } finally {
       setIsUploading(false);

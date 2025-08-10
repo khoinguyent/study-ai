@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, FileText, Download, Trash2, Loader2, Check, Square } from 'lucide-react';
 import { Document } from '../types';
 import apiService from '../services/api';
-import { useDocumentNotifications } from './notifications/NotificationContext';
+import { useDocumentNotifications, useNotifications } from './notifications/NotificationContext';
 import './CategoryDocumentsList.css';
 
 interface CategoryDocumentsListProps {
@@ -10,6 +10,7 @@ interface CategoryDocumentsListProps {
   isExpanded: boolean;
   onToggle: () => void;
   documentCount: number;
+  documents?: Document[]; // Optional: if provided, skip API fetch
   selectedDocuments: Set<string>;
   onDocumentSelect: (documentId: string, checked: boolean) => void;
 }
@@ -19,6 +20,7 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   isExpanded,
   onToggle,
   documentCount,
+  documents: propDocuments,
   selectedDocuments,
   onDocumentSelect
 }) => {
@@ -30,6 +32,7 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   const [totalCount, setTotalCount] = useState<number>(0);
   const isSelectionMode = selectedDocuments.size > 0;
   const { startDeletion, updateDeletionProgress, completeDeletion, failDeletion } = useDocumentNotifications();
+  const { addNotification } = useNotifications();
 
   const loadDocuments = async (pageNum: number = 1, append: boolean = false) => {
     if (pageNum === 1) {
@@ -59,10 +62,16 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   };
 
   useEffect(() => {
-    if (isExpanded && documents.length === 0) {
+    if (propDocuments) {
+      // Use documents from props (GraphQL data)
+      setDocuments(propDocuments);
+      setTotalCount(propDocuments.length);
+      setHasMore(false); // No pagination needed with GraphQL data
+    } else if (isExpanded && documents.length === 0) {
+      // Fallback to API fetch if no props provided
       loadDocuments(1, false);
     }
-  }, [isExpanded, categoryId]);
+  }, [isExpanded, categoryId, propDocuments]);
 
   const handleLoadMore = () => {
     if (hasMore && !loadingMore) {
@@ -92,7 +101,17 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
       await apiService.downloadDocument(document.id);
     } catch (error) {
       console.error('Error downloading document:', error);
-      alert('Failed to download document. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to download document. Please try again.';
+      
+      // Use custom notification instead of alert
+      addNotification({
+        type: 'document',
+        status: 'error',
+        title: 'Download Failed',
+        message: `Failed to download ${document.filename}: ${errorMessage}`,
+        autoClose: true,
+        autoCloseDelay: 5000
+      });
     }
   };
 
