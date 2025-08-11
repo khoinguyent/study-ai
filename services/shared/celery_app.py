@@ -1,22 +1,27 @@
 """
 Shared Celery Configuration for Study AI Platform
 Provides Celery app configuration for background task processing
+Updated to use infrastructure abstraction layer
 """
 
 from celery import Celery
 from .events import EventType, create_event
 from .event_publisher import EventPublisher
+from .infrastructure import infra_config, get_message_broker, get_task_queue, is_local_environment
 import os
+import logging
 
-# Celery configuration
-CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+logger = logging.getLogger(__name__)
+
+# Get configuration from infrastructure layer
+CELERY_BROKER_URL = infra_config.get_message_broker_url()
+CELERY_RESULT_BACKEND = infra_config.get_message_broker_url()
 
 # Create Celery app
 celery_app = Celery(
     'study_ai',
     broker=CELERY_BROKER_URL,
-    backend=CELERY_RESULT_BACKEND
+    backend=CELERY_BROKER_URL
 )
 
 # Celery configuration
@@ -128,23 +133,25 @@ class EventDrivenTask:
             user_id=user_id,
             task_id=task_id,
             task_type=task_type,
-            status="processing",
+            status="started",
             progress=0,
             message="Task started"
         )
     
-    def publish_task_progress(self, task_id: str, user_id: str, task_type: str, progress: int, message: str = None):
+    def publish_task_progress(self, task_id: str, user_id: str, task_type: str, 
+                            progress: int, message: str):
         """Publish task progress event"""
         self.event_publisher.publish_task_status_update(
             user_id=user_id,
             task_id=task_id,
             task_type=task_type,
-            status="processing",
+            status="progress",
             progress=progress,
             message=message
         )
     
-    def publish_task_completed(self, task_id: str, user_id: str, task_type: str, message: str = "Task completed"):
+    def publish_task_completed(self, task_id: str, user_id: str, task_type: str, 
+                             message: str):
         """Publish task completed event"""
         self.event_publisher.publish_task_status_update(
             user_id=user_id,
@@ -155,7 +162,8 @@ class EventDrivenTask:
             message=message
         )
     
-    def publish_task_failed(self, task_id: str, user_id: str, task_type: str, error_message: str):
+    def publish_task_failed(self, task_id: str, user_id: str, task_type: str, 
+                          error_message: str):
         """Publish task failed event"""
         self.event_publisher.publish_task_status_update(
             user_id=user_id,
@@ -163,50 +171,62 @@ class EventDrivenTask:
             task_type=task_type,
             status="failed",
             progress=0,
-            message=error_message
+            message=f"Task failed: {error_message}"
         )
 
-# Task decorators with retry and DLQ support
+# Task decorators for different queues
 def document_task(func):
-    """Decorator for document processing tasks with retry and DLQ support"""
-    return celery_app.task(
-        bind=True, 
-        queue='document_queue',
-        max_retries=3,
-        default_retry_delay=60,  # 1 minute
-        autoretry_for=(Exception,),
-        retry_backoff=True,
-        retry_jitter=True
-    )(func)
+    """Decorator for document processing tasks"""
+    return celery_app.task(queue='document_queue')(func)
 
 def indexing_task(func):
-    """Decorator for indexing tasks with retry and DLQ support"""
-    return celery_app.task(
-        bind=True, 
-        queue='indexing_queue',
-        max_retries=3,
-        default_retry_delay=60,  # 1 minute
-        autoretry_for=(Exception,),
-        retry_backoff=True,
-        retry_jitter=True
-    )(func)
+    """Decorator for indexing tasks"""
+    return celery_app.task(queue='indexing_queue')(func)
 
 def quiz_task(func):
-    """Decorator for quiz generation tasks with retry and DLQ support"""
-    return celery_app.task(
-        bind=True, 
-        queue='quiz_queue',
-        max_retries=3,
-        default_retry_delay=60,  # 1 minute
-        autoretry_for=(Exception,),
-        retry_backoff=True,
-        retry_jitter=True
-    )(func)
+    """Decorator for quiz generation tasks"""
+    return celery_app.task(queue='quiz_queue')(func)
 
-def dlq_task(func):
-    """Decorator for dead letter queue processing tasks"""
-    return celery_app.task(
-        bind=True,
-        queue='dlq_document',  # Default to document DLQ
-        max_retries=0,  # No retries for DLQ tasks
-    )(func) 
+# Infrastructure-aware task enqueuing
+def enqueue_task(task_name: str, args: tuple = None, kwargs: dict = None, 
+                queue: str = 'default') -> str:
+    """
+    Enqueue a task using the appropriate infrastructure
+    
+    Args:
+        task_name: Name of the task to execute
+        args: Positional arguments for the task
+        kwargs: Keyword arguments for the task
+        queue: Queue name (for Celery) or queue URL (for SQS)
+    
+    Returns:
+        Task ID or message ID
+    """
+    if is_local_environment():
+        # Use Celery for local environment
+        task = celery_app.send_task(task_name, args=args, kwargs=kwargs)
+        return task.id
+    else:
+        # Use infrastructure abstraction for cloud environment
+        task_queue = get_task_queue()
+        if task_queue.connect():
+            try:
+                return task_queue.enqueue(task_name, args=args, kwargs=kwargs)
+            finally:
+                task_queue.disconnect()
+        else:
+            logger.error("Failed to connect to task queue")
+            return ""
+
+# Backward compatibility functions
+def get_celery_app():
+    """Get the Celery app instance (backward compatibility)"""
+    return celery_app
+
+def get_celery_broker_url():
+    """Get the Celery broker URL (backward compatibility)"""
+    return CELERY_BROKER_URL
+
+def get_celery_result_backend():
+    """Get the Celery result backend URL (backward compatibility)"""
+    return CELERY_RESULT_BACKEND 

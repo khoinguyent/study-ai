@@ -1,0 +1,187 @@
+# Cloud Environment Docker Compose Configuration
+# This file is for cloud deployment without local Redis and other local services
+
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: study-ai-api-gateway-cloud
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+      # Service URLs will be set via environment variables
+    env_file:
+      - env.cloud
+    depends_on:
+      - auth-service
+      - document-service
+      - indexing-service
+      - quiz-service
+      - notification-service
+      - leaf-quiz-service
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: study-ai-auth-service-cloud
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+    env_file:
+      - env.cloud
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Document Service
+  document-service:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-document-service-cloud
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+    env_file:
+      - env.cloud
+    depends_on:
+      - auth-service
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Indexing Service
+  indexing-service:
+    build:
+      context: ./services/indexing-service
+      dockerfile: Dockerfile
+    container_name: study-ai-indexing-service-cloud
+    ports:
+      - "8003:8003"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+    env_file:
+      - env.cloud
+    depends_on:
+      - document-service
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Quiz Service
+  quiz-service:
+    build:
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-quiz-service-cloud
+    ports:
+      - "8004:8004"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+    env_file:
+      - env.cloud
+    depends_on:
+      - auth-service
+      - document-service
+      - indexing-service
+      - notification-service
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: study-ai-notification-service-cloud
+    ports:
+      - "8005:8005"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+    env_file:
+      - env.cloud
+    depends_on:
+      - auth-service
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Leaf Quiz Service
+  leaf-quiz-service:
+    build:
+      context: ./services/leaf-quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-leaf-quiz-service-cloud
+    ports:
+      - "8006:8006"
+    environment:
+      - ENVIRONMENT=cloud
+      - INFRASTRUCTURE_PROVIDER=aws
+      - MESSAGE_BROKER_TYPE=elasticache
+      - TASK_QUEUE_TYPE=sqs
+    env_file:
+      - env.cloud
+    depends_on:
+      - auth-service
+      - document-service
+      - indexing-service
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Web Frontend
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: study-ai-web-cloud
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_ENVIRONMENT=cloud
+      - REACT_APP_API_BASE_URL=http://localhost:8000
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+networks:
+  study-ai-cloud-network:
+    driver: bridge
+
+# Note: This configuration assumes:
+# - Redis is replaced by ElastiCache (configured via env.cloud)
+# - Celery is replaced by SQS (configured via env.cloud)
+# - PostgreSQL databases are hosted on RDS (configured via env.cloud)
+# - MinIO is replaced by S3 (configured via env.cloud)
+# - Ollama is replaced by SageMaker (configured via env.cloud)
