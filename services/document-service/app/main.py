@@ -173,7 +173,7 @@ async def process_document_with_notifications(document_id: str, user_id: str, ta
         # Update document status in database
         document = db.query(Document).filter(Document.id == document_id).first()
         if document:
-            document.status = DocumentStatus.FAILED
+            document.status = str(DocumentStatus.FAILED)
             db.commit()
         
         return None
@@ -688,7 +688,7 @@ async def upload_document(
         content_type=file.content_type,
         file_size=0,  # Will be updated after upload
         file_path="",  # Will be updated after upload
-        status=DocumentStatus.UPLOADED,
+                    status=str(DocumentStatus.UPLOADED),
         subject_id=subject_id,
         category_id=category_id
     )
@@ -724,7 +724,7 @@ async def upload_document(
         )
         
     except Exception as e:
-        document.status = DocumentStatus.FAILED
+        document.status = str(DocumentStatus.FAILED)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -733,7 +733,7 @@ async def upload_document(
 
 @app.post("/upload-multiple", response_model=List[DocumentUploadResponse])
 async def upload_multiple_documents(
-    files: List[UploadFile] = File(..., max_length=100 * 1024 * 1024),  # 100MB max per file
+    files: List[UploadFile] = File(...),  # Files will be validated for size in the function
     subject_id: Optional[str] = Form(None),
     category_id: Optional[str] = Form(None),
     user_id: str = Depends(verify_auth_token),
@@ -746,7 +746,7 @@ async def upload_multiple_documents(
             detail="Maximum 10 files allowed per upload"
         )
     
-    # Validate file types
+    # Validate file types and sizes
     allowed_types = [
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -754,11 +754,29 @@ async def upload_multiple_documents(
         "text/plain"
     ]
     
+    max_file_size = 100 * 1024 * 1024  # 100MB max per file
+    
     for file in files:
         if file.content_type not in allowed_types:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported file type: {file.filename}"
+            )
+        
+        # Check file size (we'll read the file to get its size)
+        try:
+            file_content = await file.read()
+            if len(file_content) > max_file_size:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File {file.filename} is too large. Maximum size is 100MB."
+                )
+            # Reset file position for later processing
+            await file.seek(0)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Error reading file {file.filename}: {str(e)}"
             )
     
     # Validate subject and category if provided
@@ -800,7 +818,7 @@ async def upload_multiple_documents(
             content_type=file.content_type,
             file_size=0,  # Will be updated after upload
             file_path="",  # Will be updated after upload
-            status=DocumentStatus.UPLOADED,
+            status=str(DocumentStatus.UPLOADED),
             subject_id=subject_id,
             category_id=category_id
         )
@@ -810,7 +828,7 @@ async def upload_multiple_documents(
         
         try:
             print(f"Processing file: {file.filename}")
-            # Read file content
+            # Read file content (already read during validation, but we need to read again)
             file_content = await file.read()
             print(f"File content read, size: {len(file_content)} bytes")
             
@@ -840,13 +858,13 @@ async def upload_multiple_documents(
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
             
-            document.status = DocumentStatus.FAILED
+            document.status = str(DocumentStatus.FAILED)
             db.commit()
             
             uploaded_documents.append(DocumentUploadResponse(
                 id=document.id,
                 filename=document.filename,
-                status=DocumentStatus.FAILED,
+                status=str(DocumentStatus.FAILED),
                 message=f"Upload failed: {str(e)}"
             ))
     
@@ -924,7 +942,7 @@ async def download_document(
             detail="Document not found"
         )
     
-    if document.status != DocumentStatus.COMPLETED:
+    if document.status != str(DocumentStatus.COMPLETED):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Document is not ready for download"
@@ -1160,6 +1178,54 @@ async def list_subject_documents(
         )
         for doc in documents
     ]
+
+@app.post("/documents/{document_id}/indexing-complete")
+async def indexing_complete(
+    document_id: str,
+    user_id: str = Query(..., description="User ID"),
+    db: Session = Depends(get_db)
+):
+    """Update document status when indexing is complete"""
+    try:
+        # Find the document
+        document = db.query(Document).filter(
+            Document.id == document_id,
+            Document.user_id == user_id
+        ).first()
+        
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        # Update status to "ready" (ready for quiz generation)
+        document.status = "ready"
+        db.commit()
+        
+        print(f"Document {document_id} status updated to 'ready' after indexing completion")
+        
+        # Send notification that document is ready for quiz generation
+        try:
+            notification_service = NotificationService()
+            await notification_service.send_notification(
+                user_id=user_id,
+                title="Document Ready for Quiz",
+                message=f"Document {document.filename} is now ready for quiz generation",
+                notification_type="document_status",
+                metadata={"document_id": document_id, "status": "ready"}
+            )
+        except Exception as e:
+            print(f"Failed to send notification: {e}")
+        
+        return {"message": "Document status updated to ready", "document_id": document_id}
+        
+    except Exception as e:
+        print(f"Failed to update document status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update document status: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  studyai-app:
+    image: your-registry/studyai-app:latest  # Update with your actual image
+    container_name: studyai-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - AWS_REGION=ap-southeast-1
+      - S3_BUCKET=studyai-uploads-dev-ap-southeast-1
+      - PORT=3000
+      # Add other environment variables your app needs
+      # - DATABASE_URL=your-database-url
+      # - REDIS_URL=your-redis-url
+      # - JWT_SECRET=your-jwt-secret
+    volumes:
+      # Mount any persistent data if needed
+      # - ./uploads:/app/uploads
+      # - ./logs:/app/logs
+    networks:
+      - studyai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Add Redis if you need it (replace with ElastiCache later)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: studyai-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - studyai-network
+
+  # Add PostgreSQL if you need it (replace with RDS later)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: studyai-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_DB=studyai
+  #     - POSTGRES_USER=studyai
+  #     - POSTGRES_PASSWORD=your-secure-password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - studyai-network
+
+networks:
+  studyai-network:
+    driver: bridge
+
+# volumes:
+#   redis-data:
+#   postgres-data:
