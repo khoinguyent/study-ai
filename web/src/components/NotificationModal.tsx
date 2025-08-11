@@ -49,7 +49,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
   return (
     <div
       className={`
-        w-full max-w-sm rounded-lg shadow-lg p-4 transition-all duration-300 ease-in-out border bg-white
+        w-full max-w-sm rounded-lg shadow-lg p-4 transition-all duration-300 ease-in-out border
         ${isError ? 'bg-red-50 border-red-200' : ''}
         ${isSuccess ? 'bg-green-50 border-green-200' : ''}
         ${isWarning ? 'bg-yellow-50 border-yellow-200' : ''}

@@ -204,9 +204,28 @@ def process_document(self, document_id: str, user_id: str):
                 message=f"Document {document.filename} processed successfully"
             )
             
-            # Trigger indexing
-            from services.indexing_service.app.tasks import index_document
-            index_document.delay(document_id, user_id)
+            # Trigger indexing via HTTP call to indexing service
+            try:
+                import httpx
+                async def trigger_indexing():
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(
+                            f"{os.environ.get('INDEXING_SERVICE_URL', 'http://indexing-service:8003')}/index",
+                            params={
+                                "document_id": document_id,
+                                "user_id": user_id
+                            }
+                        )
+                        if response.status_code == 200:
+                            logger.info(f"Indexing triggered successfully for document {document_id}")
+                        else:
+                            logger.error(f"Failed to trigger indexing for document {document_id}: {response.status_code}")
+                
+                # Run the async function
+                asyncio.run(trigger_indexing())
+            except Exception as e:
+                logger.error(f"Failed to trigger indexing for document {document_id}: {str(e)}")
+                # Don't fail the entire task if indexing trigger fails
             
             return {
                 'status': 'success',

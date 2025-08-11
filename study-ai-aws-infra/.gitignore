@@ -1,0 +1,10 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.crash
+*.lock.hcl
+
+# Keys
+infra/studyai_key
+infra/studyai_key.pub

@@ -202,6 +202,21 @@ async def index_document(
             metadata={"document_id": document_id, "chunks_created": len(chunks)}
         )
         
+        # Notify document service that indexing is complete
+        try:
+            document_service_url = settings.DOCUMENT_SERVICE_URL or "http://document-service:8002"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{document_service_url}/documents/{document_id}/indexing-complete",
+                    params={"user_id": user_id}
+                )
+                if response.status_code == 200:
+                    print(f"Document service notified of indexing completion for {document_id}")
+                else:
+                    print(f"Failed to notify document service: {response.status_code}")
+        except Exception as e:
+            print(f"Failed to notify document service: {e}")
+        
         return {
             "message": "Document indexed successfully",
             "chunks_created": len(chunks),

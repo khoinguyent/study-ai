@@ -198,6 +198,7 @@ class ApiService {
     const token = authService.getToken();
     const headers: HeadersInit = {
       'Authorization': `Bearer ${token}`,
+      // Don't set Content-Type for FormData - let browser set it automatically
     };
     
     const response = await fetch(`${API_BASE_URL}/upload-multiple`, {

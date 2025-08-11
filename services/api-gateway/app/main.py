@@ -9,10 +9,10 @@ from .auth import verify_auth_token, security
 
 app = FastAPI(title="StudyAI GraphQL API", version="1.0.0")
 
-# Add CORS middleware
+# Add CORS middleware - temporarily simplified
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -46,6 +46,11 @@ async def root():
 async def test_auth(request: Request):
     auth_header = request.headers.get("authorization")
     return {"message": "Test endpoint reached", "auth_header": auth_header}
+
+@app.post("/test-upload")
+async def test_upload():
+    """Test upload endpoint"""
+    return {"message": "Test upload endpoint working"}
 
 @app.get("/auth/me-direct")
 async def me_direct(request: Request):
@@ -169,11 +174,11 @@ async def me_proxy(request: Request):
             detail=f"Auth service error: {str(e)}"
         )
 
-# Add CORS preflight handler
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    """Handle CORS preflight requests"""
-    return {"message": "OK"}
+# Add CORS preflight handler - temporarily disabled to fix upload routing
+# @app.options("/{path:path}")
+# async def options_handler(path: str):
+#     """Handle CORS preflight requests"""
+#     return {"message": "OK"}
 
 # Proxy other endpoints that might be needed
 @app.get("/subjects")
@@ -273,6 +278,109 @@ async def download_document_proxy(document_id: str, request: Request):
             detail=f"Download service error: {str(e)}"
         )
 
+@app.post("/upload")
+async def upload_document_proxy(request: Request):
+    """Proxy single document upload requests to document service"""
+    try:
+        # Forward the Authorization header to Document Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the raw request body to preserve multipart structure
+        body = await request.body()
+        
+        # Forward the request with proper content type
+        content_type = request.headers.get("content-type", "")
+        if content_type:
+            headers["Content-Type"] = content_type
+        
+        async with httpx.AsyncClient(timeout=300.0) as client:  # Longer timeout for uploads
+            response = await client.post(
+                f"{settings.DOCUMENT_SERVICE_URL}/upload",
+                content=body,
+                headers=headers,
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_detail = "Failed to upload document"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", error_detail)
+                except:
+                    pass
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=error_detail
+                )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Upload timeout"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Upload service error: {str(e)}"
+        )
+
+@app.post("/upload-multiple")
+async def upload_multiple_documents_proxy(request: Request):
+    """Proxy multiple document upload requests to document service"""
+    print(f"DEBUG: Upload multiple endpoint called with method: {request.method}")
+    try:
+        # Forward the Authorization header to Document Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the raw request body to preserve multipart structure
+        body = await request.body()
+        print(f"DEBUG: Request body size: {len(body)} bytes")
+        
+        # Forward the request with proper content type
+        content_type = request.headers.get("content-type", "")
+        if content_type:
+            headers["Content-Type"] = content_type
+        
+        async with httpx.AsyncClient(timeout=300.0) as client:  # Longer timeout for uploads
+            response = await client.post(
+                f"{settings.DOCUMENT_SERVICE_URL}/upload-multiple",
+                content=body,
+                headers=headers,
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_detail = "Failed to upload documents"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", error_detail)
+                except:
+                    pass
+                print(f"DEBUG: Document service returned {response.status_code}: {error_detail}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=error_detail
+                )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Upload timeout"
+        )
+    except Exception as e:
+        print(f"DEBUG: Exception in upload multiple: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Upload service error: {str(e)}"
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+# Force reload
