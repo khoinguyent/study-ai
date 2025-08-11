@@ -31,6 +31,111 @@ services:
       - study-ai-cloud-network
     restart: unless-stopped
 
+  # Auth Service Database
+  auth-db:
+    image: postgres:15
+    container_name: study-ai-auth-db-cloud
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Document Service Database
+  document-db:
+    image: postgres:15
+    container_name: study-ai-document-db-cloud
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: document_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - document_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Indexing Service Database (with pgvector extension)
+  indexing-db:
+    image: pgvector/pgvector:pg15
+    container_name: study-ai-indexing-db-cloud
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: indexing_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - indexing_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Quiz Service Database
+  quiz-db:
+    image: postgres:15
+    container_name: study-ai-quiz-db-cloud
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - quiz_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
+  # Notification Service Database
+  notification-db:
+    image: postgres:15
+    container_name: study-ai-notification-db-cloud
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-cloud-network
+    restart: unless-stopped
+
   # Auth Service
   auth-service:
     build:
@@ -44,8 +149,12 @@ services:
       - INFRASTRUCTURE_PROVIDER=aws
       - MESSAGE_BROKER_TYPE=elasticache
       - TASK_QUEUE_TYPE=sqs
+      # Database configuration will be set via env_file
     env_file:
       - env.cloud
+    depends_on:
+      auth-db:
+        condition: service_healthy
     networks:
       - study-ai-cloud-network
     restart: unless-stopped
@@ -67,6 +176,8 @@ services:
       - env.cloud
     depends_on:
       - auth-service
+      - document-db:
+          condition: service_healthy
     networks:
       - study-ai-cloud-network
     restart: unless-stopped
@@ -88,6 +199,8 @@ services:
       - env.cloud
     depends_on:
       - document-service
+      - indexing-db:
+          condition: service_healthy
     networks:
       - study-ai-cloud-network
     restart: unless-stopped
@@ -112,6 +225,8 @@ services:
       - document-service
       - indexing-service
       - notification-service
+      - quiz-db:
+          condition: service_healthy
     networks:
       - study-ai-cloud-network
     restart: unless-stopped
@@ -133,6 +248,8 @@ services:
       - env.cloud
     depends_on:
       - auth-service
+      - notification-db:
+          condition: service_healthy
     networks:
       - study-ai-cloud-network
     restart: unless-stopped
@@ -179,9 +296,21 @@ networks:
   study-ai-cloud-network:
     driver: bridge
 
-# Note: This configuration assumes:
+volumes:
+  auth_postgres_data:
+  document_postgres_data:
+  indexing_postgres_data:
+  quiz_postgres_data:
+  notification_postgres_data:
+
+# Note: This configuration now includes:
+# - All PostgreSQL databases (same as local setup)
+# - Uses DATABASE_PASSWORD from env.cloud for all databases
 # - Redis is replaced by ElastiCache (configured via env.cloud)
 # - Celery is replaced by SQS (configured via env.cloud)
-# - PostgreSQL databases are hosted on RDS (configured via env.cloud)
 # - MinIO is replaced by S3 (configured via env.cloud)
 # - Ollama is replaced by SageMaker (configured via env.cloud)
+#
+# The DATABASE_PASSWORD in env.cloud will be used by all database services
+# This provides consistency with your local development environment
+# while still using cloud infrastructure for message broker and task queue.

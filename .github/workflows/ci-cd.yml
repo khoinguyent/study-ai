@@ -1,0 +1,306 @@
+name: Study AI Platform CI/CD
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # 🔍 Code Quality & Testing
+  code-quality:
+    name: Code Quality & Testing
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy pytest pytest-cov
+        pip install -r services/api-gateway/requirements.txt
+        pip install -r services/auth-service/requirements.txt
+        pip install -r services/document-service/requirements.txt
+        pip install -r services/indexing-service/requirements.txt
+        pip install -r services/quiz-service/requirements.txt
+        pip install -r services/notification-service/requirements.txt
+        pip install -r services/leaf-quiz-service/requirements.txt
+        
+    - name: Install Node.js dependencies
+      run: |
+        cd web
+        npm ci
+        
+    - name: Run Python linting
+      run: |
+        flake8 services/ --max-line-length=88 --extend-ignore=E203,W503
+        black --check services/
+        isort --check-only --diff services/
+        
+    - name: Run TypeScript linting
+      run: |
+        cd web
+        npm run lint
+        
+    - name: Run Python tests
+      run: |
+        pytest services/ --cov=services/ --cov-report=xml --cov-report=html
+        
+    - name: Run frontend tests
+      run: |
+        cd web
+        npm test -- --coverage --watchAll=false
+        
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # 🐳 Build & Test Docker Images
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: code-quality
+    strategy:
+      matrix:
+        service: [api-gateway, auth-service, document-service, indexing-service, quiz-service, notification-service, leaf-quiz-service, web]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./services/${{ matrix.service }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # 🧪 Integration Testing
+  integration-test:
+    name: Integration Testing
+    runs-on: ubuntu-latest
+    needs: build-images
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        pip install -r services/api-gateway/requirements.txt
+        pip install -r services/auth-service/requirements.txt
+        pip install -r services/document-service/requirements.txt
+        pip install -r services/indexing-service/requirements.txt
+        pip install -r services/quiz-service/requirements.txt
+        pip install -r services/notification-service/requirements.txt
+        pip install -r services/leaf-quiz-service/requirements.txt
+        
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://postgres:testpassword@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379
+      run: |
+        # Start services and run integration tests
+        pytest tests/integration/ --verbose
+
+  # 🚀 Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-test]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+        aws-region: ${{ secrets.AWS_REGION_STAGING }}
+        
+    - name: Deploy to staging
+      run: |
+        # Deploy to staging environment
+        echo "Deploying to staging environment..."
+        # Add your staging deployment commands here
+        
+    - name: Run smoke tests
+      run: |
+        # Run basic health checks on staging
+        echo "Running smoke tests on staging..."
+
+  # 🚀 Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+        aws-region: ${{ secrets.AWS_REGION_PROD }}
+        
+    - name: Deploy to production
+      run: |
+        # Deploy to production environment
+        echo "Deploying to production environment..."
+        # Add your production deployment commands here
+        
+    - name: Run production tests
+      run: |
+        # Run comprehensive tests on production
+        echo "Running production tests..."
+        
+    - name: Notify deployment success
+      run: |
+        echo "Production deployment completed successfully!"
+        # Add notification logic (Slack, email, etc.)
+
+  # 📊 Security Scanning
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'ghcr.io/${{ github.repository }}/api-gateway:latest'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Run Snyk security scan
+      uses: snyk/actions/docker@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        image: ghcr.io/${{ github.repository }}/api-gateway:latest
+        args: --severity-threshold=high
+
+  # 📈 Performance Testing
+  performance-test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-test]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install performance testing tools
+      run: |
+        pip install locust k6-python
+        
+    - name: Run performance tests
+      run: |
+        # Run performance tests
+        echo "Running performance tests..."
+        # Add your performance testing commands here
+        
+    - name: Generate performance report
+      run: |
+        # Generate performance report
+        echo "Generating performance report..."
