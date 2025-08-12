@@ -490,7 +490,7 @@ async def confirm_study_session_proxy(request: Request):
             timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
         )
         
-        if response.status_code in [200, 202]:
+        if response.status_code in [200, 202]:  # Accept both 200 and 202
             return response.json()
         else:
             error_detail = "Failed to confirm study session"
@@ -508,6 +508,91 @@ async def confirm_study_session_proxy(request: Request):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Study session confirm service error: {repr(e)}"
+        )
+
+# New clarifier proxy routes for /api/clarifier/*
+@app.post("/api/clarifier/start")
+async def clarifier_start_proxy(request: Request):
+    """Proxy clarifier start requests to clarifier service"""
+    try:
+        # Forward the Authorization header to Clarifier Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the request body and ensure Content-Type is set
+        body = await request.body()
+        if not headers.get("Content-Type"):
+            headers["Content-Type"] = "application/json"
+        
+        # Forward the request with robust retry logic
+        response = http_client.post_with_retry(
+            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/start",
+            data=body,
+            headers=headers,
+            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_detail = "Failed to start clarifier session"
+            try:
+                error_data = response.json()
+                error_detail = error_data.get("detail", error_detail)
+            except:
+                pass
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_detail
+            )
+    except Exception as e:
+        logger.error(f"Clarifier start failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Clarifier start service error: {repr(e)}"
+        )
+
+@app.post("/api/clarifier/ingest")
+async def clarifier_ingest_proxy(request: Request):
+    """Proxy clarifier ingest requests to clarifier service"""
+    try:
+        # Forward the Authorization header to Clarifier Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the request body as JSON
+        body = await request.json()
+        
+        # Forward the request with robust retry logic
+        response = http_client.post_with_retry(
+            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/ingest",
+            json=body,
+            headers=headers,
+            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_detail = "Failed to ingest clarifier input"
+            try:
+                error_data = response.json()
+                error_detail = error_data.get("detail", error_detail)
+            except:
+                pass
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_detail
+            )
+    except Exception as e:
+        logger.error(f"Clarifier ingest failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Clarifier ingest service error: {repr(e)}"
         )
 
 if __name__ == "__main__":

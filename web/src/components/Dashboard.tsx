@@ -18,7 +18,8 @@ import {
   BookOpen,
   Calculator,
   Globe,
-  Palette
+  Palette,
+  Loader2
 } from 'lucide-react';
 import { User, Subject, Category, Document, DashboardStats } from '../types';
 import apiService from '../services/api';
@@ -30,9 +31,9 @@ import UploadDocumentsModal from './UploadDocumentsModal';
 import CategoryDocumentsList from './CategoryDocumentsList';
 import { useNotifications } from './notifications/NotificationContext';
 import { Bell } from 'lucide-react';
-import { useClarifierUI } from '../features/clarifier/clarifierUI';
-import { customAlphabet } from 'nanoid/non-secure';
+import StartStudyLauncher from './StartStudyLauncher';
 import './Dashboard.css';
+import { Button } from './ui/button';
 
 interface CollapsedState {
   [subjectId: string]: boolean;
@@ -610,37 +611,6 @@ const Dashboard: React.FC = () => {
     });
   };
 
-  const openClarifier = useClarifierUI((s: { open: (p: any) => void }) => s.open);
-  const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10);
-
-  const handleStartStudySession = (): void => {
-    const readyDocIds = getReadySelectedDocuments();
-    if (readyDocIds.length === 0) {
-      // Use custom notification instead of alert
-      addNotification({
-        type: 'quiz',
-        status: 'error',
-        title: 'No Ready Documents',
-        message: 'No ready documents selected. Please select documents that have been processed.',
-        autoClose: true,
-        autoCloseDelay: 4000
-      });
-      return;
-    }
-    
-    // Open Clarifier drawer and drive flow
-    const sessionId = `sess_${nanoid()}`;
-    openClarifier({
-      sessionId,
-      userId: user?.id || 'me',
-      subjectId: selectedSubject?.id || subjects[0]?.id || '',
-      docIds: readyDocIds,
-      apiBase: process.env.REACT_APP_API_URL || 'http://localhost:8000',
-      token: localStorage.getItem('token') || undefined,
-      flow: 'quiz_setup',
-    });
-  };
-
   const handleCategoryCreated = (): void => {
     // Refresh the data after creating a category
     fetchSubjects();
@@ -774,13 +744,9 @@ const Dashboard: React.FC = () => {
                 </p>
               </div>
               <div className="selection-action">
-                <button 
-                  className="start-study-button"
-                  onClick={handleStartStudySession}
-                >
-                  <Play size={16} />
-                  <span>Start Study Session</span>
-                </button>
+                <StartStudyLauncher
+                  selectedDocIds={getReadySelectedDocuments()}
+                />
               </div>
             </div>
           </div>
