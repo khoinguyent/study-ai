@@ -30,6 +30,8 @@ import UploadDocumentsModal from './UploadDocumentsModal';
 import CategoryDocumentsList from './CategoryDocumentsList';
 import { useNotifications } from './notifications/NotificationContext';
 import { Bell } from 'lucide-react';
+import { useClarifierUI } from '../features/clarifier/clarifierUI';
+import { customAlphabet } from 'nanoid/non-secure';
 import './Dashboard.css';
 
 interface CollapsedState {
@@ -608,6 +610,9 @@ const Dashboard: React.FC = () => {
     });
   };
 
+  const openClarifier = useClarifierUI((s: { open: (p: any) => void }) => s.open);
+  const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10);
+
   const handleStartStudySession = (): void => {
     const readyDocIds = getReadySelectedDocuments();
     if (readyDocIds.length === 0) {
@@ -623,21 +628,16 @@ const Dashboard: React.FC = () => {
       return;
     }
     
-    // Navigate to quiz page with ready documents only
-    // For now, we'll just log the action
-    console.log('Starting study session with ready documents:', readyDocIds);
-    
-    // TODO: Implement navigation to quiz page
-    // navigate('/quiz', { state: { documentIds: readyDocIds } });
-    
-    // Use custom notification instead of alert
-    addNotification({
-      type: 'quiz',
-      status: 'success',
-      title: 'Study Session Started',
-      message: `Starting quiz with ${readyDocIds.length} ready documents!`,
-      autoClose: true,
-      autoCloseDelay: 3000
+    // Open Clarifier drawer and drive flow
+    const sessionId = `sess_${nanoid()}`;
+    openClarifier({
+      sessionId,
+      userId: user?.id || 'me',
+      subjectId: selectedSubject?.id || subjects[0]?.id || '',
+      docIds: readyDocIds,
+      apiBase: process.env.REACT_APP_API_URL || 'http://localhost:8000',
+      token: localStorage.getItem('token') || undefined,
+      flow: 'quiz_setup',
     });
   };
 

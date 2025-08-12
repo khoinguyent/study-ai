@@ -10,6 +10,7 @@ import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
 import apiService from './services/api';
 import { NotificationProvider } from './components/notifications/NotificationContext';
+import ClarifierDrawer from './features/clarifier/ClarifierDrawer';
 
 // Protected Route Component with Notifications
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
@@ -108,6 +109,8 @@ const App: React.FC = () => {
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        {/* Mount clarifier drawer at root so it overlays all routes */}
+        <ClarifierDrawer />
       </div>
     </Router>
   );
