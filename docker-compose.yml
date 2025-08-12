@@ -15,12 +15,14 @@ services:
       - QUIZ_SERVICE_URL=http://quiz-service:8004
       - NOTIFICATION_SERVICE_URL=http://notification-service:8005
       - INDEXING_SERVICE_URL=http://indexing-service:8003
+      - CLARIFIER_SERVICE_URL=http://clarifier-svc:8010
     depends_on:
       - auth-service
       - document-service
       - indexing-service
       - quiz-service
       - notification-service
+      - clarifier-svc
     networks:
       - study-ai-network
 
@@ -246,6 +248,12 @@ services:
         condition: service_healthy
       document-service:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       - ./services/indexing-service:/app
     networks:
@@ -262,9 +270,16 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
       REDIS_URL: redis://redis:6379
+      # Quiz Generation Strategy
+      QUIZ_GENERATION_STRATEGY: huggingface  # Options: "ollama", "huggingface", "auto"
       # Ollama configuration
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llama2
+      OLLAMA_MODEL: llama2:7b-chat
+      # HuggingFace configuration
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+      HUGGINGFACE_API_URL: https://api-inference.huggingface.co/models
+      QUESTION_GENERATION_MODEL: google/flan-t5-base
+      DISTRACTOR_GENERATION_MODEL: google/flan-t5-base
       AUTH_SERVICE_URL: http://auth-service:8001
       INDEXING_SERVICE_URL: http://indexing-service:8003
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
@@ -278,7 +293,13 @@ services:
       auth-service:
         condition: service_started
       indexing-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       - ./services/quiz-service:/app
     networks:
@@ -309,7 +330,47 @@ services:
     networks:
       - study-ai-network
 
+  # Clarifier Service
+  clarifier-svc:
+    build:
+      context: ./services/clarifier-svc
+      dockerfile: Dockerfile
+    container_name: study-ai-clarifier-svc
+    ports:
+      - "8010:8010"
+    environment:
+      - POLICY_URL=http://policy-svc:8006   # if you have one; else omit
+      - BUDGET_URL=http://question-budget-svc:8011
+      - QUIZ_URL=http://quiz-service:8004
+      - NODE_ENV=development
+      - PORT=8010
+      - LOG_LEVEL=info
+    depends_on:
+      question-budget-svc:
+        condition: service_started
+      quiz-service:
+        condition: service_healthy
+    networks:
+      - study-ai-network
 
+  # Question Budget Service
+  question-budget-svc:
+    build:
+      context: ./services/question-budget-svc
+      dockerfile: Dockerfile
+    container_name: study-ai-question-budget-svc
+    ports:
+      - "8011:8011"
+    environment:
+      - INDEXING_URL=http://indexing-service:8003
+      - NODE_ENV=development
+      - PORT=8011
+      - LOG_LEVEL=info
+    depends_on:
+      indexing-service:
+        condition: service_healthy
+    networks:
+      - study-ai-network
 
   # Web frontend service
   web:
@@ -405,7 +466,7 @@ services:
       DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
       REDIS_URL: redis://redis:6379
       # Quiz Generation Strategy
-      QUIZ_GENERATION_STRATEGY: auto  # Options: "ollama", "huggingface", "auto"
+      QUIZ_GENERATION_STRATEGY: huggingface  # Options: "ollama", "huggingface", "auto"
       # Ollama configuration
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: llama2:7b-chat

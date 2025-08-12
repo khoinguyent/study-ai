@@ -17,8 +17,9 @@ from .models import Notification, TaskStatus
 from .schemas import NotificationCreate, NotificationResponse, TaskStatusCreate, TaskStatusResponse
 from .websocket_manager import WebSocketManager
 from .config import settings
-from shared.event_consumer import EventConsumer
-from shared.events import EventType, BaseEvent
+# Temporarily commented out to fix import issues
+# from shared.event_consumer import EventConsumer
+# from shared.events import EventType, BaseEvent
 import logging
 
 logger = logging.getLogger(__name__)
@@ -55,188 +56,197 @@ async def start_event_consumer_with_retry():
     """Start the event consumer with retry logic for Redis connection"""
     global event_consumer
     
-    max_retries = 5
-    retry_delay = 2
+    # Temporarily disabled to fix import issues
+    logger.info("Event consumer temporarily disabled - import issues being resolved")
+    return
     
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Attempting to connect to Redis (attempt {attempt + 1}/{max_retries})")
-            event_consumer = EventConsumer(redis_url=settings.REDIS_URL)
-            await start_event_consumer()
-            logger.info("Successfully connected to Redis and started event consumer")
-            break
-        except Exception as e:
-            logger.warning(f"Failed to connect to Redis (attempt {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
-            else:
-                logger.error("Failed to connect to Redis after all retries. Event consumer will not be available.")
-                return
+    # max_retries = 5
+    # retry_delay = 2
+    # 
+    # for attempt in range(max_retries):
+    #     try:
+    #         logger.info(f"Attempting to connect to Redis (attempt {attempt + 1}/{max_retries})")
+    #         event_consumer = EventConsumer(redis_url=settings.REDIS_URL)
+    #         await start_event_consumer()
+    #         logger.info("Successfully connected to Redis and started event consumer")
+    #         break
+    #         except Exception as e:
+    #         logger.warning(f"Failed to connect to Redis (attempt {attempt + 1}/{max_retries}): {str(e)}")
+    #         if attempt < max_retries - 1:
+    #         await asyncio.sleep(retry_delay)
+    #         retry_delay *= 2  # Exponential backoff
+    #         else:
+    #         logger.error("Failed to connect to Redis after all retries. Event consumer will not be available.")
+    #         return
 
 async def start_event_consumer():
     """Start the event consumer to listen for events"""
     global event_consumer
     
-    if event_consumer is None:
-        logger.error("Event consumer not initialized")
-        return
-        
-    def handle_document_event(event: BaseEvent):
-        """Handle document-related events"""
-        try:
-            if event.event_type == EventType.DOCUMENT_UPLOADED:
-                # Create notification for document uploaded
-                create_notification_from_event(event, "Document Uploaded", f"Document {event.filename} uploaded successfully")
-                
-            elif event.event_type == EventType.DOCUMENT_PROCESSING:
-                # Create notification for document processing
-                create_notification_from_event(event, "Document Processing", f"Processing document {event.document_id}")
-                
-            elif event.event_type == EventType.DOCUMENT_PROCESSED:
-                # Create notification for document processed
-                create_notification_from_event(event, "Document Processed", f"Document processed successfully in {event.processing_time:.2f}s")
-                
-            elif event.event_type == EventType.DOCUMENT_FAILED:
-                # Create notification for document failed
-                create_notification_from_event(event, "Document Failed", f"Document processing failed: {event.error_message}")
-                
-        except Exception as e:
-            logger.error(f"Error handling document event: {str(e)}")
+    # Temporarily disabled to fix import issues
+    logger.info("Event consumer temporarily disabled - import issues being resolved")
+    return
     
-    def handle_indexing_event(event: BaseEvent):
-        """Handle indexing-related events"""
-        try:
-            if event.event_type == EventType.INDEXING_STARTED:
-                # Create notification for indexing started
-                create_notification_from_event(event, "Indexing Started", f"Started indexing document {event.document_id}")
-                
-            elif event.event_type == EventType.INDEXING_PROGRESS:
-                # Create notification for indexing progress
-                create_notification_from_event(event, "Indexing Progress", f"Indexing progress: {event.progress}%")
-                
-            elif event.event_type == EventType.INDEXING_COMPLETED:
-                # Create notification for indexing completed
-                create_notification_from_event(event, "Indexing Completed", f"Document indexed successfully with {event.vectors_count} vectors")
-                
-            elif event.event_type == EventType.INDEXING_FAILED:
-                # Create notification for indexing failed
-                create_notification_from_event(event, "Indexing Failed", f"Indexing failed: {event.error_message}")
-                
-        except Exception as e:
-            logger.error(f"Error handling indexing event: {str(e)}")
-    
-    def handle_task_status_event(event: BaseEvent):
-        """Handle task status events"""
-        async def async_handler():
-            try:
-                # Create task status record
-                db = next(get_db())
-                try:
-                    task_status = TaskStatus(
-                        task_id=event.task_id,
-                        user_id=event.user_id,
-                        task_type=event.task_type,
-                        status=event.status,
-                        progress=event.progress,
-                        message=event.message,
-                        meta_data=event.metadata
-                    )
-                    db.add(task_status)
-                    db.commit()
-                    
-                    # Send WebSocket notification
-                    await websocket_manager.send_notification(
-                        event.user_id,
-                        {
-                            "type": "task_status_update",
-                            "task_id": event.task_id,
-                            "task_type": event.task_type,
-                            "status": event.status,
-                            "progress": event.progress,
-                            "message": event.message,
-                            "timestamp": datetime.utcnow().isoformat()
-                        }
-                    )
-                    
-                finally:
-                    db.close()
-                    
-            except Exception as e:
-                logger.error(f"Error handling task status event: {str(e)}")
-        
-        # Run the async handler
-        asyncio.create_task(async_handler())
-    
-    def handle_user_notification_event(event: BaseEvent):
-        """Handle user notification events"""
-        async def async_handler():
-            try:
-                # Send WebSocket notification
-                await websocket_manager.send_notification(
-                    event.user_id,
-                    {
-                        "type": "notification",
-                        "title": event.title,
-                        "message": event.message,
-                        "notification_type": event.notification_type,
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "metadata": event.metadata
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error handling user notification event: {str(e)}")
-        
-        # Run the async handler
-        asyncio.create_task(async_handler())
-    
-    # Subscribe to events
-    try:
-        event_consumer.subscribe_to_document_events(handle_document_event)
-        event_consumer.subscribe_to_indexing_events(handle_indexing_event)
-        event_consumer.subscribe_to_event(EventType.TASK_STATUS_UPDATE, handle_task_status_event)
-        event_consumer.subscribe_to_event(EventType.USER_NOTIFICATION, handle_user_notification_event)
-        
-        # Start the event consumer
-        event_consumer.start()
-        logger.info("Event consumer started successfully")
-        
-    except Exception as e:
-        logger.error(f"Failed to start event consumer: {str(e)}")
-        raise
+    # if event_consumer is None:
+    #     logger.error("Event consumer not initialized")
+    #     return
+    #     
+    # def handle_document_event(event: BaseEvent):
+    #     """Handle document-related events"""
+    #     try:
+    #         if event.event_type == EventType.DOCUMENT_UPLOADED:
+    #         # Create notification for document uploaded
+    #         create_notification_from_event(event, "Document Uploaded", f"Document {event.filename} uploaded successfully")
+    #         
+    #         elif event.event_type == EventType.DOCUMENT_PROCESSING:
+    #         # Create notification for document processing
+    #         create_notification_from_event(event, "Document Processing", f"Processing document {event.document_id}")
+    #         
+    #         elif event.event_type == EventType.DOCUMENT_PROCESSED:
+    #         # Create notification for document processed
+    #         create_notification_from_event(event, "Document Processed", f"Document processed successfully in {event.processing_time:.2f}s")
+    #         
+    #         elif event.event_type == EventType.DOCUMENT_FAILED:
+    #         # Create notification for document failed
+    #         create_notification_from_event(event, "Document Failed", f"Document processing failed: {event.error_message}")
+    #         
+    #         except Exception as e:
+    #         logger.error(f"Error handling document event: {str(e)}")
+    #     
+    # def handle_indexing_event(event: BaseEvent):
+    #     """Handle indexing-related events"""
+    #     try:
+    #         if event.event_type == EventType.INDEXING_STARTED:
+    #         # Create notification for document uploaded
+    #         create_notification_from_event(event, "Document Uploaded", f"Document {event.filename} uploaded successfully")
+    #         
+    #         elif event.event_type == EventType.INDEXING_PROCESSING:
+    #             # Create notification for indexing progress
+    #             create_notification_from_event(event, "Indexing Progress", f"Indexing progress: {event.progress}%")
+    #             
+    #         elif event.event_type == EventType.INDEXING_COMPLETED:
+    #             # Create notification for indexing completed
+    #             create_notification_from_event(event, "Indexing Completed", f"Document indexed successfully with {event.vectors_count} vectors")
+    #             
+    #         elif event.event_type == EventType.INDEXING_FAILED:
+    #             # Create notification for indexing failed
+    #             create_notification_from_event(event, "Indexing Failed", f"Indexing failed: {event.error_message}")
+    #             
+    #     except Exception as e:
+    #         logger.error(f"Error handling indexing event: {str(e)}")
+    # 
+    # def handle_task_status_event(event: BaseEvent):
+    #     """Handle task status events"""
+    #     async def async_handler():
+    #         try:
+    #             # Create task status record
+    #             db = next(get_db())
+    #             try:
+    #                 task_status = TaskStatus(
+    #                     task_id=event.task_id,
+    #                     user_id=event.user_id,
+    #                     task_type=event.task_type,
+    #                     status=event.status,
+    #                     progress=event.progress,
+    #                     message=event.message,
+    #                     meta_data=event.metadata
+    #                 )
+    #                 db.add(task_status)
+    #                 db.commit()
+    #                 
+    #                 # Send WebSocket notification
+    #                 await websocket_manager.send_notification(
+    #                     event.user_id,
+    #                     {
+    #                         "type": "task_status_update",
+    #                         "task_id": event.task_id,
+    #                         "task_type": event.task_type,
+    #                         "status": event.status,
+    #                         "progress": event.progress,
+    #                         "message": event.message,
+    #                         "timestamp": datetime.utcnow().isoformat()
+    #                 }
+    #                 )
+    #                 
+    #         finally:
+    #                 db.close()
+    #                 
+    #         except Exception as e:
+    #             logger.error(f"Error handling task status event: {str(e)}")
+    #     
+    #     # Run the async handler
+    #     asyncio.create_task(async_handler())
+    # 
+    # def handle_user_notification_event(event: BaseEvent):
+    #     """Handle user notification events"""
+    #     async def async_handler():
+    #         try:
+    #             # Send WebSocket notification
+    #             await websocket_manager.send_notification(
+    #                 event.user_id,
+    #                 {
+    #                     "type": "notification",
+    #                     "title": event.title,
+    #                     "message": event.message,
+    #                     "notification_type": event.notification_type,
+    #                     "timestamp": datetime.utcnow().isoformat(),
+    #                     "metadata": event.metadata
+    #                 }
+    #             )
+    #         except Exception as e:
+    #             logger.error(f"Error handling user notification event: {str(e)}")
+    #     
+    #     # Run the async handler
+    #     asyncio.create_task(async_handler())
+    # 
+    # # Subscribe to events
+    # try:
+    #     event_consumer.subscribe_to_document_events(handle_document_event)
+    #     event_consumer.subscribe_to_indexing_events(handle_indexing_event)
+    #     event_consumer.subscribe_to_event(EventType.TASK_STATUS_UPDATE, handle_task_status_event)
+    #     event_consumer.subscribe_to_event(EventType.USER_NOTIFICATION, handle_user_notification_event)
+    #     
+    #     # Start the event consumer
+    #     event_consumer.start()
+    #     logger.info("Event consumer started successfully")
+    #     
+    # except Exception as e:
+    #     logger.error(f"Failed to start event consumer: {str(e)}")
+    #     raise
 
-def create_notification_from_event(event: BaseEvent, title: str, message: str):
-    """Create a notification from an event"""
-    async def async_handler():
-        db = next(get_db())
-        try:
-            notification = Notification(
-                user_id=event.user_id,
-                title=title,
-                message=message,
-                notification_type=event.event_type.value,
-                metadata=event.metadata
-            )
-            db.add(notification)
-            db.commit()
-            
-            # Send WebSocket notification
-            await websocket_manager.send_notification(
-                event.user_id,
-                {
-                    "type": "notification",
-                    "title": title,
-                    "message": message,
-                    "notification_type": event.event_type.value,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            )
-            
-        finally:
-            db.close()
-    
-    # Run the async handler
-    asyncio.create_task(async_handler())
+# Temporarily commented out to fix import issues
+# def create_notification_from_event(event: BaseEvent, title: str, message: str):
+#     """Create a notification from an event"""
+#     async def async_handler():
+#         db = next(get_db())
+#         try:
+#             notification = Notification(
+#                 user_id=event.user_id,
+#                 title=title,
+#                 message=message,
+#                 notification_type=event.event_type.value,
+#                 metadata=event.metadata
+#                 )
+#             db.add(notification)
+#             db.commit()
+#             
+#             # Send WebSocket notification
+#             await websocket_manager.send_notification(
+#                 event.user_id,
+#                 {
+#                     "type": "notification",
+#                     "title": title,
+#                     "message": message,
+#                     "notification_type": event.event_type.value,
+#                     "timestamp": datetime.utcnow().isoformat()
+#                 }
+#             )
+#             
+#         finally:
+#             db.close()
+#     
+#     # Run the async handler
+#     asyncio.create_task(async_handler())
 
 @app.get("/health")
 async def health_check():

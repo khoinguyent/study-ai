@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package clarifier;
+
+service ClarifierService {
+  rpc StartClarification (StartRequest) returns (StartResponse);
+  rpc ConfirmClarification (ConfirmRequest) returns (ConfirmResponse);
+}
+
+message StartRequest {
+  string session_id = 1;
+  string user_id = 2;
+  string subject_id = 3;
+  repeated string doc_ids = 4;
+}
+
+message StartResponse {
+  string session_id = 1;
+  int32 max_questions = 2;
+  int32 suggested = 3;
+  repeated string allowed_question_types = 4;
+  repeated string allowed_difficulty = 5;
+}
+
+message ConfirmRequest {
+  string session_id = 1;
+  string user_id = 2;
+  string subject_id = 3;
+  repeated string doc_ids = 4;
+  repeated string question_types = 5;
+  string difficulty = 6;
+  int32 requested_count = 7;
+}
+
+message ConfirmResponse {
+  string session_id = 1;
+  bool accepted = 2;
+  int32 count = 3;
+  int32 max_questions = 4;
+}

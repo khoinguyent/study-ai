@@ -81,4 +81,5 @@ class QuizGenerationResponse(BaseModel):
     source_type: str
     source_id: str
     documents_used: Optional[List[str]] = None
-    status: str  # Added status field 
+    status: str  # Added status field
+    task_id: Optional[str] = None  # Celery task ID for tracking 

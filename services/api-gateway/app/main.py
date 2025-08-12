@@ -1,11 +1,16 @@
+import logging
+import httpx
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from strawberry.fastapi import GraphQLRouter
-import httpx
+from .http_client import http_client
 from .graphql_schema import schema
 from .config import settings
 from .auth import verify_auth_token, security
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="StudyAI GraphQL API", version="1.0.0")
 
@@ -378,6 +383,131 @@ async def upload_multiple_documents_proxy(request: Request):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Upload service error: {str(e)}"
+        )
+
+@app.post("/study-sessions/start")
+async def start_study_session_proxy(request: Request):
+    """Proxy study session start requests to clarifier service"""
+    try:
+        # Forward the Authorization header to Clarifier Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the request body and ensure Content-Type is set
+        body = await request.body()
+        if not headers.get("Content-Type"):
+            headers["Content-Type"] = "application/json"
+        
+        # Forward the request with robust retry logic
+        response = http_client.post_with_retry(
+            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/start",
+            data=body,
+            headers=headers,
+            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_detail = "Failed to start study session"
+            try:
+                error_data = response.json()
+                error_detail = error_data.get("detail", error_detail)
+            except:
+                pass
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_detail
+            )
+    except Exception as e:
+        logger.error(f"Study session start failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Study session start service error: {repr(e)}"
+        )
+
+@app.post("/study-sessions/ingest")
+async def ingest_study_session_proxy(request: Request):
+    """Proxy study session ingest requests to clarifier service"""
+    try:
+        # Forward the Authorization header to Clarifier Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the request body as JSON
+        body = await request.json()
+        
+        # Forward the request with robust retry logic
+        response = http_client.post_with_retry(
+            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/ingest",
+            json=body,
+            headers=headers,
+            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_detail = "Failed to ingest study session input"
+            try:
+                error_data = response.json()
+                error_detail = error_data.get("detail", error_detail)
+            except:
+                pass
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_detail
+            )
+    except Exception as e:
+        logger.error(f"Study session ingest failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Study session ingest service error: {repr(e)}"
+        )
+
+@app.post("/study-sessions/confirm")
+async def confirm_study_session_proxy(request: Request):
+    """Proxy study session confirm requests to clarifier service"""
+    try:
+        # Forward the Authorization header to Clarifier Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Get the request body as JSON
+        body = await request.json()
+        
+        # Forward the request with robust retry logic
+        response = http_client.post_with_retry(
+            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/confirm",
+            json=body,
+            headers=headers,
+            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
+        )
+        
+        if response.status_code in [200, 202]:
+            return response.json()
+        else:
+            error_detail = "Failed to confirm study session"
+            try:
+                error_data = response.json()
+                error_detail = error_data.get("detail", error_detail)
+            except:
+                pass
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_detail
+            )
+    except Exception as e:
+        logger.error(f"Study session confirm failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Study session confirm service error: {repr(e)}"
         )
 
 if __name__ == "__main__":

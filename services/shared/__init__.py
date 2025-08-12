@@ -12,7 +12,8 @@ from .events import (
 )
 
 from .event_publisher import EventPublisher
-from .event_consumer import EventConsumer, AsyncEventConsumer
+from .event_consumer import EventConsumer
+# AsyncEventConsumer temporarily removed - import issues being resolved
 
 __all__ = [
     # Events
@@ -23,5 +24,6 @@ __all__ = [
     'TaskStatusUpdateEvent', 'UserNotificationEvent',
     
     # Event Services
-    'EventPublisher', 'EventConsumer', 'AsyncEventConsumer'
+    'EventPublisher', 'EventConsumer'
+    # 'AsyncEventConsumer' temporarily removed - import issues being resolved
 ] 
