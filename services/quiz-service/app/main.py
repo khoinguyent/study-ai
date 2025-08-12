@@ -314,7 +314,7 @@ async def generate_quiz_from_custom_document_set(
             detail=f"Quiz generation failed: {str(e)}"
         )
 
-@app.post("/generate", response_model=QuizResponse)
+@app.post("/generate", response_model=QuizGenerationResponse)
 async def generate_quiz(
     request: QuizGenerationRequest,
     user_id: str = Depends(verify_auth_token),
@@ -363,33 +363,59 @@ async def generate_quiz(
         
         search_results = search_response.json()
         
-        # Generate quiz using AI
-        quiz_content = await quiz_generator.generate_quiz(
-            topic=request.topic,
-            difficulty=request.difficulty,
-            num_questions=request.num_questions,
-            context_chunks=search_results
-        )
+        # Create initial quiz record with "pending" status
+        from datetime import datetime
+        current_time = datetime.utcnow()
         
-        # Save quiz to database
         quiz = Quiz(
             user_id=user_id,
-            title=quiz_content["title"],
-            description=quiz_content.get("description"),
-            questions=quiz_content["questions"],
+            title=f"Quiz about {request.topic}",
+            description=f"Generating quiz about {request.topic}...",
+            questions={"message": "Quiz generation pending..."},
             document_id=request.document_id,
             subject_id=request.subject_id,
             category_id=request.category_id,
-            status="draft"
+            status="pending"
         )
+        
+        # Set timestamps manually since SQLAlchemy onupdate doesn't work for new records
+        quiz.created_at = current_time
+        quiz.updated_at = current_time
         
         db.add(quiz)
         db.commit()
         db.refresh(quiz)
         
+        # Start background task for quiz generation using Celery
+        from .tasks import generate_quiz_background_task
+        
+        # Enqueue the task
+        task = generate_quiz_background_task.delay(
+            quiz_id=quiz.id,
+            topic=request.topic,
+            difficulty=request.difficulty,
+            num_questions=request.num_questions,
+            context_chunks=search_results,
+            source_type="general_search",
+            source_id=request.subject_id or request.category_id or "general",
+            user_id=user_id
+        )
+        
         generation_time = time.time() - start_time
         
-        return quiz
+        # Return quiz generation response instead of the quiz itself
+        from .schemas import QuizGenerationResponse
+        return QuizGenerationResponse(
+            quiz_id=quiz.id,
+            title=quiz.title,
+            questions_count=0,  # Will be updated when generation completes
+            generation_time=generation_time,
+            source_type="general_search",
+            source_id=request.subject_id or request.category_id or "general",
+            documents_used=[request.document_id] if request.document_id else None,
+            status="pending",
+            task_id=task.id
+        )
         
     except Exception as e:
         raise HTTPException(

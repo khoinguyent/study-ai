@@ -1,17 +1,38 @@
 """
-Quiz Service Celery Configuration
-Imports the shared Celery app configuration
+Quiz Service Celery Configuration (local)
+Standalone Celery app setup for the quiz service.
 """
 
-import sys
 import os
+from celery import Celery
 
-# Add the shared directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
+# Use Redis URL from env (docker-compose provides REDIS_URL)
+BROKER_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-from shared.celery_app import celery_app
+celery_app = Celery(
+    "quiz_service",
+    broker=BROKER_URL,
+    backend=BROKER_URL,
+)
 
-# Import tasks to register them
-from . import tasks
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    task_track_started=True,
+)
 
-__all__ = ['celery_app']
+def quiz_task(func):
+    """Decorator to register quiz tasks."""
+    return celery_app.task(name=f"app.tasks.{func.__name__}")(func)
+
+__all__ = ["celery_app", "quiz_task"]
+
+# Import tasks to register them with celery
+try:
+    from . import tasks  # noqa: F401
+except Exception:
+    # Avoid hard import failures during tooling
+    pass
