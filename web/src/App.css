@@ -1,5 +1,5 @@
 .App {
-  text-align: center;
+  /* Remove text-align: center to allow Tailwind utilities to work */
 }
 
 .App-header {

@@ -1,4 +1,4 @@
-const GRAPHQL_ENDPOINT = `http://localhost:8000/graphql`;
+const GRAPHQL_ENDPOINT = `/graphql`;
 
 export interface GraphQLRequest {
   query: string;
@@ -59,39 +59,39 @@ class GraphQLClient {
       query GetDashboard($userId: String!) {
         dashboard(userId: $userId) {
           stats {
-            total_subjects
-            total_categories
-            total_documents
-            avg_score
+            totalSubjects
+            totalCategories
+            totalDocuments
+            avgScore
           }
           subjects {
             id
             name
             description
             icon
-            color_theme
-            total_documents
-            avg_score
-            created_at
-            updated_at
+            colorTheme
+            totalDocuments
+            avgScore
+            createdAt
+            updatedAt
             categories {
               id
               name
               description
-              total_documents
-              avg_score
-              created_at
-              updated_at
+              totalDocuments
+              avgScore
+              createdAt
+              updatedAt
               documents {
                 id
                 name
                 filename
-                content_type
-                file_size
+                contentType
+                fileSize
                 status
-                s3_url
-                created_at
-                updated_at
+                s3Url
+                createdAt
+                updatedAt
               }
             }
           }
