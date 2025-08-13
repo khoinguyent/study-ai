@@ -1,10 +1,10 @@
 import logging
 import httpx
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+import json
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from strawberry.fastapi import GraphQLRouter
-from .http_client import http_client
 from .graphql_schema import schema
 from .config import settings
 from .auth import verify_auth_token, security
@@ -385,217 +385,536 @@ async def upload_multiple_documents_proxy(request: Request):
             detail=f"Upload service error: {str(e)}"
         )
 
-@app.post("/study-sessions/start")
+@app.post("/api/study-sessions/start")
 async def start_study_session_proxy(request: Request):
-    """Proxy study session start requests to clarifier service"""
+    """Mock study session start endpoint for development"""
     try:
-        # Forward the Authorization header to Clarifier Service
-        headers = {}
+        # Verify authentication
         auth_header = request.headers.get("authorization")
-        if auth_header:
-            headers["Authorization"] = auth_header
-        
-        # Get the request body and ensure Content-Type is set
-        body = await request.body()
-        if not headers.get("Content-Type"):
-            headers["Content-Type"] = "application/json"
-        
-        # Forward the request with robust retry logic
-        response = http_client.post_with_retry(
-            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/start",
-            data=body,
-            headers=headers,
-            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
-        )
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_detail = "Failed to start study session"
-            try:
-                error_data = response.json()
-                error_detail = error_data.get("detail", error_detail)
-            except:
-                pass
+        if not auth_header:
             raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
             )
+        
+        # Get the request body
+        body = await request.json()
+        
+        # Extract parameters - make most fields optional
+        question_types = body.get("questionTypes", ["MCQ"])
+        difficulty = body.get("difficulty", "medium")
+        question_count = body.get("questionCount", 10)
+        
+        # These fields are now truly optional - use defaults if not provided
+        subject_id = body.get("subjectId", "mock-subject")
+        doc_ids = body.get("docIds", ["mock-doc"])
+        
+        # Generate mock response
+        import uuid
+        session_id = str(uuid.uuid4())
+        job_id = str(uuid.uuid4())
+        quiz_id = str(uuid.uuid4())
+        
+        logger.info(f"Mock study session started: session_id={session_id}, job_id={job_id}, quiz_id={quiz_id}")
+        logger.info(f"Parameters: subject_id={subject_id}, doc_ids={doc_ids}, question_types={question_types}, difficulty={difficulty}, question_count={question_count}")
+        
+        return {
+            "sessionId": session_id,
+            "jobId": job_id,
+            "quizId": quiz_id,
+            "message": "Mock study session started successfully"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Study session start failed: {repr(e)}")
+        logger.error(f"Mock study session start failed: {repr(e)}")
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Study session start service error: {repr(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock study session start error: {repr(e)}"
         )
 
-@app.post("/study-sessions/ingest")
+@app.post("/api/study-sessions/ingest")
 async def ingest_study_session_proxy(request: Request):
-    """Proxy study session ingest requests to clarifier service"""
+    """Mock study session ingest endpoint for development"""
     try:
-        # Forward the Authorization header to Clarifier Service
-        headers = {}
+        # Verify authentication
         auth_header = request.headers.get("authorization")
-        if auth_header:
-            headers["Authorization"] = auth_header
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
+            )
         
-        # Get the request body as JSON
+        # Get the request body
         body = await request.json()
         
-        # Forward the request with robust retry logic
-        response = http_client.post_with_retry(
-            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/ingest",
-            json=body,
-            headers=headers,
-            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
-        )
+        # Return mock response
+        logger.info(f"Mock study session ingest received: {body}")
         
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_detail = "Failed to ingest study session input"
-            try:
-                error_data = response.json()
-                error_detail = error_data.get("detail", error_detail)
-            except:
-                pass
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
-            )
+        return {
+            "status": "success",
+            "message": "Mock study session input ingested successfully",
+            "sessionId": "mock-session-id"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Study session ingest failed: {repr(e)}")
+        logger.error(f"Mock study session ingest failed: {repr(e)}")
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Study session ingest service error: {repr(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock study session ingest error: {repr(e)}"
         )
 
-@app.post("/study-sessions/confirm")
-async def confirm_study_session_proxy(request: Request):
-    """Proxy study session confirm requests to clarifier service"""
+@app.get("/api/study-sessions/status")
+async def get_study_session_status_proxy(
+    request: Request,
+    job_id: str = Query(..., description="Job ID to check status for")
+):
+    """Mock study session status endpoint for development"""
     try:
-        # Forward the Authorization header to Clarifier Service
-        headers = {}
+        # Verify authentication
         auth_header = request.headers.get("authorization")
-        if auth_header:
-            headers["Authorization"] = auth_header
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
+            )
         
-        # Get the request body as JSON
-        body = await request.json()
+        # Return mock status
+        logger.info(f"Mock study session status requested for job_id: {job_id}")
         
-        # Forward the request with robust retry logic
-        response = http_client.post_with_retry(
-            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/confirm",
-            json=body,
-            headers=headers,
-            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
+        return {
+            "state": "completed",
+            "progress": 100,
+            "sessionId": "mock-session-id",
+            "quizId": "mock-quiz-id"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Mock study session status failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock study session status error: {repr(e)}"
+        )
+
+@app.get("/api/study-sessions/events")
+async def get_study_session_events_proxy(
+    request: Request,
+    job_id: str = Query(..., description="Job ID to get events for")
+):
+    """Mock study session events endpoint for development - no auth required for SSE"""
+    try:
+        # For development, don't require authentication for SSE events
+        # In production, this should be secured
+        logger.info(f"Mock study session events requested for job_id: {job_id}")
+        
+        # Return proper SSE format
+        from fastapi.responses import StreamingResponse
+        import asyncio
+        
+        async def event_stream():
+            # Send initial connection established event
+            yield "data: {\"state\": \"queued\", \"progress\": 0, \"message\": \"SSE connection established\"}\n\n"
+            
+            # Wait a bit before sending the first event
+            await asyncio.sleep(0.5)
+            
+            # Send quiz generation started event
+            yield f"data: {{\"state\": \"running\", \"progress\": 25, \"message\": \"Quiz generation started\", \"jobId\": \"{job_id}\"}}\n\n"
+            
+            # Wait before sending completion event
+            await asyncio.sleep(1.0)
+            
+            # Send quiz generation completed event
+            yield f"data: {{\"state\": \"running\", \"progress\": 75, \"message\": \"Quiz generation completed successfully\", \"jobId\": \"{job_id}\"}}\n\n"
+            
+            # Wait before sending final event
+            await asyncio.sleep(1.0)
+            
+            # Send final event with quiz data
+            mock_quiz_data = {
+                "state": "completed",
+                "progress": 100,
+                "sessionId": f"session-{job_id}",
+                "quizId": f"quiz-{job_id}",
+                "quiz": {
+                    "id": f"quiz-{job_id}",
+                    "title": "Mock Quiz - Vietnam History",
+                    "questions": [
+                        {
+                            "id": "q1",
+                            "type": "single_choice",
+                            "prompt": "Who was the founder of the Tay Son dynasty?",
+                            "options": [
+                                {"id": "opt1", "text": "Nguyen Hue"},
+                                {"id": "opt2", "text": "Nguyen Anh"},
+                                {"id": "opt3", "text": "Nguyen Phuc Anh"},
+                                {"id": "opt4", "text": "Nguyen Kim"}
+                            ]
+                        },
+                        {
+                            "id": "q2",
+                            "type": "multiple_choice",
+                            "prompt": "Which of the following are characteristics of the Tay Son rebellion?",
+                            "options": [
+                                {"id": "opt1", "text": "Peasant uprising"},
+                                {"id": "opt2", "text": "Anti-feudal movement"},
+                                {"id": "opt3", "text": "Foreign invasion"},
+                                {"id": "opt4", "text": "Religious conflict"}
+                            ]
+                        },
+                        {
+                            "id": "q3",
+                            "type": "true_false",
+                            "prompt": "The Tay Son rebellion began in 1771.",
+                            "trueLabel": "True",
+                            "falseLabel": "False"
+                        },
+                        {
+                            "id": "q4",
+                            "type": "fill_blank",
+                            "prompt": "The Tay Son rebellion began in the year _____ in the province of _____.",
+                            "blanks": 2,
+                            "labels": ["Year", "Province"]
+                        },
+                        {
+                            "id": "q5",
+                            "type": "short_answer",
+                            "prompt": "Explain the main causes of the Tay Son rebellion and its impact on Vietnamese history.",
+                            "minWords": 50
+                        }
+                    ]
+                }
+            }
+            yield f"data: {json.dumps(mock_quiz_data)}\n\n"
+        
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Cache-Control"
+            }
         )
         
-        if response.status_code in [200, 202]:  # Accept both 200 and 202
-            return response.json()
-        else:
-            error_detail = "Failed to confirm study session"
-            try:
-                error_data = response.json()
-                error_detail = error_data.get("detail", error_detail)
-            except:
-                pass
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
-            )
     except Exception as e:
-        logger.error(f"Study session confirm failed: {repr(e)}")
+        logger.error(f"Mock study session events failed: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock study session events error: {repr(e)}"
+        )
+
+@app.post("/api/quiz-sessions/notify")
+async def notify_quiz_session_proxy(
+    request: Request,
+    user_id: str = Query(..., description="User ID to notify"),
+    session_id: str = Query(..., description="Session ID"),
+    job_id: str = Query(..., description="Job ID"),
+    status: str = Query(..., description="Status: queued, running, completed, failed"),
+    progress: int = Query(0, description="Progress percentage"),
+    message: str = Query(None, description="Status message")
+):
+    """Proxy quiz session notifications to the notification service"""
+    try:
+        # Get quiz_data from request body if present
+        body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+        quiz_data = body.get("quiz_data")
+        
+        logger.info(f"Quiz session notification proxy: user_id={user_id}, session_id={session_id}, status={status}")
+        
+        # Forward to notification service
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.NOTIFICATION_SERVICE_URL}/quiz-sessions/notify",
+                params={
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "job_id": job_id,
+                    "status": status,
+                    "progress": progress,
+                    "message": message
+                },
+                json={"quiz_data": quiz_data} if quiz_data else {},
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Notification service error: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Notification service error: {response.text}"
+                )
+                
+    except Exception as e:
+        logger.error(f"Quiz session notification proxy error: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Quiz session notification proxy error: {repr(e)}"
+        )
+
+@app.post("/api/study-sessions/confirm")
+async def confirm_study_session_proxy(request: Request):
+    """Proxy study session confirm to quiz service"""
+    try:
+        # Verify authentication
+        auth_header = request.headers.get("authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
+            )
+        
+        # Get the request body
+        body = await request.json()
+        
+        # Forward to quiz service
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/confirm",
+                json=body,
+                headers={"Authorization": auth_header},
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_detail = "Failed to confirm study session"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", error_detail)
+                except:
+                    pass
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=error_detail
+                )
+        
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Quiz service timeout"
+        )
+    except Exception as e:
+        logger.error(f"Study session confirm service error: {repr(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Study session confirm service error: {repr(e)}"
+            detail=f"Study session confirm service error: {str(e)}"
         )
 
 # New clarifier proxy routes for /api/clarifier/*
 @app.post("/api/clarifier/start")
 async def clarifier_start_proxy(request: Request):
-    """Proxy clarifier start requests to clarifier service"""
+    """Mock clarifier start endpoint for development"""
     try:
-        # Forward the Authorization header to Clarifier Service
-        headers = {}
+        # Verify authentication
         auth_header = request.headers.get("authorization")
-        if auth_header:
-            headers["Authorization"] = auth_header
-        
-        # Get the request body and ensure Content-Type is set
-        body = await request.body()
-        if not headers.get("Content-Type"):
-            headers["Content-Type"] = "application/json"
-        
-        # Forward the request with robust retry logic
-        response = http_client.post_with_retry(
-            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/start",
-            data=body,
-            headers=headers,
-            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
-        )
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_detail = "Failed to start clarifier session"
-            try:
-                error_data = response.json()
-                error_detail = error_data.get("detail", error_detail)
-            except:
-                pass
+        if not auth_header:
             raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
             )
+        
+        # Get the request body
+        body = await request.body()
+        
+        # Return mock response
+        logger.info(f"Mock clarifier start received: {body}")
+        
+        return {
+            "status": "success",
+            "message": "Mock clarifier session started successfully",
+            "sessionId": "mock-clarifier-session-id"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Clarifier start failed: {repr(e)}")
+        logger.error(f"Mock clarifier start failed: {repr(e)}")
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Clarifier start service error: {repr(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock clarifier start error: {repr(e)}"
         )
 
 @app.post("/api/clarifier/ingest")
 async def clarifier_ingest_proxy(request: Request):
-    """Proxy clarifier ingest requests to clarifier service"""
+    """Mock clarifier ingest endpoint for development"""
     try:
-        # Forward the Authorization header to Clarifier Service
-        headers = {}
+        # Verify authentication
         auth_header = request.headers.get("authorization")
-        if auth_header:
-            headers["Authorization"] = auth_header
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
+            )
         
-        # Get the request body as JSON
+        # Get the request body
         body = await request.json()
         
-        # Forward the request with robust retry logic
-        response = http_client.post_with_retry(
-            url=f"{settings.CLARIFIER_SERVICE_URL}/clarifier/ingest",
-            json=body,
-            headers=headers,
-            timeout=(0.5, 3.0)  # (connect_timeout, read_timeout)
-        )
+        # Return mock response
+        logger.info(f"Mock clarifier ingest received: {body}")
         
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_detail = "Failed to ingest clarifier input"
-            try:
-                error_data = response.json()
-                error_detail = error_data.get("detail", error_detail)
-            except:
-                pass
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
-            )
+        return {
+            "status": "success",
+            "message": "Mock clarifier input ingested successfully",
+            "sessionId": "mock-clarifier-session-id"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Clarifier ingest failed: {repr(e)}")
+        logger.error(f"Mock clarifier ingest failed: {repr(e)}")
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Clarifier ingest service error: {repr(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock clarifier ingest error: {repr(e)}"
         )
+
+# Quiz endpoints
+@app.get("/api/study-sessions/{session_id}/quiz")
+async def get_quiz(session_id: str):
+    """Get quiz for a study session"""
+    try:
+        # For now, return mock quiz data
+        mock_quiz = {
+            "sessionId": session_id,
+            "quizId": f"quiz-{session_id}",
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "prompt": "Who was the founder of the Tay Son dynasty?",
+                    "options": [
+                        {"id": "opt1", "text": "Nguyen Hue"},
+                        {"id": "opt2", "text": "Nguyen Anh"},
+                        {"id": "opt3", "text": "Nguyen Phuc Anh"},
+                        {"id": "opt4", "text": "Nguyen Kim"}
+                    ]
+                },
+                {
+                    "id": "q2",
+                    "type": "multiple_choice",
+                    "prompt": "Which of the following are characteristics of the Tay Son rebellion?",
+                    "options": [
+                        {"id": "opt1", "text": "Peasant uprising"},
+                        {"id": "opt2", "text": "Anti-feudal movement"},
+                        {"id": "opt3", "text": "Foreign invasion"},
+                        {"id": "opt4", "text": "Religious conflict"}
+                    ]
+                },
+                {
+                    "id": "q3",
+                    "type": "true_false",
+                    "prompt": "The Tay Son rebellion began in 1771.",
+                    "trueLabel": "True",
+                    "falseLabel": "False"
+                },
+                {
+                    "id": "q4",
+                    "type": "fill_blank",
+                    "prompt": "The Tay Son rebellion began in the year _____ in the province of _____.",
+                    "blanks": 2,
+                    "labels": ["Year", "Province"]
+                },
+                {
+                    "id": "q5",
+                    "type": "short_answer",
+                    "prompt": "Explain the main causes of the Tay Son rebellion and its impact on Vietnamese history.",
+                    "minWords": 50
+                }
+            ]
+        }
+        return mock_quiz
+    except Exception as e:
+        logger.error(f"Error getting quiz: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/study-sessions/{session_id}/answers")
+async def save_quiz_answers(session_id: str, answers: dict = Body(...)):
+    """Save quiz answers (autosave)"""
+    try:
+        # For now, just log the answers
+        logger.info(f"Saving answers for session {session_id}: {answers}")
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Error saving answers: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/study-sessions/{session_id}/submit")
+async def submit_quiz(session_id: str):
+    """Submit and grade quiz"""
+    try:
+        # For now, return mock grading results
+        mock_result = {
+            "scorePercent": 85.0,
+            "correctCount": 4,
+            "total": 5,
+            "graded": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "prompt": "Who was the founder of the Tay Son dynasty?",
+                    "options": [
+                        {"id": "opt1", "text": "Nguyen Hue"},
+                        {"id": "opt2", "text": "Nguyen Anh"},
+                        {"id": "opt3", "text": "Nguyen Phuc Anh"},
+                        {"id": "opt4", "text": "Nguyen Kim"}
+                    ],
+                    "correctChoiceIds": ["opt1"],
+                    "explanation": "Nguyen Hue was indeed the founder and leader of the Tay Son dynasty."
+                },
+                {
+                    "id": "q2",
+                    "type": "multiple_choice",
+                    "prompt": "Which of the following are characteristics of the Tay Son rebellion?",
+                    "options": [
+                        {"id": "opt1", "text": "Peasant uprising"},
+                        {"id": "opt2", "text": "Anti-feudal movement"},
+                        {"id": "opt3", "text": "Foreign invasion"},
+                        {"id": "opt4", "text": "Religious conflict"}
+                    ],
+                    "correctChoiceIds": ["opt1", "opt2"],
+                    "explanation": "The Tay Son rebellion was primarily a peasant uprising and anti-feudal movement."
+                },
+                {
+                    "id": "q3",
+                    "type": "true_false",
+                    "prompt": "The Tay Son rebellion began in 1771.",
+                    "trueLabel": "True",
+                    "falseLabel": "False",
+                    "correct": True,
+                    "explanation": "Correct! The Tay Son rebellion began in 1771 in Binh Dinh province."
+                },
+                {
+                    "id": "q4",
+                    "type": "fill_blank",
+                    "prompt": "The Tay Son rebellion began in the year _____ in the province of _____.",
+                    "blanks": 2,
+                    "labels": ["Year", "Province"],
+                    "correctValues": ["1771", "Binh Dinh"],
+                    "explanation": "The rebellion began in 1771 in Binh Dinh province."
+                },
+                {
+                    "id": "q5",
+                    "type": "short_answer",
+                    "prompt": "Explain the main causes of the Tay Son rebellion and its impact on Vietnamese history.",
+                    "minWords": 50,
+                    "explanation": "The Tay Son rebellion was caused by widespread corruption, heavy taxation, and social inequality under the Nguyen lords. It led to significant social reforms and the eventual unification of Vietnam under the Nguyen dynasty."
+                }
+            ]
+        }
+        return mock_result
+    except Exception as e:
+        logger.error(f"Error submitting quiz: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-# Force reload

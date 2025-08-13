@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -13,19 +11,24 @@ export type ClarifierResult = {
   difficulty: Difficulty;
 };
 
+export type LaunchContext = { userId: string; subjectId: string; docIds: string[] };
+
 type Props = {
   open: boolean;
   onClose: () => void;
+  launch: LaunchContext;
   maxQuestions?: number;
   suggested?: number;
-  onConfirm?: (r: ClarifierResult) => void;
+  onConfirm?: (r: ClarifierResult, launch: LaunchContext) => void;
 };
 
 const SHEET_W = 360;
+const id = () => Math.random().toString(36).slice(2);
 
 export default function LeftClarifierSheet({
   open,
   onClose,
+  launch,
   maxQuestions = 50,
   suggested = 15,
   onConfirm,
@@ -37,6 +40,7 @@ export default function LeftClarifierSheet({
   const [types, setTypes] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
   const [count, setCount] = useState<number | null>(null);
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const quickForStage = useMemo(() => {
@@ -46,106 +50,43 @@ export default function LeftClarifierSheet({
     return [];
   }, [stage, suggested, maxQuestions]);
 
-  // seed intro when opened
   useEffect(() => {
     if (!open) return;
     setMessages([
-      {
-        id: "m1",
-        role: "bot",
-        ts: Date.now(),
-        text:
-          "Hi! I'm your AI Study Assistant. I'll set up your quiz—just need question types, difficulty, and how many questions.",
-      },
-      {
-        id: "m2",
-        role: "bot",
-        ts: Date.now() + 1,
-        text:
-          "Which question types do you want? You can choose multiple: MCQ, True/False, Fill-in-blank, Short answer.",
-      },
+      { id: "m1", role: "bot", ts: Date.now(), text: "Hi! I'm your AI Study Assistant. I'll set up your quiz—just need question types, difficulty, and how many questions." },
+      { id: "m2", role: "bot", ts: Date.now() + 1, text: "Which question types do you want? You can choose multiple: MCQ, True/False, Fill-in-blank, Short answer." },
     ]);
-    setStage("types");
-    setTypes([]);
-    setDifficulty(null);
-    setCount(null);
-    setInput("");
+    setStage("types"); setTypes([]); setDifficulty(null); setCount(null); setAwaitingConfirm(false); setInput("");
   }, [open]);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
-  const pushBot = (text: string) =>
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "bot", text, ts: Date.now() }]);
+  const push = (role: "bot" | "user", text: string) =>
+    setMessages((m) => [...m, { id: id(), role, text, ts: Date.now() }]);
 
-  const pushUser = (text: string) =>
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text, ts: Date.now() }]);
-
-  const nextFromTypes = () => {
-    setStage("difficulty");
-    pushBot("Pick difficulty: Easy, Medium, Hard, or Mixed.");
-  };
-
-  const nextFromDifficulty = () => {
-    setStage("count");
-    pushBot(`How many questions? Up to ${maxQuestions}. I suggest ${suggested}.`);
-  };
+  const nextFromTypes = () => { setStage("difficulty"); push("bot", "Pick difficulty: Easy, Medium, Hard, or Mixed."); };
+  const nextFromDifficulty = () => { setStage("count"); push("bot", `How many questions? Up to ${maxQuestions}. I suggest ${suggested}.`); };
 
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-  const parseCount = (s: string) => {
-    if (/max/i.test(s)) return maxQuestions;
-    const m = s.match(/\d+/);
-    return m ? clamp(parseInt(m[0], 10), 1, maxQuestions) : undefined;
-  };
+  const parseCount = (s: string) => (/max/i.test(s) ? maxQuestions : (s.match(/\d+/) ? clamp(parseInt(s.match(/\d+/)![0], 10), 1, maxQuestions) : undefined));
 
   const finish = (n: number) => {
-    const final: ClarifierResult = {
-      questionCount: n,
-      questionTypes: types,
-      difficulty: (difficulty ?? "mixed") as Difficulty,
-    };
-    setStage("done");
-    setCount(n);
-    pushBot(
-      `Perfect! I'll generate ${n} questions (${types.join(", ")}) at ${
-        final.difficulty
-      } difficulty. Ready to start?`
-    );
-    // Default behavior: store & navigate
-    if (onConfirm) onConfirm(final);
-    else {
-      localStorage.setItem("questionCount", String(final.questionCount));
-      localStorage.setItem("questionTypes", JSON.stringify(final.questionTypes));
-      localStorage.setItem("difficulty", final.difficulty);
-      navigate("/study-session");
-    }
+    const final: ClarifierResult = { questionCount: n, questionTypes: types, difficulty: (difficulty ?? "mixed") as Difficulty };
+    setStage("done"); setCount(n);
+    push("bot", `Perfect! I'll generate ${n} questions (${types.join(", ")}) at ${final.difficulty} difficulty. Ready to start?`);
+    push("bot", "Tap Start to begin generation, or Edit to change your choices.");
+    setAwaitingConfirm(true);
   };
 
   const handleQuick = (label: string) => {
-    if (stage === "types") {
-      if (!types.includes(label)) setTypes((t) => [...t, label]);
-      // auto-advance on first pick
-      if (types.length === 0) nextFromTypes();
-      return;
-    }
-    if (stage === "difficulty") {
-      setDifficulty(label.toLowerCase() as Difficulty);
-      nextFromDifficulty();
-      return;
-    }
-    if (stage === "count") {
-      const n = parseCount(label) ?? suggested;
-      finish(n);
-      return;
-    }
+    if (stage === "types") { if (!types.includes(label)) setTypes((t) => [...t, label]); if (types.length === 0) nextFromTypes(); return; }
+    if (stage === "difficulty") { setDifficulty(label.toLowerCase() as Difficulty); nextFromDifficulty(); return; }
+    if (stage === "count") { finish(parseCount(label) ?? suggested); }
   };
 
   const handleSend = () => {
     if (!input.trim()) return;
-    const text = input.trim();
-    setInput("");
-    pushUser(text);
+    const text = input.trim(); setInput(""); push("user", text);
 
     if (stage === "types") {
       const picked: string[] = [];
@@ -153,135 +94,128 @@ export default function LeftClarifierSheet({
         const rx = new RegExp(t.replace(/[/-]/g, ".?"), "i");
         if (rx.test(text)) picked.push(t);
       }
-      if (picked.length) {
-        setTypes((prev) => Array.from(new Set([...prev, ...picked])));
-        nextFromTypes();
-      } else {
-        pushBot("Please mention at least one: MCQ, True/False, Fill-in-blank, Short answer.");
-      }
+      if (picked.length) { setTypes((prev) => Array.from(new Set([...prev, ...picked]))); nextFromTypes(); }
+      else push("bot", "Please mention at least one: MCQ, True/False, Fill-in-blank, Short answer.");
       return;
     }
-
     if (stage === "difficulty") {
-      const key = ["easy", "medium", "hard", "mixed"].find((k) =>
-        new RegExp(k, "i").test(text)
-      );
-      if (key) {
-        setDifficulty(key as Difficulty);
-        nextFromDifficulty();
-      } else {
-        pushBot("Please choose: Easy, Medium, Hard, or Mixed.");
-      }
+      const k = ["easy","medium","hard","mixed"].find((d)=>new RegExp(d,"i").test(text));
+      if (k) { setDifficulty(k as Difficulty); nextFromDifficulty(); } else push("bot","Please choose: Easy, Medium, Hard, or Mixed.");
       return;
     }
-
     if (stage === "count") {
       const n = parseCount(text);
-      if (n && n > 0) finish(n);
-      else pushBot(`Give me a number up to ${maxQuestions}, or say "Max".`);
-      return;
+      if (n && n > 0) finish(n); else push("bot", `Give me a number up to ${maxQuestions}, or say "Max".`);
     }
   };
 
-  // render via portal so it floats above the page
   return createPortal(
     <>
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,.25)",
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? "auto" : "none",
-          transition: "opacity .2s ease",
+      {/* Mobile backdrop - only show on mobile */}
+      <div 
+        data-overlay="clarifier"
+        onClick={onClose} 
+        style={{ 
+          position: "fixed", 
+          inset: 0, 
+          background: "rgba(0,0,0,.25)", 
+          opacity: open ? 1 : 0, 
+          pointerEvents: open ? "auto" : "none", 
+          transition: "opacity .2s", 
           zIndex: 100000,
+          display: "block" // Will be hidden with CSS
         }}
+        className="lg:hidden" // Hide on desktop
       />
-
-      {/* Left sheet */}
-      <div
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          height: "100vh",
-          width: SHEET_W,
-          background: "#fff",
+      
+      {/* Sidebar - mobile drawer + desktop static */}
+      <div 
+        style={{ 
+          position: "fixed", 
+          top: 0, 
+          left: 0, 
+          height: "100vh", 
+          width: SHEET_W, 
+          background: "#fff", 
           borderRight: "1px solid #e5e7eb",
-          boxShadow: "0 10px 30px rgba(0,0,0,.15)",
-          transform: `translateX(${open ? "0" : `-${SHEET_W}px`})`,
-          transition: "transform .22s cubic-bezier(.2,.8,.2,1)",
-          zIndex: 100001,
-          display: "flex",
-          flexDirection: "column",
+          boxShadow: "0 10px 30px rgba(0,0,0,.15)", 
+          transform: `translateX(${open ? "0" : `-${SHEET_W}px`})`, 
+          transition: "transform .22s cubic-bezier(.2,.8,.2,1)", 
+          zIndex: 100001, 
+          display: "flex", 
+          flexDirection: "column"
         }}
+        className="lg:relative lg:translate-x-0 lg:shadow-none lg:z-30" // Desktop: static, no shadow, lower z-index
       >
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gray-50">
-          <div className="font-semibold">Study Setup</div>
-          <button onClick={onClose} className="text-blue-600 font-semibold">
-            Close
-          </button>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:12, borderBottom:"1px solid #e5e7eb", background:"#F9FAFB" }}>
+          <div style={{ fontWeight:700 }}>Study Setup</div>
+          <div style={{ fontSize:12, color:"#6B7280" }}>{launch.docIds.length} docs • subject {launch.subjectId?.slice(0,8) ?? "?"}…</div>
+          <button onClick={onClose} style={{ color:"#2563EB", fontWeight:600 }} className="lg:hidden">Close</button>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
-          {messages.map((m) => (
-            <div key={m.id} className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-indigo-50 flex items-center justify-center">
-                <span className="text-[12px]">{m.role === "bot" ? "🤖" : "🧑"}</span>
+        <div style={{ flex:1, minHeight:0, overflowY:"auto", padding:12 }}>
+          {messages.map((m)=>(
+            <div key={m.id} style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:12 }}>
+              <div style={{ width:24, height:24, borderRadius:12, background:"#EEF2FF", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <span style={{ fontSize:12 }}>{m.role === "bot" ? "🤖" : "🧑"}</span>
               </div>
-              <div className="max-w-[280px] rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="text-sm text-gray-900 leading-5">{m.text}</div>
+              <div style={{ maxWidth:280, background:"#F3F4F6", border:"1px solid #E5E7EB", borderRadius:14, padding:"8px 12px" }}>
+                <div style={{ fontSize:14, lineHeight:"20px", color:"#111827" }}>{m.text}</div>
               </div>
             </div>
           ))}
-
-          {/* Quick chips */}
           {!!quickForStage.length && (
-            <div className="pl-8 flex flex-wrap gap-2">
-              {quickForStage.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => handleQuick(q)}
-                  className="px-3 py-1.5 rounded-full border border-gray-300 bg-white text-xs font-semibold hover:bg-gray-50"
-                >
-                  {q}
-                </button>
+            <div style={{ paddingLeft:32, display:"flex", flexWrap:"wrap", gap:8 }}>
+              {quickForStage.map((q)=>(
+                <button key={q} onClick={()=>handleQuick(q)} style={{ border:"1px solid #D1D5DB", background:"#fff", padding:"6px 10px", borderRadius:999, fontSize:12, fontWeight:600 }}>{q}</button>
               ))}
             </div>
           )}
-          <div ref={endRef} />
+          <div ref={endRef}/>
         </div>
 
-        {/* Composer */}
-        <div className="border-t border-gray-200 p-2 bg-gray-50">
-          <div className="flex gap-2">
+        {awaitingConfirm && (
+          <div style={{ padding:12, borderTop:"1px dashed #E5E7EB", background:"#fff" }}>
+            {!launch.subjectId || launch.docIds.length === 0 ? (
+              <div style={{ color:"#DC2626", fontSize:12, marginBottom:8 }}>
+                Select a subject and at least one document before starting.
+              </div>
+            ) : null}
+            <div style={{ display:"flex", gap:8 }}>
+              <button
+                onClick={() => {
+                  setAwaitingConfirm(false);
+                  const result: ClarifierResult = {
+                    questionCount: count ?? suggested,
+                    questionTypes: types,
+                    difficulty: (difficulty ?? "mixed"),
+                  };
+                  onConfirm?.(result, launch);
+                }}
+                disabled={!launch.subjectId || launch.docIds.length === 0}
+                style={{ padding:"10px 14px", borderRadius:10, background:"#111827", color:"#fff", fontWeight:700, opacity: (!launch.subjectId || launch.docIds.length===0) ? .5 : 1 }}
+              >Start</button>
+              <button
+                onClick={() => {
+                  setStage("types"); setTypes([]); setDifficulty(null); setCount(null); setAwaitingConfirm(false);
+                  push("bot", "Okay — let's update your selections. Which question types do you want?");
+                }}
+                style={{ padding:"10px 14px", borderRadius:10, background:"#F3F4F6", border:"1px solid #E5E7EB", fontWeight:700 }}
+              >Edit</button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ borderTop:"1px solid #e5e7eb", padding:8, background:"#F9FAFB" }}>
+          <div style={{ display:"flex", gap:8 }}>
             <input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder={
-                stage === "types"
-                  ? 'e.g., "MCQ and True/False"'
-                  : stage === "difficulty"
-                  ? 'e.g., "Mixed"'
-                  : 'e.g., "15" or "Max"'
-              }
-              className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              onChange={(e)=>setInput(e.target.value)}
+              onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
+              placeholder={stage==="types" ? 'e.g., "MCQ and True/False"' : stage==="difficulty" ? 'e.g., "Mixed"' : 'e.g., "15" or "Max"'}
+              style={{ flex:1, background:"#fff", border:"1px solid #E5E7EB", borderRadius:10, padding:"10px 12px", fontSize:14, outline:"none" }}
             />
-            <button
-              onClick={handleSend}
-              className="rounded-lg bg-gray-900 text-white px-4 text-sm font-semibold disabled:opacity-50"
-            >
-              Send
-            </button>
+            <button onClick={handleSend} style={{ background:"#111827", color:"#fff", borderRadius:10, padding:"10px 16px", fontWeight:700 }}>Send</button>
           </div>
         </div>
       </div>

@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
+import './components/QuizNotifications.css';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import Dashboard from './components/Dashboard';
 import CreateSubject from './components/CreateSubject';
+import StudySession from './components/StudySession';
+import QuizScreen from './features/quiz/components/QuizScreen';
+// import AllQuestionsQuizPage from './features/quiz-all/AllQuestionsQuizPage';
+import OnePageQuizScreen from './features/onepage-quiz/OnePageQuizScreen';
 
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
@@ -105,6 +110,21 @@ const App: React.FC = () => {
               <CreateSubject />
             </ProtectedRoute>
           } />
+          <Route path="/study-session" element={
+            <ProtectedRoute>
+              <StudySession />
+            </ProtectedRoute>
+          } />
+          <Route path="/study-session/:sessionId" element={
+            <ProtectedRoute>
+              <OnePageQuizScreen />
+            </ProtectedRoute>
+          } />
+          {/* <Route path="/quiz/all" element={
+            <ProtectedRoute>
+              <AllQuestionsQuizPage />
+            </ProtectedRoute>
+          } /> */}
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>

@@ -1,3 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  background: #f9fafb; /* tailwind gray-50 */
+}
+
+* { 
+  box-sizing: border-box; 
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -10,6 +23,33 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Debug CSS for clarifier overlay - should only show on mobile */
+[data-overlay="clarifier"] { 
+  outline: 2px dashed red; 
+}
+
+/* Desktop overlay guards - prevent any overlays from blocking on lg+ screens */
+@media (min-width: 1024px) {
+  /* shadcn/radix overlay selectors */
+  .fixed[data-radix-dialog-overlay],
+  .fixed[data-radix-sheet-overlay],
+  .fixed[data-state="open"].bg-black\/80,
+  [data-overlay="clarifier"],
+  /* General overlay guards */
+  .fixed.inset-0,
+  .fixed[style*="inset: 0"],
+  .fixed[style*="inset:0"] {
+    display: none !important;
+  }
+  
+  /* Ensure no pointer-events blocking on desktop */
+  .fixed.inset-0,
+  .fixed[style*="inset: 0"],
+  .fixed[style*="inset:0"] {
+    pointer-events: none !important;
+  }
 }
 
 /* Notification Animations */
