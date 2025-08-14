@@ -1,22 +1,53 @@
-"use client";
-
 import React from "react";
+import LeftClarifierSheet, { ClarifierResult, LaunchContext } from "./LeftClarifierSheet";
+import QuizNotificationManager from "./QuizNotificationManager";
+import { startStudySession } from "../api/studySession";
+import { useJobProgress } from "../hooks/useJobProgress";
 import { useNavigate } from "react-router-dom";
-import LeftClarifierSheet, { ClarifierResult } from "./LeftClarifierSheet";
+import { useSelection } from "../stores/selection";
 
-export default function StartStudyLauncher({
-  selectedDocIds,
-}: {
-  selectedDocIds: string[];
-}) {
-  const [open, setOpen] = React.useState(false);
+export default function StartStudyLauncher({ apiBase = "/api" }: { apiBase?: string }) {
   const navigate = useNavigate();
+  const [open, setOpen] = React.useState(false);
+  const [jobId, setJobId] = React.useState<string | null>(null);
+  const sel = useSelection();
+
+  const canStart = Boolean(sel.userId); // Only require userId for authentication
+
+  const status = useJobProgress(jobId, {
+    apiBase,
+    onComplete: (result: { sessionId: string; quizId: string }) => {
+      console.log("✅ Quiz completed, navigating to session:", result);
+      navigate(`/study-session/${result.sessionId}?quizId=${encodeURIComponent(result.quizId)}`);
+    },
+  });
+
+  async function handleConfirm(r: ClarifierResult, launch: LaunchContext) {
+    try {
+      setOpen(false);
+      // Use minimal payload - all fields are now optional
+      const resp = await startStudySession(apiBase, {
+        questionTypes: r.questionTypes,
+        difficulty: r.difficulty,
+        questionCount: r.questionCount,
+      });
+      setJobId(resp.jobId);
+    } catch (e: any) {
+      alert(`Failed to start: ${e.message ?? String(e)}`);
+    }
+  }
 
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500"
+        onClick={() => {
+                  if (!canStart) {
+          alert("Please log in first.");
+          return;
+        }
+          setOpen(true);
+        }}
+        style={{ padding: "10px 16px", background: canStart ? "#2563EB" : "#93C5FD", color: "#fff", borderRadius: 8, fontWeight: 600 }}
       >
         ▶ Start Study Session
       </button>
@@ -24,17 +55,27 @@ export default function StartStudyLauncher({
       <LeftClarifierSheet
         open={open}
         onClose={() => setOpen(false)}
+        launch={{ userId: sel.userId!, subjectId: sel.subjectId || "mock-subject", docIds: sel.docIds.length > 0 ? sel.docIds : ["mock-doc"] }}
         maxQuestions={50}
         suggested={15}
-        onConfirm={(r: ClarifierResult) => {
-          // TODO: call backend later; for now persist and go
-          localStorage.setItem("questionCount", String(r.questionCount));
-          localStorage.setItem("questionTypes", JSON.stringify(r.questionTypes));
-          localStorage.setItem("difficulty", r.difficulty);
-          localStorage.setItem("docIds", JSON.stringify(selectedDocIds));
-          navigate("/study-session");
-        }}
+        onConfirm={handleConfirm}
       />
+
+      {/* Progress indicator */}
+      {status && (
+        <div className="fixed top-4 right-4 bg-white p-4 rounded-lg shadow-lg border">
+          <div className="text-sm font-medium mb-2">Quiz Generation Progress</div>
+          <div className="w-48 bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${status.progress || 0}%` }}
+            />
+          </div>
+          <div className="text-xs text-gray-600 mt-1">
+            {status.state === 'completed' ? 'Quiz Ready!' : (status as any).message || 'Processing...'}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,16 +1,23 @@
 import type { Question, Answer } from "./types";
 
+// helper to pretty-print expected
+function formatExpected(exp: any) {
+  if (typeof exp === "string") return exp;
+  try { return JSON.stringify(exp, null, 2); } catch { return String(exp); }
+}
+
 type Props = {
   index: number;
   q: Question;
-  value?: Answer;
+  value: Answer | undefined;
   onChange: (a: Answer) => void;
   submitted: boolean;
   verdict?: "correct" | "incorrect" | "needs_review" | "incomplete";
-  expected?: string;
+  expected?: any;
+  showExplanation?: boolean; // NEW
 };
 
-export default function QuestionItem({ index, q, value, onChange, submitted, verdict, expected }: Props) {
+export default function QuestionItem({ index, q, value, onChange, submitted, verdict, expected, showExplanation }: Props) {
   const num = index + 1;
 
   return (
@@ -134,22 +141,35 @@ export default function QuestionItem({ index, q, value, onChange, submitted, ver
           />
         )}
 
-        {submitted && (q.explanation || expected) && (
-          <div className="mt-2 rounded-md border bg-gray-50 px-3 py-2 text-sm">
-            {expected && (
-              <div className="mb-1">
-                <span className="font-semibold">Correct answer:</span>{" "}
-                <span className="text-gray-700">{expected}</span>
+        {(() => {
+          const shouldShowExplanation =
+            submitted && (showExplanation || verdict === "incorrect" || verdict === "needs_review");
+          
+          if (!shouldShowExplanation) return null;
+          
+          return (
+            <div className="mt-4 rounded-lg border bg-amber-50/70 border-amber-200 p-4">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-amber-700">ℹ️</span>
+                <div className="text-sm leading-relaxed text-amber-900">
+                  <div className="font-semibold mb-1">Explanation</div>
+                  {q.explanation ? (
+                    <p>{q.explanation}</p>
+                  ) : expected ? (
+                    <>
+                      <p className="mb-1">Correct answer:</p>
+                      <pre className="bg-white rounded border p-2 text-xs overflow-auto">
+                        {formatExpected(expected)}
+                      </pre>
+                    </>
+                  ) : (
+                    <p>No explanation provided.</p>
+                  )}
+                </div>
               </div>
-            )}
-            {q.explanation && (
-              <>
-                <div className="font-semibold">Explanation:</div>
-                <div className="text-gray-700">{q.explanation}</div>
-              </>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

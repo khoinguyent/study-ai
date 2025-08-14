@@ -20,6 +20,7 @@ type Props = {
   maxQuestions?: number;
   suggested?: number;
   onConfirm?: (r: ClarifierResult, launch: LaunchContext) => void;
+  inline?: boolean; // New prop for inline mode (no overlay on desktop)
 };
 
 const SHEET_W = 360;
@@ -32,6 +33,7 @@ export default function LeftClarifierSheet({
   maxQuestions = 50,
   suggested = 15,
   onConfirm,
+  inline = false,
 }: Props) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -145,7 +147,9 @@ export default function LeftClarifierSheet({
           display: "flex", 
           flexDirection: "column"
         }}
-        className="lg:relative lg:translate-x-0 lg:shadow-none lg:z-30" // Desktop: static, no shadow, lower z-index
+        className={`lg:relative lg:translate-x-0 lg:shadow-none lg:z-30 ${
+          inline ? "lg:!fixed lg:!static lg:!shadow-none lg:!border-r" : ""
+        }`} // Desktop: static, no shadow, lower z-index
       >
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:12, borderBottom:"1px solid #e5e7eb", background:"#F9FAFB" }}>
           <div style={{ fontWeight:700 }}>Study Setup</div>

@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-// import { Badge } from "../../../components/ui/badge";
-// import { Button } from "../../../components/ui/button";
-// import { Progress } from "../../../components/ui/progress";
-// import { CheckCircle2, AlertCircle } from "lucide-react";
+import clsx from "clsx";
 
 import type { Question, Answer } from "./types";
 import QuestionItem from "./QuestionItem";
@@ -14,15 +11,55 @@ import LeftClarifierSheet from "../../components/LeftClarifierSheet";
 // import your existing API method that returns { quiz: { questions: ... } }
 import { fetchQuiz } from "../quiz/api";        // adjust path
 
+// ---- small hook: desktop breakpoint
+function useMediaQuery(query: string) {
+  const [match, setMatch] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const h = (e: MediaQueryListEvent) => setMatch(e.matches);
+    m.addEventListener("change", h);
+    setMatch(m.matches);
+    return () => m.removeEventListener("change", h);
+  }, [query]);
+  return match;
+}
+
+// ---- responsive chat width hook
+function useChatWidth() {
+  const [w, setW] = useState(() => calc(window.innerWidth));
+  useEffect(() => {
+    const onR = () => setW(calc(window.innerWidth));
+    window.addEventListener("resize", onR);
+    return () => window.removeEventListener("resize", onR);
+  }, []);
+  return w;
+
+  function calc(vw: number) {
+    const base = Math.max(280, Math.min(480, Math.round(vw * 0.24))); // lg+
+    const xl = Math.max(320, Math.min(560, Math.round(vw * 0.26)));   // 2xl
+    // Tailwind's 2xl breakpoint is 1536px by default
+    return vw >= 1536 ? xl : base;
+  }
+}
+
 type Answers = Record<string, Answer | undefined>;
 
 export default function OnePageQuizScreen() {
   const { sessionId = "" } = useParams();
+
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const [chatOpen, setChatOpen] = useState<boolean>(isDesktop);
+  useEffect(() => setChatOpen(isDesktop), [isDesktop]); // open inline chat on desktop, collapse on mobile by default
+  
+  const chatWidth = useChatWidth();
+
   const [title, setTitle] = useState("Quiz");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Answers>({});
   const [submitted, setSubmitted] = useState(false);
+  const [showExplanations, setShowExplanations] = useState(false);
 
+  // Load quiz
   useEffect(() => {
     (async () => {
       try {
@@ -157,24 +194,6 @@ export default function OnePageQuizScreen() {
     })();
   }, [sessionId]);
 
-  // Remove any inert state on desktop to ensure questions are clickable
-  useEffect(() => {
-    const main = document.querySelector("main");
-    if (main && window.innerWidth >= 1024) {
-      main.removeAttribute("inert");
-      main.removeAttribute("aria-hidden");
-    }
-    
-    // Also check for any fixed overlays that might be blocking
-    const overlays = document.querySelectorAll('.fixed[style*="inset: 0"], .fixed[style*="inset:0"]');
-    overlays.forEach(overlay => {
-      if (window.innerWidth >= 1024) {
-        (overlay as HTMLElement).style.display = 'none';
-        (overlay as HTMLElement).style.pointerEvents = 'none';
-      }
-    });
-  }, []);
-
   const answeredCount = useMemo(() => {
     return questions.reduce((acc, q) => {
       const a = answers[q.id];
@@ -205,7 +224,6 @@ export default function OnePageQuizScreen() {
 
   const progress = questions.length ? (answeredCount / questions.length) * 100 : 0;
 
-  // Scroll to first unanswered on submit press
   const onSubmit = () => {
     if (answeredCount < questions.length) {
       const firstUn = questions.findIndex(q => {
@@ -223,16 +241,62 @@ export default function OnePageQuizScreen() {
       return;
     }
     setSubmitted(true);
-    // (optional) POST answers to backend here
+    setShowExplanations(false);
   };
 
+  const onReset = () => {
+    setAnswers({});
+    setSubmitted(false);
+    setShowExplanations(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // --- TEMP hard-guard: strip any 'inert' the dialog lib may have added on desktop
+  useEffect(() => {
+    if (isDesktop) {
+      document.querySelectorAll("[inert]").forEach((n) => (n as HTMLElement).removeAttribute("inert"));
+    }
+  }, [isDesktop, chatOpen]);
+
+  // Remove any inert state on desktop to ensure questions are clickable
+  useEffect(() => {
+    const main = document.querySelector("main");
+    if (main && window.innerWidth >= 1024) {
+      main.removeAttribute("inert");
+      main.removeAttribute("aria-hidden");
+    }
+    
+    // Also check for any fixed overlays that might be blocking
+    const overlays = document.querySelectorAll('.fixed[style*="inset: 0"], .fixed[style*="inset:0"]');
+    overlays.forEach(overlay => {
+      if (window.innerWidth >= 1024) {
+        (overlay as HTMLElement).style.display = 'none';
+        (overlay as HTMLElement).style.pointerEvents = 'none';
+      }
+    });
+  }, []);
+
+  const gridStyle: React.CSSProperties = isDesktop
+    ? { gridTemplateColumns: chatOpen ? `${chatWidth}px 1fr` : `0px 1fr` }
+    : {};
+
   return (
-    <div className="h-screen w-full grid grid-cols-12 bg-gray-50">
-      {/* Left: chat - static sidebar on desktop */}
-      <aside className="col-span-3 min-w-[320px] max-w-[400px] border-r overflow-hidden relative z-30">
-        <LeftClarifierSheet 
-          open={true}
-          onClose={() => {}}
+    <div
+      className="h-screen w-full bg-gray-50 grid transition-[grid-template-columns] duration-300 ease-in-out"
+      style={gridStyle}
+    >
+      {/* Left chat column (desktop inline) */}
+      <aside
+        className={clsx(
+          "relative z-30 border-r overflow-hidden hidden lg:block",
+          // width comes from gridTemplateColumns; let the aside fill it
+          "w-full"
+        )}
+      >
+        <LeftClarifierSheet
+          open={chatOpen}
+          inline
+          onClose={() => setChatOpen(false)}
           launch={{
             userId: sessionId || "",
             subjectId: "",
@@ -244,11 +308,11 @@ export default function OnePageQuizScreen() {
         />
       </aside>
 
-      {/* Right: questions - no overlay blocking */}
-      <main className="col-span-9 relative z-0 flex flex-col">
-        {/* Header */}
-        <div className="sticky top-0 z-30 bg-white border-b">
-          <div className="px-6 py-4 flex items-center justify-between">
+      {/* Right column */}
+      <main className="relative z-0">
+        {/* Sticky header: allow clicks to go through by default, then re-enable on inner content */}
+        <div className="sticky top-0 z-20 bg-white border-b pointer-events-none">
+          <div className="px-6 py-4 flex items-center justify-between pointer-events-auto">
             <div>
               <h1 className="text-lg font-bold text-gray-900">{title}</h1>
               <div className="flex items-center gap-2 mt-1">
@@ -280,17 +344,25 @@ export default function OnePageQuizScreen() {
                 Submit Answers
               </button>
             ) : (
-              <button 
-                onClick={() => { setAnswers({}); setSubmitted(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                className="h-10 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-              >
-                Reset
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowExplanations(v => !v)}
+                  className="h-10 px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700"
+                >
+                  {showExplanations ? "Hide Explanations" : "Explain"}
+                </button>
+                <button 
+                  onClick={onReset}
+                  className="h-10 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                >
+                  Reset
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Content */}
+        {/* Questions list */}
         <div className="flex-1 px-6 py-6 overflow-y-auto">
           {questions.length === 0 ? (
             <div className="text-center py-12">
@@ -311,6 +383,7 @@ export default function OnePageQuizScreen() {
                     submitted={submitted}
                     verdict={v?.status as "correct" | "incorrect" | "needs_review" | "incomplete" | undefined}
                     expected={v?.status !== "correct" ? v?.expected : undefined}
+                    showExplanation={showExplanations}
                   />
                 </div>
               );
@@ -324,30 +397,52 @@ export default function OnePageQuizScreen() {
           )}
         </div>
 
-        {/* Debug button - temporary to help identify blockers */}
-        <button
-          className="fixed bottom-4 right-4 z-[9999] bg-red-600 text-white px-3 py-1 rounded text-sm"
-          onClick={() => {
-            const killers: Element[] = [];
-            document.querySelectorAll<HTMLElement>("*").forEach(el => {
-              const s = getComputedStyle(el);
-              if ((s.position === "fixed" || s.position === "sticky") &&
-                  parseFloat(s.zIndex || "0") >= 10) {
-                const r = el.getBoundingClientRect();
-                if (r.width > 100 && r.height > 100) {
-                  el.style.outline = "2px dashed red";
-                  killers.push(el);
-                }
-              }
-            });
-            console.log("Possible blockers:", killers);
-            killers.forEach(el => ((el as HTMLElement).style.pointerEvents = "none"));
-            alert(`Found ${killers.length} potential blockers. Check console for details.`);
-          }}
-        >
-          Unblock
-        </button>
+        {/* Chat handle (desktop only when collapsed) */}
+        {!chatOpen && (
+          <button
+            aria-label="Open chat"
+            onClick={() => setChatOpen(true)}
+            className="hidden lg:flex fixed left-1 top-24 z-40 rotate-[-90deg] origin-left bg-white shadow px-3 py-1 rounded-t-md border"
+          >
+            <span className="mr-1">💬</span> Chat
+          </button>
+        )}
       </main>
+
+      {/* Mobile chat opener (small round button) */}
+      {!isDesktop && !chatOpen && (
+        <button
+          onClick={() => setChatOpen(true)}
+          aria-label="Open chat"
+          className="fixed bottom-4 left-4 z-40 bg-white shadow px-3 py-2 rounded-full border flex items-center gap-2"
+        >
+          <span>💬</span> Chat
+        </button>
+      )}
+
+      {/* Debug button - temporary to help identify blockers */}
+      <button
+        className="fixed bottom-4 right-4 z-[9999] bg-red-600 text-white px-3 py-1 rounded text-sm"
+        onClick={() => {
+          const killers: Element[] = [];
+          document.querySelectorAll<HTMLElement>("*").forEach(el => {
+            const s = getComputedStyle(el);
+            if ((s.position === "fixed" || s.position === "sticky") &&
+                parseFloat(s.zIndex || "0") >= 10) {
+              const r = el.getBoundingClientRect();
+              if (r.width > 100 && r.height > 100) {
+                el.style.outline = "2px dashed red";
+                killers.push(el);
+              }
+            }
+          });
+          console.log("Possible blockers:", killers);
+          killers.forEach(el => ((el as HTMLElement).style.pointerEvents = "none"));
+          alert(`Found ${killers.length} potential blockers. Check console for details.`);
+        }}
+      >
+        Unblock
+      </button>
     </div>
   );
 }

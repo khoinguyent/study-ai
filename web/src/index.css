@@ -50,6 +50,13 @@ code {
   .fixed[style*="inset:0"] {
     pointer-events: none !important;
   }
+  
+  /* Last-ditch guard for portaled overlays */
+  [data-overlay="clarifier"],
+  .fixed[data-radix-dialog-overlay],
+  .fixed[data-radix-sheet-overlay] {
+    display: none !important;
+  }
 }
 
 /* Notification Animations */

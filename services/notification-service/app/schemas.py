@@ -51,5 +51,20 @@ class TaskStatusResponse(TaskStatusBase):
         from_attributes = True
 
 class WebSocketMessage(BaseModel):
-    type: str  # notification, task_status, etc.
-    data: Dict[str, Any] 
+    type: str  # notification, task_status, quiz_session, etc.
+    data: Dict[str, Any]
+
+class QuizSessionStatus(BaseModel):
+    """Quiz session status update"""
+    session_id: str
+    job_id: str
+    status: str  # queued, running, completed, failed
+    progress: int = 0
+    message: Optional[str] = None
+    quiz_data: Optional[Dict[str, Any]] = None
+    timestamp: Optional[float] = None
+
+class QuizSessionMessage(BaseModel):
+    """Quiz session WebSocket message"""
+    type: str = "quiz_session"
+    data: QuizSessionStatus 

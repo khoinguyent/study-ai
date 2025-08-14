@@ -95,6 +95,27 @@ class WebSocketManager:
         )
         await self.send_personal_message(websocket_message, user_id)
     
+    async def broadcast_quiz_session_status(self, user_id: str, session_id: str, job_id: str, status: str, progress: int = 0, message: str = None, quiz_data: dict = None):
+        """Broadcast quiz session status update to a specific user"""
+        from .schemas import QuizSessionStatus
+        
+        quiz_status = QuizSessionStatus(
+            session_id=session_id,
+            job_id=job_id,
+            status=status,
+            progress=progress,
+            message=message,
+            quiz_data=quiz_data,
+            timestamp=asyncio.get_event_loop().time()
+        )
+        
+        websocket_message = WebSocketMessage(
+            type="quiz_session",
+            data=quiz_status.dict()
+        )
+        
+        await self.send_personal_message(websocket_message, user_id)
+    
     def get_active_users(self) -> Set[str]:
         """Get all active user IDs"""
         return set(self.active_connections.keys())

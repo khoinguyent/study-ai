@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, FileText, Download, Trash2, Loader2, Check, Square } from 'lucide-react';
 import { Document } from '../types';
 import apiService from '../services/api';
+import authService from '../services/auth';
 import { useDocumentNotifications, useNotifications } from './notifications/NotificationContext';
 import './CategoryDocumentsList.css';
 
@@ -134,10 +135,10 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
     
     try {
       // Call the delete API
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/documents/${document.id}`, {
+              const response = await fetch(`/documents/${document.id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${authService.getToken()}`,
           'Content-Type': 'application/json'
         }
       });

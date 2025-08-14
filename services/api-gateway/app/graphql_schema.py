@@ -30,23 +30,23 @@ class Document:
     id: str
     name: str
     filename: str
-    content_type: str = strawberry.field(name="content_type")
-    file_size: int = strawberry.field(name="file_size") 
+    content_type: str = strawberry.field(name="contentType")
+    file_size: int = strawberry.field(name="fileSize") 
     status: str
-    s3_url: str = strawberry.field(name="s3_url")
-    created_at: datetime = strawberry.field(name="created_at")
-    updated_at: Optional[datetime] = strawberry.field(name="updated_at", default=None)
+    s3_url: str = strawberry.field(name="s3Url")
+    created_at: datetime = strawberry.field(name="createdAt")
+    updated_at: Optional[datetime] = strawberry.field(name="updatedAt", default=None)
 
 @strawberry.type
 class Category:
     id: str
     name: str
     description: str
-    total_documents: int = strawberry.field(name="total_documents")
+    total_documents: int = strawberry.field(name="totalDocuments")
     documents: List[Document]
-    avg_score: float = strawberry.field(name="avg_score")
-    created_at: datetime = strawberry.field(name="created_at")
-    updated_at: Optional[datetime] = strawberry.field(name="updated_at", default=None)
+    avg_score: float = strawberry.field(name="avgScore")
+    created_at: datetime = strawberry.field(name="createdAt")
+    updated_at: Optional[datetime] = strawberry.field(name="updatedAt", default=None)
 
 @strawberry.type
 class Subject:
@@ -54,19 +54,19 @@ class Subject:
     name: str
     description: str
     icon: Optional[str] = None
-    color_theme: Optional[str] = strawberry.field(name="color_theme", default=None)
-    total_documents: int = strawberry.field(name="total_documents")
+    color_theme: Optional[str] = strawberry.field(name="colorTheme", default=None)
+    total_documents: int = strawberry.field(name="totalDocuments")
     categories: List[Category]
-    avg_score: float = strawberry.field(name="avg_score")
-    created_at: datetime = strawberry.field(name="created_at")
-    updated_at: Optional[datetime] = strawberry.field(name="updated_at", default=None)
+    avg_score: float = strawberry.field(name="avgScore")
+    created_at: datetime = strawberry.field(name="createdAt")
+    updated_at: Optional[datetime] = strawberry.field(name="updatedAt", default=None)
 
 @strawberry.type
 class DashboardStats:
-    total_subjects: int = strawberry.field(name="total_subjects")
-    total_categories: int = strawberry.field(name="total_categories")
-    total_documents: int = strawberry.field(name="total_documents")
-    avg_score: float = strawberry.field(name="avg_score")
+    total_subjects: int = strawberry.field(name="totalSubjects")
+    total_categories: int = strawberry.field(name="totalCategories")
+    total_documents: int = strawberry.field(name="totalDocuments")
+    avg_score: float = strawberry.field(name="avgScore")
 
 @strawberry.type
 class DashboardData:
@@ -279,9 +279,9 @@ graphql_service = GraphQLService()
 @strawberry.type
 class Query:
     @strawberry.field
-    async def dashboard(self, user_id: str, info: Info) -> DashboardData:
+    async def dashboard(self, userId: str, info: Info) -> DashboardData:
         """Get complete dashboard data for a user"""
-        print(f"DEBUG: Dashboard resolver called with user_id: {user_id}")
+        print(f"DEBUG: Dashboard resolver called with userId: {userId}")
         
         # Extract auth token from request headers
         request: Request = info.context["request"]
@@ -293,14 +293,14 @@ class Query:
         print(f"DEBUG: Extracted token: {token[:20] if token else 'None'}...")
         print(f"DEBUG: Calling build_dashboard_data")
         
-        result = await graphql_service.build_dashboard_data(user_id, token)
+        result = await graphql_service.build_dashboard_data(userId, token)
         print(f"DEBUG: Dashboard result subjects count: {len(result.subjects) if result.subjects else 0}")
         return result
     
     @strawberry.field
-    async def test_subjects(self, user_id: str, info: Info) -> List[str]:
+    async def testSubjects(self, userId: str, info: Info) -> List[str]:
         """Test endpoint to fetch subjects directly"""
-        print(f"DEBUG: Test subjects called with user_id: {user_id}")
+        print(f"DEBUG: Test subjects called with userId: {userId}")
         
         # Extract auth token from request headers  
         request: Request = info.context["request"]
@@ -312,7 +312,7 @@ class Query:
         print(f"DEBUG: Token for test: {token[:20] if token else 'None'}...")
         
         try:
-            subjects_data = await graphql_service.get_user_subjects(user_id, token)
+            subjects_data = await graphql_service.get_user_subjects(userId, token)
             print(f"DEBUG: Raw subjects data: {subjects_data}")
             return [subject.get('name', 'Unknown') for subject in subjects_data] if subjects_data else []
         except Exception as e:
@@ -320,15 +320,15 @@ class Query:
             return []
     
     @strawberry.field
-    async def subjects(self, user_id: str) -> List[Subject]:
+    async def subjects(self, userId: str) -> List[Subject]:
         """Get subjects with categories and documents for a user"""
-        dashboard_data = await graphql_service.build_dashboard_data(user_id)
+        dashboard_data = await graphql_service.build_dashboard_data(userId)
         return dashboard_data.subjects
     
     @strawberry.field
-    async def stats(self, user_id: str) -> DashboardStats:
+    async def stats(self, userId: str) -> DashboardStats:
         """Get dashboard statistics for a user"""
-        dashboard_data = await graphql_service.build_dashboard_data(user_id)
+        dashboard_data = await graphql_service.build_dashboard_data(userId)
         return dashboard_data.stats
 
 schema = strawberry.Schema(query=Query)
