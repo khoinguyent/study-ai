@@ -384,4 +384,34 @@ async def get_user_task_statuses(
         TaskStatus.user_id == user_id
     ).order_by(TaskStatus.created_at.desc()).limit(limit).all()
     
-    return task_statuses 
+    return task_statuses
+
+@app.post("/quiz-sessions/notify")
+async def notify_quiz_session_status(
+    user_id: str,
+    session_id: str,
+    job_id: str,
+    status: str,
+    progress: int = 0,
+    message: str = None,
+    quiz_data: dict = None
+):
+    """Notify a user about quiz session status updates"""
+    try:
+        logger.info(f"Quiz session notification: user_id={user_id}, session_id={session_id}, status={status}, progress={progress}")
+        
+        # Send real-time notification via WebSocket
+        await websocket_manager.broadcast_quiz_session_status(
+            user_id=user_id,
+            session_id=session_id,
+            job_id=job_id,
+            status=status,
+            progress=progress,
+            message=message,
+            quiz_data=quiz_data
+        )
+        
+        return {"message": "Quiz session notification sent successfully"}
+    except Exception as e:
+        logger.error(f"Error sending quiz session notification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 

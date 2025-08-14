@@ -34,6 +34,7 @@ import { Bell } from 'lucide-react';
 import StartStudyLauncher from './StartStudyLauncher';
 import './Dashboard.css';
 import { Button } from './ui/button';
+import { useSelection } from '../stores/selection';
 
 interface CollapsedState {
   [subjectId: string]: boolean;
@@ -123,6 +124,7 @@ const Dashboard: React.FC = () => {
   const [selectedSubject, setSelectedSubject] = useState<Subject | undefined>(undefined);
   const [selectedCategory, setSelectedCategory] = useState<Category | undefined>(undefined);
   const { addNotification } = useNotifications();
+  const sel = useSelection();
 
   const fetchUserData = async (): Promise<void> => {
     try {
@@ -137,6 +139,7 @@ const Dashboard: React.FC = () => {
       const userData = await apiService.getCurrentUser();
       setUser(userData);
       authService.updateUser(userData);
+      sel.setUser(userData.id);
     } catch (error) {
       console.error('Error fetching user data:', error);
       authService.clearToken();
@@ -382,6 +385,10 @@ const Dashboard: React.FC = () => {
         newSelections.documents.delete(documentId);
       }
       
+      // Update selection store
+      const remainingDocs = Array.from(newSelections.documents);
+      sel.setDocs(remainingDocs);
+      
       return newSelections;
     });
   };
@@ -395,10 +402,23 @@ const Dashboard: React.FC = () => {
         newSelections.categories.add(categoryId);
         // Select all documents in this category
         categoryDocuments.forEach(docId => newSelections.documents.add(docId));
+        
+        // Update selection store with current subject and documents
+        const subjectId = Object.keys(categories).find(subjId => 
+          categories[subjId]?.some(cat => cat.id === categoryId)
+        );
+        if (subjectId) {
+          sel.setSubject(subjectId);
+          sel.setDocs(categoryDocuments);
+        }
       } else {
         newSelections.categories.delete(categoryId);
         // Deselect all documents in this category
         categoryDocuments.forEach(docId => newSelections.documents.delete(docId));
+        
+        // Update selection store
+        const remainingDocs = Array.from(newSelections.documents);
+        sel.setDocs(remainingDocs);
       }
       
       return newSelections;
@@ -417,12 +437,19 @@ const Dashboard: React.FC = () => {
         subjectCategories.forEach(catId => newSelections.categories.add(catId));
         // Select all documents in this subject
         subjectDocuments.forEach(docId => newSelections.documents.add(docId));
+        
+        // Update selection store
+        sel.setSubject(subjectId);
+        sel.setDocs(subjectDocuments);
       } else {
         newSelections.subjects.delete(subjectId);
         // Deselect all categories in this subject
         subjectCategories.forEach(catId => newSelections.categories.delete(catId));
         // Deselect all documents in this subject
         subjectDocuments.forEach(docId => newSelections.documents.delete(docId));
+        
+        // Update selection store
+        sel.clear();
       }
       
       return newSelections;
@@ -510,10 +537,10 @@ const Dashboard: React.FC = () => {
     if (!confirmDelete) return;
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/documents/bulk-delete`, {
+      const response = await fetch(`/documents/bulk-delete`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${authService.getToken()}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -562,10 +589,10 @@ const Dashboard: React.FC = () => {
     if (!confirmDelete) return;
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/documents/bulk-delete`, {
+      const response = await fetch(`/documents/bulk-delete`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${authService.getToken()}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -745,7 +772,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div className="selection-action">
                 <StartStudyLauncher
-                  selectedDocIds={getReadySelectedDocuments()}
+                  apiBase="/api"
                 />
               </div>
             </div>

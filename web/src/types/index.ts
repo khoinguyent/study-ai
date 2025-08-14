@@ -94,15 +94,16 @@ export interface Quiz {
 
 export interface Question {
   id: string;
+  type: string;
   question: string;
-  options: QuestionOption[];
-  correct_answer: number;
+  options?: QuestionOption[];
+  answer?: string | boolean;
   explanation?: string;
 }
 
 export interface QuestionOption {
-  text: string;
-  is_correct: boolean;
+  content: string;
+  isCorrect: boolean;
 }
 
 // API Response types

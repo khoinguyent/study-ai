@@ -15,8 +15,8 @@ import {
 import authService from './auth'; // Import the new auth service
 
 // Use GraphQL API Gateway for all endpoints
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-const AUTH_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const AUTH_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 class ApiService {
   private getAuthHeaders(): HeadersInit {
