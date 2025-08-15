@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
-import './components/QuizNotifications.css';
+
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import Dashboard from './components/Dashboard';
@@ -14,7 +14,7 @@ import OnePageQuizScreen from './features/onepage-quiz/OnePageQuizScreen';
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
 import apiService from './services/api';
-import { NotificationProvider } from './components/notifications/NotificationContext';
+
 
 // Protected Route Component with Notifications
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
@@ -68,14 +68,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   return (
-    <NotificationProvider>
-      <div className="min-h-screen bg-gray-50">
-        {/* Main Content */}
-        <main>
-          {children}
-        </main>
-      </div>
-    </NotificationProvider>
+    <div className="min-h-screen bg-gray-50">
+      {/* Main Content */}
+      <main>
+        {children}
+      </main>
+    </div>
   );
 };
 

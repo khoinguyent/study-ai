@@ -727,6 +727,34 @@
   font-weight: 400;
 }
 
+.selected-documents-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.selected-document-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.document-icon {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.document-name {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 500;
+  word-break: break-word;
+}
+
 .selection-action {
   flex-shrink: 0;
 }

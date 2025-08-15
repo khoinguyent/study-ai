@@ -1,89 +1,54 @@
-/* Quiz Notification Animations */
-@keyframes slideInFromRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+.qn-toast {
+  width: 360px;
+  background: #fff;
+  border: 1px solid rgba(16,24,40,.08);
+  box-shadow: 0 8px 24px rgba(16,24,40,.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  animation: qn-slide-in .18s ease-out;
 }
 
-@keyframes slideOutToRight {
-  from {
-    transform: translateX(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateX(100%);
-    opacity: 0;
-  }
+.qn-icon {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: 999px;
+  flex: 0 0 auto;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+.qn-title { font-weight: 600; color: #0b1324; }
+.qn-sub { font-size: 12px; color: #667085; margin-top: 2px; }
+
+.qn-progress .qn-icon { background: #EEF4FF; color: #1D4ED8; }
+.qn-success .qn-icon { background: #ECFDF3; color: #047857; }
+.qn-fail    .qn-icon { background: #FEF3F2; color: #B42318; }
+
+.qn-bar {
+  height: 6px;
+  background: #EEF2F6;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.qn-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg,#2563EB,#6366F1);
+  width: var(--pct,10%);
+  transition: width .25s ease;
+  border-radius: 999px;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
+@keyframes qn-slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Animation Classes */
-.animate-in {
-  animation: slideInFromRight 0.3s ease-out;
+/* Always above sticky header, positioned by --toast-top set below */
+.toast-safe-top {
+  top: calc(var(--toast-top, 88px));
 }
-
-.animate-out {
-  animation: slideOutToRight 0.3s ease-in;
-}
-
-.fade-in {
-  animation: fadeIn 0.2s ease-out;
-}
-
-.pulse {
-  animation: pulse 2s ease-in-out infinite;
-}
-
-/* Progress Bar Animation */
-.progress-bar-fill {
-  transition: width 0.5s ease-out;
-}
-
-/* Hover Effects */
-.notification-hover {
-  transition: all 0.2s ease-in-out;
-}
-
-.notification-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-}
-
-/* Dark Mode Enhancements */
-.dark .notification-hover:hover {
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
-}
-
-/* Responsive Design */
-@media (max-width: 640px) {
-  .quiz-notification {
-    min-width: calc(100vw - 2rem);
-    max-width: calc(100vw - 2rem);
-    right: 1rem;
-    left: 1rem;
-  }
-}
+#toast-portal { z-index: 99999 !important; }
+.toast { position: relative; background: #fff; }
