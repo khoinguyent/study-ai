@@ -4,6 +4,10 @@ import { getJobStatus, JobStatus } from "../api/studySession";
 type Options = {
   apiBase: string;
   onComplete?: (s: { sessionId: string; quizId: string }) => void;
+  onQueued?: (jobId: string) => void;
+  onProgress?: (jobId: string, progress: number) => void;
+  onCompleted?: (jobId: string, quizId: string, sessionId: string) => void;
+  onFailed?: (jobId: string, message?: string) => void;
 };
 
 export function useJobProgress(jobId: string | null, opts: Options) {
@@ -14,6 +18,9 @@ export function useJobProgress(jobId: string | null, opts: Options) {
 
   useEffect(() => {
     if (!jobId || isConnectedRef.current) return;
+
+    // Notify that job is queued
+    opts.onQueued?.(jobId);
 
     // try SSE first
     const sseUrl = `${opts.apiBase}/study-sessions/events?job_id=${encodeURIComponent(jobId)}`;
@@ -33,16 +40,28 @@ export function useJobProgress(jobId: string | null, opts: Options) {
           console.log('📡 SSE Event received:', data);
           setStatus(data);
           
+          // Update progress notification
+          if (data.progress !== undefined) {
+            opts.onProgress?.(jobId, data.progress);
+          }
+          
           if (data.state === "completed") {
             console.log('✅ Quiz generation completed! Quiz data:', data);
             es.close();
             isConnectedRef.current = false;
+            
+            // Show completion notification
+            opts.onCompleted?.(jobId, data.quizId, data.sessionId);
+            
             opts.onComplete?.({ sessionId: data.sessionId, quizId: data.quizId });
           }
           if (data.state === "failed") {
             console.log('❌ Quiz generation failed:', data);
             es.close();
             isConnectedRef.current = false;
+            
+            // Show failure notification
+            opts.onFailed?.(jobId, data.error);
           }
         } catch (parseError) {
           console.error('❌ Failed to parse SSE data:', parseError, 'Raw data:', ev.data);
@@ -73,11 +92,26 @@ export function useJobProgress(jobId: string | null, opts: Options) {
           if (!jobId) return;
           const s = await getJobStatus(opts.apiBase, jobId);
           setStatus(s);
+          
+          // Update progress notification
+          if (s.progress !== undefined) {
+            opts.onProgress?.(jobId, s.progress);
+          }
+          
           if (s.state === "completed") {
             stopPolling();
+            
+            // Show completion notification
+            opts.onCompleted?.(jobId, s.quizId, s.sessionId);
+            
             opts.onComplete?.({ sessionId: s.sessionId, quizId: s.quizId });
           }
-          if (s.state === "failed") stopPolling();
+          if (s.state === "failed") {
+            stopPolling();
+            
+            // Show failure notification
+            opts.onFailed?.(jobId, s.error);
+          }
         } catch {/* ignore */}
       }, 1200);
       pollRef.current = id;

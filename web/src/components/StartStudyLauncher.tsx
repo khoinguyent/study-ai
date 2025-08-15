@@ -5,6 +5,7 @@ import { startStudySession } from "../api/studySession";
 import { useJobProgress } from "../hooks/useJobProgress";
 import { useNavigate } from "react-router-dom";
 import { useSelection } from "../stores/selection";
+import { useQuizToasts } from "./quiz/useQuizToasts";
 
 export default function StartStudyLauncher({ 
   apiBase = "/api"
@@ -18,12 +19,19 @@ export default function StartStudyLauncher({
 
   const canStart = Boolean(sel.userId); // Only require userId for authentication
 
+  // Get quiz toast functions
+  const quizToasts = useQuizToasts();
+
   const status = useJobProgress(jobId, {
     apiBase,
     onComplete: (result: { sessionId: string; quizId: string }) => {
       console.log("✅ Quiz completed, no auto-navigation - notification will be shown by Dashboard");
       // No more auto-navigation - notifications are handled by Dashboard
     },
+    onQueued: quizToasts.onQueued,
+    onProgress: quizToasts.onProgress,
+    onCompleted: quizToasts.onCompleted,
+    onFailed: quizToasts.onFailed,
   });
 
   async function handleConfirm(r: ClarifierResult, launch: LaunchContext) {

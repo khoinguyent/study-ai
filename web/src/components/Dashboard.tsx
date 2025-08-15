@@ -158,7 +158,6 @@ const Dashboard: React.FC = () => {
       const userData = await apiService.getCurrentUser();
       setUser(userData);
       authService.updateUser(userData);
-      sel.setUser(userData.id);
     } catch (error) {
       console.error('Error fetching user data:', error);
       authService.clearToken();
@@ -266,8 +265,8 @@ const Dashboard: React.FC = () => {
       
       // Use stats from GraphQL - snake_case mapping
       const newStats = {
-        documentSets: dashboardData.stats?.total_subjects || 0,
-        documents: dashboardData.stats?.total_documents || 0,
+        documentSets: dashboardData.stats?.total_subjects || subjectsData.length || 0,
+        documents: dashboardData.stats?.total_documents || Object.values(documentsData).flat().length || 0,
         avgScore: Math.round(dashboardData.stats?.avg_score || 0)
       };
       console.log('📊 Setting stats:', newStats);
@@ -298,11 +297,13 @@ const Dashboard: React.FC = () => {
     console.log('🆔 User ID:', user?.id);
     if (user?.id) {
       console.log('✅ User ID available, calling fetchSubjects...');
+      // Update selection store with user ID
+      sel.setUser(user.id);
       fetchSubjects();
     } else {
       console.log('❌ No user ID available, skipping fetchSubjects');
     }
-  }, [user?.id, fetchSubjects]); // Include fetchSubjects to ensure latest version
+  }, [user?.id, fetchSubjects]); // Remove sel from dependencies to prevent infinite loop
 
   const getSubjectIcon = (subjectName: string): React.ReactNode => {
     const icons: { [key: string]: React.ReactNode } = {
@@ -802,15 +803,7 @@ const Dashboard: React.FC = () => {
                 <p className="selection-description">
                   Ready to generate questions from your selection
                 </p>
-                {/* Show selected document names */}
-                <div className="selected-documents-list">
-                  {getSelectedDocumentNames().map((filename, index) => (
-                    <div key={index} className="selected-document-item">
-                      <span className="document-icon">📄</span>
-                      <span className="document-name">{filename}</span>
-                    </div>
-                  ))}
-                </div>
+
               </div>
               <div className="selection-action">
                 <StartStudyLauncher
