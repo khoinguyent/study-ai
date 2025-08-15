@@ -1,5 +1,4 @@
 // src/useQuizToasts.ts
-import { useEffect } from "react";
 import { useNotifications } from "../notifications/NotificationContext";
 
 /**
@@ -24,6 +23,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
     title: "Generating quiz…",
     status: "processing",
     progress,
+    autoClose: false,
   });
 
   const onCompleted = (jobId: string, quizId: string, sessionId: string) => {
@@ -42,6 +42,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
       title: "Quiz ready",
       message: "Successfully generated — open it when you're ready.",
       status: "success",
+      actionText: "Open",
       href: `/study-session/session-${sessionId}?quizId=${quizId}`,
       autoClose: false,
     });

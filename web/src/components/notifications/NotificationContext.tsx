@@ -1,16 +1,21 @@
 // src/components/notifications/NotificationContext.tsx
 import React, { createContext, useContext, useMemo, useState, useCallback, useEffect } from "react";
 import ReactDOM from "react-dom";
+import ToastCard from "./ToastCard";
+import { useHeaderHeight } from "../../hooks/useHeaderHeight";
 
 export type NotificationStatus = "info" | "processing" | "success" | "warning" | "error";
 export interface NotificationItem {
   id: string;                 // use jobId / quizId / uploadId as stable id
   title: string;
   message?: string;
-  status?: NotificationStatus;
+  status: NotificationStatus; // now required
   progress?: number;          // 0..100 for long-running tasks
+  actionText?: string;        // text for action button
+  onAction?: () => void;      // callback for action button
   href?: string;              // optional link (e.g. "Open quiz")
   autoClose?: boolean;        // default false for processing; true for success
+  durationMs?: number;        // default 4000 for non-processing
   createdAt?: number;
 }
 
@@ -32,14 +37,24 @@ export const NotificationProvider: React.FC<React.PropsWithChildren> = ({ childr
   }, []);
 
   const add = useCallback((n: NotificationItem) => {
-    setItems(prev => [ { createdAt: Date.now(), status: "info", autoClose: false, ...n }, ...prev ]);
+    setItems(prev => [ { 
+      createdAt: Date.now(), 
+      autoClose: n.autoClose ?? (n.status === "success"), 
+      durationMs: n.durationMs ?? 4000,
+      ...n 
+    }, ...prev ]);
   }, []);
 
   const addOrUpdate = useCallback((n: NotificationItem) => {
     setItems(prev => {
       const idx = prev.findIndex(x => x.id === n.id);
       if (idx === -1) {
-        return [ { createdAt: Date.now(), status: "info", autoClose: false, ...n }, ...prev ];
+        return [ { 
+          createdAt: Date.now(), 
+          autoClose: n.autoClose ?? (n.status === "success"), 
+          durationMs: n.durationMs ?? 4000,
+          ...n 
+        }, ...prev ];
       }
       const next = prev.slice();
       next[idx] = { ...next[idx], ...n };
@@ -49,11 +64,11 @@ export const NotificationProvider: React.FC<React.PropsWithChildren> = ({ childr
 
   const clear = useCallback(() => setItems([]), []);
 
-  // autoclose successes
+  // autoclose based on status and duration
   useEffect(() => {
     const timers = items
-      .filter(i => i.autoClose)
-      .map(i => setTimeout(() => remove(i.id), 3500));
+      .filter(i => i.autoClose && i.status !== "processing")
+      .map(i => setTimeout(() => remove(i.id), i.durationMs || 4000));
     return () => timers.forEach(clearTimeout);
   }, [items, remove]);
 
@@ -69,6 +84,12 @@ export const useNotifications = () => {
 
 export const NotificationPortal: React.FC = () => {
   const { items, remove } = useNotifications();
+  const headerHeight = useHeaderHeight();
+
+  // Set CSS custom property for toast positioning
+  useEffect(() => {
+    document.documentElement.style.setProperty('--toast-top', `${headerHeight + 8}px`);
+  }, [headerHeight]);
 
   const [rootEl] = useState(() => {
     let el = document.getElementById("notification-root");
@@ -80,24 +101,22 @@ export const NotificationPortal: React.FC = () => {
     return el;
   });
 
+  const handleAction = useCallback((id: string) => {
+    const item = items.find(i => i.id === id);
+    if (item?.onAction) {
+      item.onAction();
+    }
+  }, [items]);
+
   return ReactDOM.createPortal(
-    <div className="notification-portal">
-      {/* Keep a log during dev to ensure we see items count */}
-      {/* console.log("PORTAL toasts:", items.length) */}
+    <div className="toast-stack-container">
       {items.map(item => (
-        <div key={item.id} className={`toast ${item.status ?? "info"}`}>
-          <div className="toast-main">
-            <div className="toast-title">{item.title}</div>
-            {item.message && <div className="toast-msg">{item.message}</div>}
-            {"progress" in item && typeof item.progress === "number" && (
-              <div className="toast-progress"><div style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }} /></div>
-            )}
-          </div>
-          <div className="toast-actions">
-            {item.href && <a className="toast-link" href={item.href}>Open</a>}
-            <button className="toast-close" onClick={() => remove(item.id)} aria-label="Close">×</button>
-          </div>
-        </div>
+        <ToastCard
+          key={item.id}
+          item={item}
+          onClose={remove}
+          onAction={handleAction}
+        />
       ))}
     </div>,
     rootEl

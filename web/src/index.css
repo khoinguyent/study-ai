@@ -6,60 +6,7 @@
 [data-app-header] { z-index: 100; }
 .dashboard-header { z-index: 100 !important; }
 
-/* Notification portal sits above everything */
-.notification-portal {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 2147483647;
-  pointer-events: none; /* allows clicks through empty space */
-}
-
-.notification-portal .toast {
-  pointer-events: auto; /* clickable content */
-  min-width: 320px;
-  max-width: 460px;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,.08);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.12);
-  padding: 12px 12px;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.toast-main { flex: 1; }
-.toast-title { font-weight: 600; font-size: 14px; color: #0f172a; }
-.toast-msg { font-size: 13px; color: #334155; margin-top: 2px; }
-
-.toast-actions { display: flex; align-items: center; gap: 6px; }
-.toast-link { font-size: 13px; color: #2563eb; text-decoration: none; }
-.toast-link:hover { text-decoration: underline; }
-.toast-close { border: none; background: transparent; font-size: 16px; line-height: 1; cursor: pointer; color: #475569; }
-
-.toast .toast-progress {
-  margin-top: 8px;
-  height: 6px; width: 100%;
-  background: #e2e8f0;
-  border-radius: 999px;
-  overflow: hidden;
-}
-.toast .toast-progress > div {
-  height: 100%;
-  background: #3b82f6;
-  border-radius: 999px;
-  transition: width 200ms ease;
-}
-
-/* Status accents */
-.toast.processing { border-color: #bfdbfe; }
-.toast.success { border-color: #86efac; }
-.toast.error { border-color: #fecaca; }
-.toast.warning { border-color: #fde68a; }
+/* Old notification styles removed - using new notificationTheme.css */
 
 
 
