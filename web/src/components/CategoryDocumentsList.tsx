@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, FileText, Download, Trash2, Loader2, Check, Squ
 import { Document } from '../types';
 import apiService from '../services/api';
 import authService from '../services/auth';
-import { useDocumentNotifications, useNotifications } from './notifications/NotificationContext';
+import { useNotifications } from './notifications/NotificationContext';
 import './CategoryDocumentsList.css';
 
 interface CategoryDocumentsListProps {
@@ -32,8 +32,7 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [totalCount, setTotalCount] = useState<number>(0);
   const isSelectionMode = selectedDocuments.size > 0;
-  const { startDeletion, updateDeletionProgress, completeDeletion, failDeletion } = useDocumentNotifications();
-  const { addNotification } = useNotifications();
+  const { add, addOrUpdate } = useNotifications();
 
   const loadDocuments = async (pageNum: number = 1, append: boolean = false) => {
     if (pageNum === 1) {
@@ -105,13 +104,12 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Failed to download document. Please try again.';
       
       // Use custom notification instead of alert
-      addNotification({
-        type: 'document',
-        status: 'error',
+      add({
+        id: `download-${document.id}`,
         title: 'Download Failed',
         message: `Failed to download ${document.filename}: ${errorMessage}`,
-        autoClose: true,
-        autoCloseDelay: 5000
+        status: 'error',
+        autoClose: true
       });
     }
   };
@@ -130,12 +128,9 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
     
     if (!confirmDelete) return;
 
-    // Start deletion notification
-    const notificationId = startDeletion(document.filename);
-    
     try {
       // Call the delete API
-              const response = await fetch(`/documents/${document.id}`, {
+      const response = await fetch(`/documents/${document.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authService.getToken()}`,
@@ -147,22 +142,11 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
         throw new Error(`Failed to delete document: ${response.status}`);
       }
 
-      const result = await response.json();
-      
-      // Update notification with task info
-      updateDeletionProgress(notificationId, 20, 'Deletion initiated...');
-      
       // Remove document from local state immediately for better UX
       setDocuments(prev => prev.filter(doc => doc.id !== document.id));
       
-      // Simulate progress updates (since we don't have real-time task status yet)
-      setTimeout(() => updateDeletionProgress(notificationId, 50, 'Removing file from storage...'), 1000);
-      setTimeout(() => updateDeletionProgress(notificationId, 80, 'Deleting document chunks...'), 2000);
-      setTimeout(() => completeDeletion(notificationId, document.filename), 3000);
-      
     } catch (error) {
       console.error('Error deleting document:', error);
-      failDeletion(notificationId, document.filename, error instanceof Error ? error.message : 'Unknown error');
       
       // Reload documents to restore the list if deletion failed
       loadDocuments(1, false);

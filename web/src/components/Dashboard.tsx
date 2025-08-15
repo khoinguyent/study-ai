@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Folder, 
@@ -29,12 +29,15 @@ import CreateCategoryModal from './CreateCategoryModal';
 import CreateSubjectModal from './CreateSubjectModal';
 import UploadDocumentsModal from './UploadDocumentsModal';
 import CategoryDocumentsList from './CategoryDocumentsList';
-import { useNotifications } from './notifications/NotificationContext';
-import { Bell } from 'lucide-react';
+
+
 import StartStudyLauncher from './StartStudyLauncher';
 import './Dashboard.css';
 import { Button } from './ui/button';
 import { useSelection } from '../stores/selection';
+import { useQuizToasts } from "./quiz/useQuizToasts";
+import { useUploadEvents } from "../hooks/useUploadEvents";
+
 
 interface CollapsedState {
   [subjectId: string]: boolean;
@@ -79,24 +82,7 @@ const HierarchicalCheckbox: React.FC<HierarchicalCheckboxProps> = ({
   );
 };
 
-// Notification Bell Component
-const NotificationBell: React.FC = () => {
-  const { notifications } = useNotifications();
-  const unreadCount = notifications?.filter(n => n && n.status !== 'success')?.length || 0;
-  
-  return (
-    <div className="relative">
-      <button className="relative p-2 text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded-full">
-        <Bell className="w-6 h-6" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-            {unreadCount}
-          </span>
-        )}
-      </button>
-    </div>
-  );
-};
+
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -123,8 +109,41 @@ const Dashboard: React.FC = () => {
   const [isUploadDocumentsModalOpen, setIsUploadDocumentsModalOpen] = useState<boolean>(false);
   const [selectedSubject, setSelectedSubject] = useState<Subject | undefined>(undefined);
   const [selectedCategory, setSelectedCategory] = useState<Category | undefined>(undefined);
-  const { addNotification } = useNotifications();
+
   const sel = useSelection();
+  
+  // Quiz notifications are now handled by QuizNotificationManager
+
+  // Set toast positioning based on header height
+  useEffect(() => {
+    const el = document.querySelector("header[data-app-header='true']") as HTMLElement | null;
+    const apply = () => {
+      const h = el?.offsetHeight ?? 64;
+      document.documentElement.style.setProperty("--toast-top", `${h + 12}px`);
+    };
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, []);
+
+  // Activate both quiz and upload toasts
+  const quizToasts = useQuizToasts(() => {
+    // When quiz generation completes, refresh dashboard data
+    fetchUserData();
+  });
+  
+  // Get user ID for upload events
+  const userId = user?.id;
+  
+  // Handle upload events and refresh dashboard on completion
+  useUploadEvents({
+    userId: userId || "",
+    onAnyComplete: () => {
+      // When an upload finishes, refresh dashboard data
+      fetchUserData();
+    },
+  });
+
 
   const fetchUserData = async (): Promise<void> => {
     try {
@@ -510,6 +529,26 @@ const Dashboard: React.FC = () => {
     return getReadySelectedDocuments().length;
   };
 
+  const getSelectedDocumentNames = (): string[] => {
+    if (!selections?.documents || !documents) return [];
+    
+    const selectedDocIds = Array.from(selections.documents);
+    const selectedNames: string[] = [];
+    
+    // Check all categories for documents and their names
+    Object.values(documents).forEach(categoryDocs => {
+      if (Array.isArray(categoryDocs)) {
+        categoryDocs.forEach(doc => {
+          if (doc && selectedDocIds.includes(doc.id)) {
+            selectedNames.push(doc.filename || doc.title || 'Unknown Document');
+          }
+        });
+      }
+    });
+    
+    return selectedNames;
+  };
+
   const getSelectedDocumentsInCategory = (categoryId: string): number => {
     if (!selections?.documents || !categoryId) return 0;
     const categoryDocuments = getDocumentsByCategory(categoryId);
@@ -568,15 +607,8 @@ const Dashboard: React.FC = () => {
       console.error('Error deleting documents:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete documents. Please try again.';
       
-      // Use custom notification instead of alert
-      addNotification({
-        type: 'document',
-        status: 'error',
-        title: 'Bulk Delete Failed',
-        message: `Failed to delete selected documents: ${errorMessage}`,
-        autoClose: true,
-        autoCloseDelay: 5000
-      });
+      // Use console.error for now - notifications handled by new system
+      console.error('Bulk delete failed:', errorMessage);
     }
   };
 
@@ -618,15 +650,8 @@ const Dashboard: React.FC = () => {
       console.error('Error deleting documents:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete documents. Please try again.';
       
-      // Use custom notification instead of alert
-      addNotification({
-        type: 'document',
-        status: 'error',
-        title: 'Bulk Delete Failed',
-        message: `Failed to delete selected documents: ${errorMessage}`,
-        autoClose: true,
-        autoCloseDelay: 5000
-      });
+      // Use console.error for now - notifications handled by new system
+      console.error('Bulk delete failed:', errorMessage);
     }
   };
 
@@ -659,8 +684,16 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="dashboard">
+      {/* Quiz Generation Notifications - handled by NotificationContext */}
+      
+      {/* QUIZ POPUPS: show top-right progress/success notifications */}
+
+      
       {/* Dashboard Header */}
-      <header className="dashboard-header">
+      <header 
+        data-app-header
+        className="dashboard-header sticky top-0 z-[100]"
+      >
         <div className="header-left">
           <div className="logo">
             <div className="logo-icon">
@@ -675,7 +708,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
         <div className="header-right">
-          <NotificationBell />
+  
           <button className="icon-button">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -769,6 +802,15 @@ const Dashboard: React.FC = () => {
                 <p className="selection-description">
                   Ready to generate questions from your selection
                 </p>
+                {/* Show selected document names */}
+                <div className="selected-documents-list">
+                  {getSelectedDocumentNames().map((filename, index) => (
+                    <div key={index} className="selected-document-item">
+                      <span className="document-icon">📄</span>
+                      <span className="document-name">{filename}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="selection-action">
                 <StartStudyLauncher
@@ -966,6 +1008,7 @@ const Dashboard: React.FC = () => {
         category={selectedCategory}
         onRefreshDocuments={handleDocumentsUploaded}
       />
+
     </div>
   );
 };

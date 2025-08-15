@@ -1,9 +1,12 @@
 import logging
 import httpx
 import json
+import datetime
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
+from fastapi import WebSocket, WebSocketDisconnect
 from strawberry.fastapi import GraphQLRouter
 from .graphql_schema import schema
 from .config import settings
@@ -56,6 +59,185 @@ async def test_auth(request: Request):
 async def test_upload():
     """Test upload endpoint"""
     return {"message": "Test upload endpoint working"}
+
+# Auth endpoints - mock implementation for development
+@app.post("/auth/login")
+async def login(request: Request):
+    """Mock login endpoint"""
+    try:
+        body = await request.json()
+        email = body.get("email")
+        password = body.get("password")
+        
+        # Mock authentication - accept any email/password for development
+        if email and password:
+            return {
+                "access_token": "mock-jwt-token-" + email,
+                "token_type": "bearer",
+                "user": {
+                    "id": "mock-user-id-" + email,
+                    "username": email.split("@")[0],
+                    "email": email,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z"
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Email and password required")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+@app.post("/auth/register")
+async def register(request: Request):
+    """Mock register endpoint"""
+    try:
+        body = await request.json()
+        name = body.get("name")
+        email = body.get("email")
+        password = body.get("password")
+        
+        if name and email and password:
+            return {
+                "access_token": "mock-jwt-token-" + email,
+                "token_type": "bearer",
+                "user": {
+                    "id": "mock-user-id-" + email,
+                    "username": name,
+                    "email": email,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z"
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Name, email and password required")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+@app.get("/auth/me")
+async def get_current_user(request: Request):
+    """Mock get current user endpoint"""
+    auth_header = request.headers.get("authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    token = auth_header.split(" ")[1]
+    
+    # Mock user data based on token
+    if token.startswith("mock-jwt-token-"):
+        email = token.replace("mock-jwt-token-", "")
+        return {
+            "id": "mock-user-id-" + email,
+            "username": email.split("@")[0],
+            "email": email,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    else:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.get("/api/uploads/events")
+async def upload_events_stream(userId: str = Query(...)):
+    """SSE stream for upload events - mock implementation for development"""
+    async def event_generator():
+        # Mock upload events for testing
+        import asyncio
+        
+        # Simulate upload progress for multiple documents
+        documents = [
+            {"filename": "Exercise 2 - ADD - Critical Feature Launch Delay.pdf", "uploadId": f"upload-{userId}-doc1"},
+            {"filename": "Project Requirements Document.pdf", "uploadId": f"upload-{userId}-doc2"},
+            {"filename": "Technical Specification.pdf", "uploadId": f"upload-{userId}-doc3"}
+        ]
+        
+        for doc in documents:
+            # Queued event
+            yield f"data: {json.dumps({'type': 'queued', 'uploadId': doc['uploadId'], 'filename': doc['filename']})}\n\n"
+            await asyncio.sleep(0.5)
+            
+            # Progress events
+            for progress in range(10, 101, 20):
+                yield f"data: {json.dumps({'type': 'running', 'uploadId': doc['uploadId'], 'progress': progress, 'filename': doc['filename']})}\n\n"
+                await asyncio.sleep(0.5)
+            
+            # Completed event
+            doc_id = f'doc-{doc["uploadId"]}'
+            yield f"data: {json.dumps({'type': 'completed', 'uploadId': doc['uploadId'], 'documentId': doc_id, 'filename': doc['filename']})}\n\n"
+            await asyncio.sleep(0.5)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    """WebSocket endpoint to proxy connections to notification service"""
+    await websocket.accept()
+    
+    try:
+        # For now, just accept the connection and send a welcome message
+        # In a full implementation, this would proxy to the notification service
+        await websocket.send_text(json.dumps({
+            "type": "connection",
+            "message": f"WebSocket connected for user {user_id}",
+            "status": "connected"
+        }))
+        
+        # Keep connection alive and handle messages
+        while True:
+            try:
+                # Wait for messages from client
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                
+                # Echo back for now (replace with actual notification service logic)
+                await websocket.send_text(json.dumps({
+                    "type": "echo",
+                    "message": f"Received: {message}",
+                    "timestamp": str(datetime.datetime.now())
+                }))
+                
+            except WebSocketDisconnect:
+                print(f"WebSocket disconnected for user {user_id}")
+                break
+            except Exception as e:
+                print(f"WebSocket error for user {user_id}: {e}")
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": str(e)
+                }))
+                
+    except Exception as e:
+        print(f"WebSocket connection error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
+
+@app.get("/api/documents/{document_id}/status")
+async def get_document_status(document_id: str):
+    """Get document processing status - mock implementation for development"""
+    # Mock document status for testing
+    import random
+    
+    # Simulate different document states
+    states = ["processing", "ready", "failed"]
+    state = random.choice(states)
+    
+    if state == "processing":
+        progress = random.randint(10, 90)
+        return {"state": "processing", "progress": progress}
+    elif state == "ready":
+        return {"state": "ready", "progress": 100}
+    else:
+        return {"state": "failed", "progress": 0, "message": "Processing failed"}
 
 @app.get("/auth/me-direct")
 async def me_direct(request: Request):

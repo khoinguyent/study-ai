@@ -2,7 +2,8 @@ import React, { useState, useRef, useCallback } from 'react';
 import { X, Upload, FileText, Trash2 } from 'lucide-react';
 import { Subject, Category } from '../types';
 import apiService from '../services/api';
-import { useDocumentNotifications } from './notifications/NotificationContext';
+import { useNotifications } from './notifications/NotificationContext';
+import { useUploadTracker } from '../hooks/useUploadTracker';
 import './UploadDocumentsModal.css';
 
 interface UploadDocumentsModalProps {
@@ -34,7 +35,8 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { startUpload, updateUploadProgress, startProcessing, startIndexing, completeDocument, failDocument } = useDocumentNotifications();
+  const { add, addOrUpdate } = useNotifications();
+  const { track } = useUploadTracker();
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -121,11 +123,17 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
     setUploadProgress(0);
     setErrors([]);
 
-    // Create notifications for each file
-    const uploadNotifications = selectedFiles.map(selectedFile => ({
-      file: selectedFile.file,
-      notificationId: startUpload(selectedFile.file.name, category.name)
-    }));
+    // Create notifications for each file - using new system
+    selectedFiles.forEach(selectedFile => {
+      add({
+        id: `upload-${selectedFile.id}`,
+        title: 'Uploading document',
+        message: `Starting upload of ${selectedFile.file.name}`,
+        status: 'processing',
+        progress: 0,
+        autoClose: false
+      });
+    });
 
     try {
       const formData = new FormData();
@@ -137,33 +145,22 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
 
       // Upload documents using the event-driven system with progress tracking
       const documents = await apiService.uploadDocuments(formData);
-      const documentId = documents[0].id; // Get first document ID for now
       
-      // Update notifications for each file
-      uploadNotifications.forEach(({ notificationId, file }) => {
-        // Start processing with 0% progress
-        startProcessing(notificationId, file.name);
-        
-        // Simulate processing progress (in real app, this would come from WebSocket)
-        let progress = 0;
-        const processingInterval = setInterval(() => {
-          progress += 10;
-          if (progress <= 90) {
-            updateUploadProgress(notificationId, progress);
-          } else {
-            clearInterval(processingInterval);
-            
-            // Start indexing
-            startIndexing(notificationId, file.name);
-            
-            // Simulate indexing progress (in real app, this would come from WebSocket)
-            setTimeout(() => {
-                          // Complete document
-            completeDocument(notificationId, file.name);
-            }, 2000);
-          }
-        }, 500);
+      // Start tracking each uploaded document
+      documents.forEach((doc, index) => {
+        const selectedFile = selectedFiles[index];
+        if (selectedFile && doc.id) {
+          // Generate a unique upload ID for tracking
+          const uploadId = `upload-${selectedFile.id}-${Date.now()}`;
+          
+          console.log('Starting upload tracker:', { uploadId, documentId: doc.id, filename: selectedFile.file.name });
+          
+          // Start the upload tracker for this document
+          track(uploadId, doc.id, selectedFile.file.name);
+        }
       });
+      
+      // Upload completed - notifications handled by tracker
 
       setUploadProgress(100);
       setSelectedFiles([]);
@@ -176,10 +173,7 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
       setErrors([errorMessage]);
       
-      // Update notifications with error
-      uploadNotifications.forEach(({ notificationId, file }) => {
-        failDocument(notificationId, file.name, errorMessage);
-      });
+      // Error handling - notifications handled by new system
     } finally {
       setIsUploading(false);
     }

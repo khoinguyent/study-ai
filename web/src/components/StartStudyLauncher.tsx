@@ -1,12 +1,16 @@
 import React from "react";
 import LeftClarifierSheet, { ClarifierResult, LaunchContext } from "./LeftClarifierSheet";
-import QuizNotificationManager from "./QuizNotificationManager";
+
 import { startStudySession } from "../api/studySession";
 import { useJobProgress } from "../hooks/useJobProgress";
 import { useNavigate } from "react-router-dom";
 import { useSelection } from "../stores/selection";
 
-export default function StartStudyLauncher({ apiBase = "/api" }: { apiBase?: string }) {
+export default function StartStudyLauncher({ 
+  apiBase = "/api"
+}: { 
+  apiBase?: string;
+}) {
   const navigate = useNavigate();
   const [open, setOpen] = React.useState(false);
   const [jobId, setJobId] = React.useState<string | null>(null);
@@ -17,8 +21,8 @@ export default function StartStudyLauncher({ apiBase = "/api" }: { apiBase?: str
   const status = useJobProgress(jobId, {
     apiBase,
     onComplete: (result: { sessionId: string; quizId: string }) => {
-      console.log("✅ Quiz completed, navigating to session:", result);
-      navigate(`/study-session/${result.sessionId}?quizId=${encodeURIComponent(result.quizId)}`);
+      console.log("✅ Quiz completed, no auto-navigation - notification will be shown by Dashboard");
+      // No more auto-navigation - notifications are handled by Dashboard
     },
   });
 
@@ -61,21 +65,7 @@ export default function StartStudyLauncher({ apiBase = "/api" }: { apiBase?: str
         onConfirm={handleConfirm}
       />
 
-      {/* Progress indicator */}
-      {status && (
-        <div className="fixed top-4 right-4 bg-white p-4 rounded-lg shadow-lg border">
-          <div className="text-sm font-medium mb-2">Quiz Generation Progress</div>
-          <div className="w-48 bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${status.progress || 0}%` }}
-            />
-          </div>
-          <div className="text-xs text-gray-600 mt-1">
-            {status.state === 'completed' ? 'Quiz Ready!' : (status as any).message || 'Processing...'}
-          </div>
-        </div>
-      )}
+      {/* Progress indicator removed - notifications handled by Dashboard */}
     </>
   );
 }

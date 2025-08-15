@@ -29,9 +29,8 @@ export function useQuizSessionNotifications(options: UseQuizSessionNotifications
       return;
     }
 
-              // For development, connect directly to notification service
-              // In production, this should use a proxy or relative URL
-              const wsUrl = `ws://localhost:8005/ws/${sel.userId}`;
+              // Connect through API Gateway (Docker setup)
+              const wsUrl = `ws://localhost:8000/ws/${sel.userId}`;
     console.log(`🔗 Connecting to WebSocket: ${wsUrl}`);
 
     try {
