@@ -208,6 +208,73 @@ async def verify_auth_token(authorization: str = Header(alias="Authorization")):
 async def health_check():
     return {"status": "healthy", "service": "document-service"}
 
+@app.get("/supported-formats")
+async def get_supported_formats():
+    """Get list of supported document formats"""
+    try:
+        supported_formats = document_processor.get_supported_formats()
+        return {
+            "supported_formats": supported_formats,
+            "count": len(supported_formats),
+            "details": {
+                "application/pdf": "PDF documents (with enhanced text extraction)",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX documents (Word)",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheets",
+                "text/plain": "Plain text files",
+                "application/msword": "Legacy DOC documents (Word)"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get supported formats: {str(e)}"
+        )
+
+@app.post("/extract-pdf-text")
+async def extract_pdf_text(
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_auth_token)
+):
+    """Extract text from PDF with quality assessment and recommendations"""
+    
+    # Validate file type
+    if file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are supported for this endpoint"
+        )
+    
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text using enhanced PDF extraction
+        from .services.text_extractor import TextExtractor
+        text_extractor = TextExtractor()
+        
+        extraction_result = await text_extractor.extract_pdf_with_fallback(
+            file_content=file_content,
+            filename=file.filename
+        )
+        
+        if not extraction_result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"PDF text extraction failed: {extraction_result.get('error', 'Unknown error')}"
+            )
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "extraction_result": extraction_result
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PDF processing failed: {str(e)}"
+        )
+
 @app.post("/test-pydantic")
 async def test_pydantic(subject: SubjectCreateModel):
     """Test Pydantic model without any dependencies"""
@@ -643,7 +710,8 @@ async def upload_document(
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "text/plain"
+        "text/plain",
+        "application/msword"  # Legacy .doc files
     ]
     
     if file.content_type not in allowed_types:
@@ -751,7 +819,8 @@ async def upload_multiple_documents(
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "text/plain"
+        "text/plain",
+        "application/msword"  # Legacy .doc files
     ]
     
     max_file_size = 100 * 1024 * 1024  # 100MB max per file
