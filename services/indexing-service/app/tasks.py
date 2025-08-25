@@ -100,14 +100,8 @@ def index_document(document_id: str, user_id: str):
             message=f"Document {document_id} indexed successfully"
         )
         
-        # Publish document ready event
-        event_publisher.publish_user_notification(
-            user_id=user_id,
-            notification_type="document_ready",
-            title="Document Ready",
-            message=f"Document {document_id} is now ready for quiz generation",
-            priority="normal"
-        )
+        # Note: Document ready notification is now handled by the indexing service main
+        # to avoid duplicate notifications across multiple services
         
         return {
             'status': 'success',

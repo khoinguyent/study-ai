@@ -3,7 +3,7 @@ Notification Service for Study AI Platform
 Handles real-time notifications and event processing
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import json
@@ -11,6 +11,8 @@ import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
 import uuid
+import httpx
+from sqlalchemy import func
 
 from .database import get_db, create_tables
 from .models import Notification, TaskStatus
@@ -51,6 +53,32 @@ websocket_manager = WebSocketManager()
 
 # Event consumer - will be initialized in start_event_consumer_with_retry
 event_consumer = None
+
+async def verify_auth_token(authorization: str = Header(alias="Authorization")):
+    """Verify JWT token with auth service"""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header required"
+        )
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{settings.AUTH_SERVICE_URL}/verify",
+                headers={"Authorization": authorization}
+            )
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token"
+                )
+            return response.json()["user_id"]
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token verification failed"
+            )
 
 async def start_event_consumer_with_retry():
     """Start the event consumer with retry logic for Redis connection"""
@@ -415,3 +443,122 @@ async def notify_quiz_session_status(
     except Exception as e:
         logger.error(f"Error sending quiz session notification: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@app.delete("/notifications/clear-all")
+async def clear_all_notifications(
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Clear all notifications for a user"""
+    try:
+        # Delete all notifications for the user
+        deleted_count = db.query(Notification).filter(
+            Notification.user_id == user_id
+        ).delete()
+        
+        # Delete all task statuses for the user
+        task_deleted_count = db.query(TaskStatus).filter(
+            TaskStatus.user_id == user_id
+        ).delete()
+        
+        db.commit()
+        
+        return {
+            "message": "All notifications cleared successfully",
+            "notifications_deleted": deleted_count,
+            "task_statuses_deleted": task_deleted_count
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear notifications: {str(e)}"
+        )
+
+@app.delete("/notifications/clear-pending")
+async def clear_pending_notifications(
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Clear all pending/processing task statuses for a user"""
+    try:
+        # Delete all pending/processing task statuses
+        deleted_count = db.query(TaskStatus).filter(
+            TaskStatus.user_id == user_id,
+            TaskStatus.status.in_(["pending", "processing"])
+        ).delete()
+        
+        db.commit()
+        
+        return {
+            "message": "Pending notifications cleared successfully",
+            "pending_tasks_deleted": deleted_count
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear pending notifications: {str(e)}"
+        )
+
+@app.delete("/notifications/clear-by-type/{notification_type}")
+async def clear_notifications_by_type(
+    notification_type: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Clear notifications by type for a user"""
+    try:
+        # Delete notifications by type
+        deleted_count = db.query(Notification).filter(
+            Notification.user_id == user_id,
+            Notification.notification_type == notification_type
+        ).delete()
+        
+        db.commit()
+        
+        return {
+            "message": f"Notifications of type '{notification_type}' cleared successfully",
+            "notifications_deleted": deleted_count
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear notifications by type: {str(e)}"
+        )
+
+@app.get("/notifications/queue-status")
+async def get_notification_queue_status(
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Get notification queue status for a user"""
+    try:
+        # Count notifications by type
+        notification_counts = db.query(
+            Notification.notification_type,
+            func.count(Notification.id)
+        ).filter(
+            Notification.user_id == user_id
+        ).group_by(Notification.notification_type).all()
+        
+        # Count task statuses by status
+        task_counts = db.query(
+            TaskStatus.status,
+            func.count(TaskStatus.id)
+        ).filter(
+            TaskStatus.user_id == user_id
+        ).group_by(TaskStatus.status).all()
+        
+        return {
+            "notification_counts": dict(notification_counts),
+            "task_status_counts": dict(task_counts),
+            "total_notifications": sum(count for _, count in notification_counts),
+            "total_tasks": sum(count for _, count in task_counts)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get queue status: {str(e)}"
+        ) 

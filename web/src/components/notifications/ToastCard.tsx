@@ -27,6 +27,11 @@ interface ToastCardProps {
 }
 
 const ToastCard: React.FC<ToastCardProps> = ({ item, onClose, onAction }) => {
+  // Ensure we have valid content
+  const title = item.title?.trim() || 'Notification';
+  const message = item.message?.trim();
+  const hasValidMessage = message && message.length > 0;
+  
   const getIcon = () => {
     const iconProps = { size: 20, className: "toast__icon-svg" };
     
@@ -99,8 +104,15 @@ const ToastCard: React.FC<ToastCardProps> = ({ item, onClose, onAction }) => {
         </div>
         
         <div className="toast__text">
-          <div className="toast__title">{item.title}</div>
-          {item.message && <div className="toast__msg">{item.message}</div>}
+          <div className="toast__title">{title}</div>
+          {hasValidMessage && (
+            <div className="toast__msg" title={message}>
+              {message.length > 100 
+                ? `${message.substring(0, 100)}...` 
+                : message
+              }
+            </div>
+          )}
           
           {/* Progress bar for processing status */}
           {item.status === "processing" && typeof item.progress === "number" && (
@@ -111,6 +123,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ item, onClose, onAction }) => {
                   style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }}
                 />
               </div>
+              <div className="toast__progress-text">{Math.round(item.progress)}%</div>
             </div>
           )}
         </div>
