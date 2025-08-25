@@ -62,45 +62,48 @@ async def test_upload():
 
 # Mock auth endpoints removed - using proxy endpoints to auth service instead
 
-@app.get("/api/uploads/events")
-async def upload_events_stream(userId: str = Query(...)):
-    """SSE stream for upload events - mock implementation for development"""
-    async def event_generator():
-        # Mock upload events for testing
-        import asyncio
-        
-        # Simulate upload progress for multiple documents
-        documents = [
-            {"filename": "Exercise 2 - ADD - Critical Feature Launch Delay.pdf", "uploadId": f"upload-{userId}-doc1"},
-            {"filename": "Project Requirements Document.pdf", "uploadId": f"upload-{userId}-doc2"},
-            {"filename": "Technical Specification.pdf", "uploadId": f"upload-{userId}-doc3"}
-        ]
-        
-        for doc in documents:
-            # Queued event
-            yield f"data: {json.dumps({'type': 'queued', 'uploadId': doc['uploadId'], 'filename': doc['filename']})}\n\n"
-            await asyncio.sleep(0.5)
-            
-            # Progress events
-            for progress in range(10, 101, 20):
-                yield f"data: {json.dumps({'type': 'running', 'uploadId': doc['uploadId'], 'progress': progress, 'filename': doc['filename']})}\n\n"
-                await asyncio.sleep(0.5)
-            
-            # Completed event
-            doc_id = f'doc-{doc["uploadId"]}'
-            yield f"data: {json.dumps({'type': 'completed', 'uploadId': doc['uploadId'], 'documentId': doc_id, 'filename': doc['filename']})}\n\n"
-            await asyncio.sleep(0.5)
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "*",
-        }
-    )
+# DISABLED: Mock upload events endpoint - was causing automatic fake notifications
+# @app.get("/api/uploads/events")
+# async def upload_events_stream(userId: str = Query(...)):
+#     """SSE stream for upload events - mock implementation for development"""
+#     async def event_generator():
+#         # Mock upload events for testing
+#         import asyncio
+#         
+#         # Simulate upload progress for multiple documents
+#         documents = [
+#             {"filename": "Exercise 2 - ADD - Critical Feature Launch Delay.pdf", "uploadId": f"upload-{userId}-doc1"},
+#             {"filename": "Project Requirements Document.pdf", "uploadId": f"upload-{userId}-doc2"},
+#             {"filename": "Technical Specification.pdf", "uploadId": f"upload-{userId}-doc3"}
+#         ]
+#         
+#         for doc in documents:
+#             # Queued event
+#             yield f"data: {json.dumps({'type': 'queued', 'uploadId': doc['uploadId'], 'filename': doc['filename']})}\n\n"
+#             await asyncio.sleep(0.5)
+#             
+#             # Progress events
+#             for progress in range(10, 101, 20):
+#                 yield f"data: {json.dumps({'type': 'running', 'uploadId': doc['uploadId'], 'progress': progress, 'filename': doc['filename']})}\n\n"
+#                 await asyncio.sleep(0.5)
+#             
+#             # Completed event
+#             doc_id = f'doc-{doc["uploadId"]}'
+#             yield f"data: {json.dumps({'type': 'completed', 'uploadId': doc['uploadId'], 'documentId': doc_id, 'filename': doc['filename']})}\n\n"
+#             await asyncio.sleep(0.5)
+#     
+#     return StreamingResponse(
+#         event_generator(),
+#         media_type="text/event-stream",
+#         headers={
+#             "Cache-Control": "no-cache",
+#             "Connection": "keep-alive",
+#             "Access-Control-Allow-Origin": "*",
+#             "Access-Control-Allow-Headers": "*",
+#         }
+#     )
+
+# TODO: Implement real upload events endpoint that only triggers for actual uploads
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
@@ -1027,6 +1030,79 @@ async def submit_quiz(session_id: str):
         return mock_result
     except Exception as e:
         logger.error(f"Error submitting quiz: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Notification Service Proxy Routes
+@app.get("/api/notifications/queue-status")
+async def get_notification_queue_status(request: Request):
+    """Proxy notification queue status to notification service"""
+    try:
+        auth_header = request.headers.get("authorization")
+        if not auth_header:
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/queue-status",
+                headers={"Authorization": auth_header}
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error proxying notification queue status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/notifications/clear-all")
+async def clear_all_notifications(request: Request):
+    """Proxy clear all notifications to notification service"""
+    try:
+        auth_header = request.headers.get("authorization")
+        if not auth_header:
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-all",
+                headers={"Authorization": auth_header}
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error proxying clear all notifications: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/notifications/clear-pending")
+async def clear_pending_notifications(request: Request):
+    """Proxy clear pending notifications to notification service"""
+    try:
+        auth_header = request.headers.get("authorization")
+        if not auth_header:
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-pending",
+                headers={"Authorization": auth_header}
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error proxying clear pending notifications: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/notifications/clear-by-type/{notification_type}")
+async def clear_notifications_by_type(notification_type: str, request: Request):
+    """Proxy clear notifications by type to notification service"""
+    try:
+        auth_header = request.headers.get("authorization")
+        if not auth_header:
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-by-type/{notification_type}",
+                headers={"Authorization": auth_header}
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error proxying clear notifications by type: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

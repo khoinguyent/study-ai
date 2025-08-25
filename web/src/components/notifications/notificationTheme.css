@@ -59,6 +59,7 @@
   position: relative;
   overflow: hidden;
   min-height: 60px;
+  max-width: 400px;
   
   /* Animation */
   animation: toastSlideIn 100ms ease-out;
@@ -78,13 +79,14 @@
   background: var(--toast-info-accent);
 }
 
-/* Toast Content Layout */
+/* Ensure toast content doesn't overflow */
 .toast__content {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .toast__icon {
@@ -107,6 +109,10 @@
 .toast__text {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .toast__title {
@@ -122,6 +128,14 @@
   line-height: 1.4;
   color: currentColor;
   opacity: 0.8;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Progress Bar */
@@ -134,6 +148,7 @@
   background: rgba(0, 0, 0, 0.08);
   border-radius: 3px;
   overflow: hidden;
+  margin-bottom: 4px;
 }
 
 .toast__progress-fill {
@@ -153,6 +168,14 @@
   bottom: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
   animation: shimmer 2s infinite;
+}
+
+.toast__progress-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: currentColor;
+  opacity: 0.8;
+  text-align: center;
 }
 
 /* Toast Actions */
@@ -380,4 +403,89 @@
     font-size: 11px;
     min-width: 50px;
   }
+}
+
+/* Notification Management Controls */
+.notification-controls {
+  position: fixed;
+  top: calc(var(--toast-top, 16px) + 60px);
+  right: 20px;
+  z-index: 100002;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(15px);
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+  min-width: 140px;
+}
+
+.notification-control-btn {
+  background: #F3F4F6;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.notification-control-btn:hover {
+  background: #E5E7EB;
+  border-color: #9CA3AF;
+}
+
+.notification-control-btn:active {
+  background: #D1D5DB;
+  transform: translateY(1px);
+}
+
+.queue-status {
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #0369A1;
+  text-align: center;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* Notification Portal - Ensure proper positioning */
+.notification-portal {
+  position: fixed !important;
+  top: var(--toast-top, 16px) !important;
+  right: 16px !important;
+  z-index: 100001 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 420px;
+  width: calc(100vw - 32px);
+  /* Override any conflicting positioning */
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+}
+
+/* Ensure individual toasts are properly positioned */
+.notification-portal .toast {
+  position: relative !important;
+  transform: none !important;
+  margin: 0 !important;
+  /* Override any conflicting positioning */
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
 }
