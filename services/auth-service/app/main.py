@@ -118,7 +118,16 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
         data={"sub": str(user.id)}, expires_delta=access_token_expires
     )
     
-    return Token(access_token=access_token, token_type="bearer")
+    return Token(
+        access_token=access_token, 
+        token_type="bearer",
+        user=UserResponse(
+            id=user.id,
+            email=user.email,
+            username=user.username,
+            created_at=user.created_at
+        )
+    )
 
 @app.get("/me", response_model=UserResponse)
 async def get_current_user(user_id: str = Depends(verify_token), db: Session = Depends(get_db)):

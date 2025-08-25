@@ -81,9 +81,22 @@ export default function LeftClarifierSheet({
   };
 
   const handleQuick = (label: string) => {
-    if (stage === "types") { if (!types.includes(label)) setTypes((t) => [...t, label]); if (types.length === 0) nextFromTypes(); return; }
-    if (stage === "difficulty") { setDifficulty(label.toLowerCase() as Difficulty); nextFromDifficulty(); return; }
-    if (stage === "count") { finish(parseCount(label) ?? suggested); }
+    if (stage === "types") { 
+      if (!types.includes(label)) setTypes((t) => [...t, label]); 
+      push("user", label);
+      if (types.length === 0) nextFromTypes(); 
+      return; 
+    }
+    if (stage === "difficulty") { 
+      setDifficulty(label.toLowerCase() as Difficulty); 
+      push("user", label);
+      nextFromDifficulty(); 
+      return; 
+    }
+    if (stage === "count") { 
+      push("user", label);
+      finish(parseCount(label) ?? suggested); 
+    }
   };
 
   const handleSend = () => {
@@ -158,13 +171,60 @@ export default function LeftClarifierSheet({
         </div>
 
         <div style={{ flex:1, minHeight:0, overflowY:"auto", padding:12 }}>
+          {/* Summary panel */}
+          <div style={{
+            background: "#F8FAFC",
+            border: "1px solid #E2E8F0",
+            borderRadius: 8,
+            padding: 10,
+            marginBottom: 12
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 6 }}>Quiz Summary</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 12 }}>
+              <div style={{ color: "#64748B" }}>Documents</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{launch.docIds.length}</div>
+              <div style={{ color: "#64748B" }}>Subject</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{launch.subjectId ? `${launch.subjectId.slice(0,8)}…` : "Not set"}</div>
+              <div style={{ color: "#64748B" }}>Types</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{types.length ? types.join(", ") : "Not set"}</div>
+              <div style={{ color: "#64748B" }}>Difficulty</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{(difficulty ?? "mixed").toString()}</div>
+              <div style={{ color: "#64748B" }}>Questions</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{count ?? suggested}</div>
+            </div>
+          </div>
+
           {messages.map((m)=>(
-            <div key={m.id} style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:12 }}>
-              <div style={{ width:24, height:24, borderRadius:12, background:"#EEF2FF", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <div key={m.id} style={{ 
+              display:"flex", 
+              alignItems:"flex-start", 
+              gap:8, 
+              marginBottom:12,
+              flexDirection: m.role === "user" ? "row-reverse" : "row"
+            }}>
+              <div style={{ 
+                width:24, 
+                height:24, 
+                borderRadius:12, 
+                background: m.role === "bot" ? "#EEF2FF" : "#DBEAFE", 
+                display:"flex", 
+                alignItems:"center", 
+                justifyContent:"center" 
+              }}>
                 <span style={{ fontSize:12 }}>{m.role === "bot" ? "🤖" : "🧑"}</span>
               </div>
-              <div style={{ maxWidth:280, background:"#F3F4F6", border:"1px solid #E5E7EB", borderRadius:14, padding:"8px 12px" }}>
-                <div style={{ fontSize:14, lineHeight:"20px", color:"#111827" }}>{m.text}</div>
+              <div style={{ 
+                maxWidth:280, 
+                background: m.role === "bot" ? "#F3F4F6" : "#DBEAFE", 
+                border: m.role === "bot" ? "1px solid #E5E7EB" : "1px solid #93C5FD", 
+                borderRadius:14, 
+                padding:"8px 12px" 
+              }}>
+                <div style={{ 
+                  fontSize:14, 
+                  lineHeight:"20px", 
+                  color: m.role === "bot" ? "#111827" : "#1E40AF" 
+                }}>{m.text}</div>
               </div>
             </div>
           ))}

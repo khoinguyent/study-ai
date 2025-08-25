@@ -1,0 +1,10 @@
+# SageMaker Inference + Web
+sagemaker-inference>=1.8.0
+flask>=2.3.0
+gunicorn>=21.0.0
+
+# HTTP
+requests>=2.31.0
+
+# Utils
+python-json-logger>=2.0.0

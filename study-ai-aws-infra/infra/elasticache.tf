@@ -3,17 +3,21 @@
 
 # Subnet group for ElastiCache
 resource "aws_elasticache_subnet_group" "redis" {
-  name       = "${var.project}-${var.env}-redis-subnet-group"
-  subnet_ids = data.aws_subnets.default.ids
+  name       = "${var.project_short}-${var.env}-redis-subnet-group"
+  subnet_ids = var.enable_sagemaker ? aws_subnet.private[*].id : [data.aws_subnet.default[0].id]
   
-  tags = var.tags
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-redis-subnet-group"
+    ResourceType = "ElastiCacheSubnetGroup"
+    Service = "Redis"
+  })
 }
 
 # Security group for ElastiCache
 resource "aws_security_group" "redis" {
-  name        = "${var.project}-${var.env}-redis-sg"
-  description = "Security group for ElastiCache Redis cluster"
-  vpc_id      = data.aws_vpc.default.id
+  name        = "${var.project_short}-${var.env}-redis-sg"
+  description = "Security group for ${var.project} ElastiCache Redis cluster"
+  vpc_id      = var.enable_sagemaker ? aws_vpc.sagemaker[0].id : data.aws_vpc.default.id
 
   # Allow Redis access from EC2 instances
   ingress {
@@ -21,6 +25,7 @@ resource "aws_security_group" "redis" {
     to_port         = 6379
     protocol        = "tcp"
     security_groups = [aws_security_group.ec2.id]
+    description     = "Redis access from EC2 instances"
   }
 
   # Allow Redis access from your IP (for development/testing)
@@ -29,6 +34,7 @@ resource "aws_security_group" "redis" {
     to_port     = 6379
     protocol    = "tcp"
     cidr_blocks = [var.allow_ssh_cidr]
+    description = "Redis access from development IP"
   }
 
   egress {
@@ -36,14 +42,19 @@ resource "aws_security_group" "redis" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "All outbound traffic"
   }
 
-  tags = var.tags
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-redis-sg"
+    ResourceType = "SecurityGroup"
+    Service = "Redis"
+  })
 }
 
 # ElastiCache Redis cluster
 resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "${var.project}-${var.env}-redis"
+  cluster_id           = "${var.project_short}-${var.env}-redis"
   engine               = "redis"
   node_type            = "cache.t3.micro"  # Small instance for development
   num_cache_nodes      = 1
@@ -52,7 +63,12 @@ resource "aws_elasticache_cluster" "redis" {
   security_group_ids   = [aws_security_group.redis.id]
   subnet_group_name    = aws_elasticache_subnet_group.redis.name
   
-  tags = var.tags
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-redis-cluster"
+    ResourceType = "ElastiCacheCluster"
+    Service = "Redis"
+    Engine = "Redis7"
+  })
 }
 
 # Outputs

@@ -68,6 +68,7 @@ export class FlowRunner {
     nextPrompt?: string;
     ui?: { quick?: string[] };
     done?: boolean;
+    finalizeResult?: any;
   }> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -101,16 +102,19 @@ export class FlowRunner {
       }
 
       // Finalize the flow
-      await flow.finalize(validation.filled, session.ctx);
+      // Note: finalize method should not trigger notifications
+      const finalizeResult = await flow.finalize(validation.filled, session.ctx);
       
       // Mark session as done
       session.filled = validation.filled;
       session.idx = -1; // Mark as complete
       
+      // Return completion status without triggering notifications
       return {
         stage: 'complete',
         filled: session.filled,
-        done: true
+        done: true,
+        finalizeResult: finalizeResult // Include the result from finalize
       };
     }
 
@@ -226,23 +230,20 @@ export class FlowRunner {
         };
       }
 
-      // Finalize the flow with complete session data
-      await flow.finalize({
-        ...validation.filled,
-        sessionId: session.sessionId,
-        userId: session.userId,
-        subjectId: session.subjectId,
-        docIds: session.docIds
-      }, session.ctx);
+      // Finalize the flow
+      // Note: finalize method should not trigger notifications
+      const finalizeResult = await flow.finalize(validation.filled, session.ctx);
       
       // Mark session as done
       session.filled = validation.filled;
       session.idx = -1; // Mark as complete
       
+      // Return completion status without triggering notifications
       return {
         stage: 'complete',
         filled: session.filled,
-        done: true
+        done: true,
+        finalizeResult: finalizeResult // Include the result from finalize
       };
     }
 

@@ -9,7 +9,8 @@ const env = {
   USE_LLM_EXTRACTOR: process.env['USE_LLM_EXTRACTOR'] || 'false',
   EXTRACTOR_URL: process.env['EXTRACTOR_URL'],
   NODE_ENV: process.env['NODE_ENV'] || 'development',
-  LOG_LEVEL: process.env['LOG_LEVEL'] || 'info'
+  LOG_LEVEL: process.env['LOG_LEVEL'] || 'info',
+  DISABLE_NOTIFICATIONS: process.env['DISABLE_NOTIFICATIONS'] || 'true' // Disable notifications by default
 };
 
 export default env;

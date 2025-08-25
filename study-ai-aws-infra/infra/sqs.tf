@@ -1,85 +1,133 @@
 # SQS Queues for Study AI Platform
-# Provides message queuing functionality to replace Celery
+# Provides message queuing for asynchronous task processing
 
-# Main task queue
-resource "aws_sqs_queue" "main_tasks" {
-  name                      = "${var.project}-${var.env}-main-tasks"
-  delay_seconds             = 0
-  max_message_size          = 262144  # 256 KB
-  message_retention_seconds = 345600  # 4 days
-  receive_wait_time_seconds = 0
+# Dead Letter Queue (DLQ) for failed messages
+resource "aws_sqs_queue" "dlq" {
+  name = "${var.project_short}-${var.env}-dlq"
+  
+  # Message retention: 14 days
+  message_retention_seconds = 1209600
+  
+  # Visibility timeout: 30 seconds
   visibility_timeout_seconds = 30
+  
+  # Receive message wait time: 20 seconds (long polling)
+  receive_wait_time_seconds = 20
+  
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-dead-letter-queue"
+    ResourceType = "SQSQueue"
+    QueueType = "DeadLetterQueue"
+    Purpose = "FailedMessageHandling"
+  })
+}
 
-  # Dead letter queue configuration
+# Main tasks queue
+resource "aws_sqs_queue" "main_tasks" {
+  name = "${var.project_short}-${var.env}-main-tasks"
+  
+  # Message retention: 4 days
+  message_retention_seconds = 345600
+  
+  # Visibility timeout: 30 seconds
+  visibility_timeout_seconds = 30
+  
+  # Receive message wait time: 20 seconds (long polling)
+  receive_wait_time_seconds = 20
+  
+  # Redrive policy to DLQ after 3 failed attempts
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-
-  tags = var.tags
-}
-
-# Dead letter queue for failed messages
-resource "aws_sqs_queue" "dlq" {
-  name                      = "${var.project}-${var.env}-dlq"
-  delay_seconds             = 0
-  max_message_size          = 262144
-  message_retention_seconds = 1209600  # 14 days
-  receive_wait_time_seconds = 0
-  visibility_timeout_seconds = 30
-
-  tags = var.tags
+  
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-main-tasks-queue"
+    ResourceType = "SQSQueue"
+    QueueType = "Standard"
+    Purpose = "GeneralTaskProcessing"
+  })
 }
 
 # Document processing queue
 resource "aws_sqs_queue" "document_tasks" {
-  name                      = "${var.project}-${var.env}-document-tasks"
-  delay_seconds             = 0
-  max_message_size          = 262144
+  name = "${var.project_short}-${var.env}-document-tasks"
+  
+  # Message retention: 4 days
   message_retention_seconds = 345600
-  receive_wait_time_seconds = 0
-  visibility_timeout_seconds = 300  # 5 minutes for document processing
-
+  
+  # Visibility timeout: 60 seconds (documents may take longer to process)
+  visibility_timeout_seconds = 60
+  
+  # Receive message wait time: 20 seconds (long polling)
+  receive_wait_time_seconds = 20
+  
+  # Redrive policy to DLQ after 3 failed attempts
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-
-  tags = var.tags
+  
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-document-tasks-queue"
+    ResourceType = "SQSQueue"
+    QueueType = "Standard"
+    Purpose = "DocumentProcessing"
+  })
 }
 
 # Indexing tasks queue
 resource "aws_sqs_queue" "indexing_tasks" {
-  name                      = "${var.project}-${var.env}-indexing-tasks"
-  delay_seconds             = 0
-  max_message_size          = 262144
+  name = "${var.project_short}-${var.env}-indexing-tasks"
+  
+  # Message retention: 4 days
   message_retention_seconds = 345600
-  receive_wait_time_seconds = 0
-  visibility_timeout_seconds = 600  # 10 minutes for indexing
-
+  
+  # Visibility timeout: 120 seconds (indexing may take longer)
+  visibility_timeout_seconds = 120
+  
+  # Receive message wait time: 20 seconds (long polling)
+  receive_wait_time_seconds = 20
+  
+  # Redrive policy to DLQ after 3 failed attempts
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-
-  tags = var.tags
+  
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-indexing-tasks-queue"
+    ResourceType = "SQSQueue"
+    QueueType = "Standard"
+    Purpose = "DocumentIndexing"
+  })
 }
 
-# Quiz generation tasks queue
+# Quiz generation queue
 resource "aws_sqs_queue" "quiz_tasks" {
-  name                      = "${var.project}-${var.env}-quiz-tasks"
-  delay_seconds             = 0
-  max_message_size          = 262144
+  name = "${var.project_short}-${var.env}-quiz-tasks"
+  
+  # Message retention: 4 days
   message_retention_seconds = 345600
-  receive_wait_time_seconds = 0
-  visibility_timeout_seconds = 900  # 15 minutes for quiz generation
-
+  
+  # Visibility timeout: 180 seconds (quiz generation may take longer)
+  visibility_timeout_seconds = 180
+  
+  # Receive message wait time: 20 seconds (long polling)
+  receive_wait_time_seconds = 20
+  
+  # Redrive policy to DLQ after 3 failed attempts
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-
-  tags = var.tags
+  
+  tags = merge(local.common_tags, {
+    Name = "${var.project_short}-${var.env}-quiz-tasks-queue"
+    ResourceType = "SQSQueue"
+    QueueType = "Standard"
+    Purpose = "QuizGeneration"
+  })
 }
 
 # Outputs

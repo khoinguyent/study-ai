@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useClarifier } from './ClarifierContext';
+import SystemSummary from './SystemSummary';
 
 export default function ClarifierSideChat({ style }: { style?: any }) {
   const { ready, done, sending, error, messages, sendText } = useClarifier();
@@ -33,6 +34,9 @@ export default function ClarifierSideChat({ style }: { style?: any }) {
       </View>
 
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollInner}>
+        {/* System Summary */}
+        <SystemSummary />
+        
         {messages.map(m => (
           <View key={m.id} style={styles.row}>
             <View style={styles.avatar}>

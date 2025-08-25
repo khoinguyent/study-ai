@@ -60,81 +60,7 @@ async def test_upload():
     """Test upload endpoint"""
     return {"message": "Test upload endpoint working"}
 
-# Auth endpoints - mock implementation for development
-@app.post("/auth/login")
-async def login(request: Request):
-    """Mock login endpoint"""
-    try:
-        body = await request.json()
-        email = body.get("email")
-        password = body.get("password")
-        
-        # Mock authentication - accept any email/password for development
-        if email and password:
-            return {
-                "access_token": "mock-jwt-token-" + email,
-                "token_type": "bearer",
-                "user": {
-                    "id": "mock-user-id-" + email,
-                    "username": email.split("@")[0],
-                    "email": email,
-                    "created_at": "2024-01-01T00:00:00Z",
-                    "updated_at": "2024-01-01T00:00:00Z"
-                }
-            }
-        else:
-            raise HTTPException(status_code=400, detail="Email and password required")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
-
-@app.post("/auth/register")
-async def register(request: Request):
-    """Mock register endpoint"""
-    try:
-        body = await request.json()
-        name = body.get("name")
-        email = body.get("email")
-        password = body.get("password")
-        
-        if name and email and password:
-            return {
-                "access_token": "mock-jwt-token-" + email,
-                "token_type": "bearer",
-                "user": {
-                    "id": "mock-user-id-" + email,
-                    "username": name,
-                    "email": email,
-                    "created_at": "2024-01-01T00:00:00Z",
-                    "updated_at": "2024-01-01T00:00:00Z"
-                }
-            }
-        else:
-            raise HTTPException(status_code=400, detail="Name, email and password required")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
-
-@app.get("/auth/me")
-async def get_current_user(request: Request):
-    """Mock get current user endpoint"""
-    auth_header = request.headers.get("authorization")
-    
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    
-    token = auth_header.split(" ")[1]
-    
-    # Mock user data based on token
-    if token.startswith("mock-jwt-token-"):
-        email = token.replace("mock-jwt-token-", "")
-        return {
-            "id": "mock-user-id-" + email,
-            "username": email.split("@")[0],
-            "email": email,
-            "created_at": "2024-01-01T00:00:00Z",
-            "updated_at": "2024-01-01T00:00:00Z"
-        }
-    else:
-        raise HTTPException(status_code=401, detail="Invalid token")
+# Mock auth endpoints removed - using proxy endpoints to auth service instead
 
 @app.get("/api/uploads/events")
 async def upload_events_stream(userId: str = Query(...)):
@@ -178,16 +104,21 @@ async def upload_events_stream(userId: str = Query(...)):
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """WebSocket endpoint to proxy connections to notification service"""
+    """WebSocket endpoint that proxies connections to notification service"""
     await websocket.accept()
     
     try:
-        # For now, just accept the connection and send a welcome message
-        # In a full implementation, this would proxy to the notification service
+        # Connect to notification service WebSocket
+        notification_ws_url = f"ws://notification-service:8005/ws/{user_id}"
+        print(f"Proxying WebSocket connection for user {user_id} to {notification_ws_url}")
+        
+        # For now, send a connection message and keep the connection alive
+        # In a full implementation, this would establish a bidirectional proxy
         await websocket.send_text(json.dumps({
             "type": "connection",
             "message": f"WebSocket connected for user {user_id}",
-            "status": "connected"
+            "status": "connected",
+            "note": "Proxied through API Gateway"
         }))
         
         # Keep connection alive and handle messages
@@ -197,11 +128,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 data = await websocket.receive_text()
                 message = json.loads(data)
                 
-                # Echo back for now (replace with actual notification service logic)
+                # Echo back for now (replace with actual notification service proxy)
                 await websocket.send_text(json.dumps({
                     "type": "echo",
                     "message": f"Received: {message}",
-                    "timestamp": str(datetime.datetime.now())
+                    "timestamp": str(datetime.datetime.now()),
+                    "note": "Message echoed by API Gateway (proxy not fully implemented)"
                 }))
                 
             except WebSocketDisconnect:

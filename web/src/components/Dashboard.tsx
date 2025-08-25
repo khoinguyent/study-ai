@@ -112,6 +112,8 @@ const Dashboard: React.FC = () => {
 
   const sel = useSelection();
   
+  console.log('🔄 Dashboard render - loading:', loading, 'user:', user?.id, 'subjects count:', subjects.length);
+
   // Quiz notifications are now handled by QuizNotificationManager
 
   // Set toast positioning based on header height
@@ -144,7 +146,6 @@ const Dashboard: React.FC = () => {
     },
   });
 
-
   const fetchUserData = async (): Promise<void> => {
     try {
       const cachedUser = authService.getCurrentUser();
@@ -165,16 +166,17 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const fetchSubjects = useCallback(async (): Promise<void> => {
+  const fetchSubjects = useCallback(async (userId?: string): Promise<void> => {
     try {
-      if (!user?.id) {
+      const targetUserId = userId || user?.id;
+      if (!targetUserId) {
         console.error('No user ID available');
         setLoading(false);
         return;
       }
 
-      console.log('🔍 [' + new Date().toISOString() + '] Fetching dashboard data via GraphQL for user:', user.id);
-      const response = await graphqlClient.getDashboardData(user.id);
+      console.log('🔍 [' + new Date().toISOString() + '] Fetching dashboard data via GraphQL for user:', targetUserId);
+      const response = await graphqlClient.getDashboardData(targetUserId);
       console.log('📊 Raw GraphQL response:', response);
       console.log('📊 Raw GraphQL response type:', typeof response);
       console.log('📊 Raw GraphQL response keys:', Object.keys(response || {}));
@@ -204,7 +206,7 @@ const Dashboard: React.FC = () => {
         id: subject.id,
         name: subject.name,
         description: subject.description,
-        user_id: user.id,
+        user_id: targetUserId,
         color_theme: subject.color_theme || null,
         icon: subject.icon || null,
         document_count: subject.total_documents || 0,
@@ -233,7 +235,7 @@ const Dashboard: React.FC = () => {
             name: category.name,
             description: category.description || '',
             subject_id: subject.id,
-            user_id: user.id,
+            user_id: targetUserId,
             document_count: category.total_documents || 0,
             created_at: category.created_at || new Date().toISOString(),
             updated_at: category.updated_at || null
@@ -249,7 +251,7 @@ const Dashboard: React.FC = () => {
                 status: doc.status || 'pending',
                 file_path: doc.s3_url || '',
                 category_id: category.id,
-                user_id: user.id,
+                user_id: targetUserId,
                 file_size: doc.file_size || 0,
                 content_type: doc.content_type || 'application/pdf',
                 created_at: doc.created_at || new Date().toISOString(),
@@ -285,25 +287,44 @@ const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, []); // Remove user?.id dependency since we pass userId as parameter
 
+  // Consolidated data fetching - only run once on mount
   useEffect(() => {
-    console.log('🚀 [' + new Date().toISOString() + '] Dashboard mounted, fetching user data...');
-    fetchUserData();
-  }, []);
+    const initializeDashboard = async () => {
+      console.log('🚀 [' + new Date().toISOString() + '] Dashboard mounted, initializing...');
+      
+      try {
+        // First, get or fetch user data
+        const cachedUser = authService.getCurrentUser();
+        if (cachedUser) {
+          console.log('Using cached user:', cachedUser);
+          setUser(cachedUser);
+          // Update selection store with user ID
+          sel.setUser(cachedUser.id);
+          // Fetch subjects data immediately
+          await fetchSubjects(cachedUser.id);
+        } else {
+          console.log('No cached user, fetching from API...');
+          const userData = await apiService.getCurrentUser();
+          setUser(userData);
+          authService.updateUser(userData);
+          // Update selection store with user ID
+          sel.setUser(userData.id);
+          // Fetch subjects data immediately
+          await fetchSubjects(userData.id);
+        }
+      } catch (error) {
+        console.error('Error initializing dashboard:', error);
+        authService.clearToken();
+        navigate('/login');
+      }
+    };
+    
+    initializeDashboard();
+  }, []); // Only run once on mount
 
-  useEffect(() => {
-    console.log('👤 User effect triggered, user:', user);
-    console.log('🆔 User ID:', user?.id);
-    if (user?.id) {
-      console.log('✅ User ID available, calling fetchSubjects...');
-      // Update selection store with user ID
-      sel.setUser(user.id);
-      fetchSubjects();
-    } else {
-      console.log('❌ No user ID available, skipping fetchSubjects');
-    }
-  }, [user?.id, fetchSubjects]); // Remove sel from dependencies to prevent infinite loop
+  // Remove the separate user effect since we handle everything in the consolidated effect above
 
   const getSubjectIcon = (subjectName: string): React.ReactNode => {
     const icons: { [key: string]: React.ReactNode } = {
@@ -370,7 +391,7 @@ const Dashboard: React.FC = () => {
 
   const handleDocumentsUploaded = (): void => {
     // Refresh the data after uploading documents
-    fetchSubjects();
+    fetchSubjects(user?.id);
   };
 
   const getDocumentsBySubject = (subjectId: string): string[] => {
@@ -602,7 +623,7 @@ const Dashboard: React.FC = () => {
       });
 
       // Refresh data
-      fetchSubjects();
+      fetchSubjects(user?.id);
       
     } catch (error) {
       console.error('Error deleting documents:', error);
@@ -645,7 +666,7 @@ const Dashboard: React.FC = () => {
       });
 
       // Refresh data
-      fetchSubjects();
+      fetchSubjects(user?.id);
       
     } catch (error) {
       console.error('Error deleting documents:', error);
@@ -666,12 +687,12 @@ const Dashboard: React.FC = () => {
 
   const handleCategoryCreated = (): void => {
     // Refresh the data after creating a category
-    fetchSubjects();
+    fetchSubjects(user?.id);
   };
 
   const handleSubjectCreated = (): void => {
     // Refresh the data after creating a subject
-    fetchSubjects();
+    fetchSubjects(user?.id);
   };
 
   if (loading) {

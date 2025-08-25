@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Crown, Brain } from 'lucide-react';
 import { LoginRequest } from '../types';
@@ -8,6 +8,11 @@ import './LoginPage.css';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const renderCount = useRef(0);
+  renderCount.current += 1;
+  
+  console.log('🔄 LoginPage render #', renderCount.current);
+  
   const [formData, setFormData] = useState<LoginRequest>({
     email: '',
     password: ''
