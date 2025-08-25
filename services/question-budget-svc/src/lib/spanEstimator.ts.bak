@@ -1,0 +1,212 @@
+import { Span, SpanEstimatorOptions, SpanSource } from '../types';
+import { segmentIntoSpans, heuristicDedupe } from './tokenizer';
+import { OpenAIEmbeddingsClient } from './embeddings/openaiEmbeddings';
+import logger from './logger';
+import config from './config';
+
+export class SpanEstimator {
+  private embeddingsClient: OpenAIEmbeddingsClient | null = null;
+  private spanSource: SpanSource;
+
+  constructor(spanSource: SpanSource) {
+    this.spanSource = spanSource;
+    
+    // Initialize embeddings client if enabled
+    if (config.QB_EMBEDDINGS_ENABLED && config.OPENAI_API_KEY) {
+      try {
+        this.embeddingsClient = new OpenAIEmbeddingsClient();
+        logger.info('OpenAI embeddings client initialized');
+      } catch (error) {
+        logger.warn('Failed to initialize OpenAI embeddings client, falling back to heuristic dedupe:', error);
+        this.embeddingsClient = null;
+      }
+    }
+  }
+
+  /**
+   * Estimate the number of distinct spans for a subject
+   */
+  async estimateDistinctSpans(
+    subjectId: string,
+    opts: Partial<SpanEstimatorOptions> = {}
+  ): Promise<number> {
+    const options = this.mergeOptions(opts);
+    
+    try {
+      // Get raw text spans from the subject
+      const rawTexts = await this.spanSource.getSpans(subjectId);
+      
+      if (!rawTexts || rawTexts.length === 0) {
+        logger.warn(`No text content found for subject ${subjectId}`);
+        return 0;
+      }
+
+      // Segment into spans
+      const spans = segmentIntoSpans(rawTexts, options.spanTokenTarget);
+      logger.info(`Segmented ${rawTexts.length} texts into ${spans.length} spans`);
+
+      // Always run heuristic deduplication first
+      const heuristicSpans = heuristicDedupe(spans);
+      logger.info(`After heuristic dedupe: ${heuristicSpans.length} spans`);
+
+      // If embeddings are enabled and span count is within limits, use embedding-based dedupe
+      if (
+        options.embeddingsEnabled &&
+        this.embeddingsClient?.isAvailable() &&
+        heuristicSpans.length <= options.maxSpansForEmbeddings
+      ) {
+        try {
+          const finalSpans = await this.embeddingBasedDedupe(heuristicSpans, options);
+          logger.info(`After embedding dedupe: ${finalSpans.length} spans`);
+          return finalSpans.length;
+        } catch (error) {
+          logger.warn('Embedding-based dedupe failed, using heuristic result:', error);
+          return heuristicSpans.length;
+        }
+      }
+
+      return heuristicSpans.length;
+    } catch (error) {
+      logger.error(`Error estimating distinct spans for subject ${subjectId}:`, error);
+      throw new Error(`Failed to estimate distinct spans: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Perform embedding-based deduplication using cosine similarity
+   */
+  private async embeddingBasedDedupe(
+    spans: Span[],
+    options: SpanEstimatorOptions
+  ): Promise<Span[]> {
+    if (!this.embeddingsClient) {
+      throw new Error('Embeddings client not available');
+    }
+
+    // Extract text content for embedding
+    const texts = spans.map(span => span.text);
+    
+    // Generate embeddings
+    const embeddingResult = await this.embeddingsClient.embed(texts, {
+      batchSize: options.embeddingsBatchSize
+    });
+
+    // Perform similarity-based clustering
+    const clusters = this.clusterBySimilarity(
+      spans,
+      embeddingResult.vectors,
+      options.similarityThreshold
+    );
+
+    // Return representative spans from each cluster
+    return clusters.map(cluster => cluster[0]);
+  }
+
+  /**
+   * Cluster spans by cosine similarity
+   */
+  private clusterBySimilarity(
+    spans: Span[],
+    vectors: number[][],
+    threshold: number
+  ): Span[][] {
+    const clusters: Span[][] = [];
+    const visited = new Set<number>();
+
+    for (let i = 0; i < spans.length; i++) {
+      if (visited.has(i)) continue;
+
+      const cluster = [spans[i]];
+      visited.add(i);
+
+      for (let j = i + 1; j < spans.length; j++) {
+        if (visited.has(j)) continue;
+
+        const similarity = this.cosineSimilarity(vectors[i], vectors[j]);
+        if (similarity >= threshold) {
+          cluster.push(spans[j]);
+          visited.add(j);
+        }
+      }
+
+      clusters.push(cluster);
+    }
+
+    return clusters;
+  }
+
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(vec1: number[], vec2: number[]): number {
+    if (vec1.length !== vec2.length) {
+      throw new Error('Vector dimensions must match');
+    }
+
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+
+    for (let i = 0; i < vec1.length; i++) {
+      dotProduct += vec1[i] * vec2[i];
+      norm1 += vec1[i] * vec1[i];
+      norm2 += vec2[i] * vec2[i];
+    }
+
+    const denominator = Math.sqrt(norm1) * Math.sqrt(norm2);
+    if (denominator === 0) return 0;
+
+    return dotProduct / denominator;
+  }
+
+  /**
+   * Merge user options with defaults
+   */
+  private mergeOptions(userOpts: Partial<SpanEstimatorOptions>): SpanEstimatorOptions {
+    const defaultOpts = {
+      spanTokenTarget: config.BUDGET_SPAN_TOKENS,
+      embeddingsEnabled: config.QB_EMBEDDINGS_ENABLED,
+      embeddingsModel: config.QB_EMBEDDINGS_MODEL,
+      embeddingsBatchSize: config.QB_EMBEDDINGS_BATCH_SIZE,
+      embeddingsCacheTtlSec: config.QB_EMBEDDINGS_CACHE_TTL_SEC,
+      similarityThreshold: config.QB_EMBEDDINGS_SIMILARITY,
+      maxSpansForEmbeddings: config.QB_MAX_SPANS_FOR_EMBEDDINGS,
+    };
+
+    if (!userOpts) return defaultOpts;
+
+    return {
+      ...defaultOpts,
+      ...(userOpts.spanTokenTarget !== undefined && { spanTokenTarget: userOpts.spanTokenTarget }),
+      ...(userOpts.embeddingsEnabled !== undefined && { embeddingsEnabled: userOpts.embeddingsEnabled }),
+      ...(userOpts.embeddingsModel !== undefined && { embeddingsModel: userOpts.embeddingsModel }),
+      ...(userOpts.embeddingsBatchSize !== undefined && { embeddingsBatchSize: userOpts.embeddingsBatchSize }),
+      ...(userOpts.embeddingsCacheTtlSec !== undefined && { embeddingsCacheTtlSec: userOpts.embeddingsCacheTtlSec }),
+      ...(userOpts.similarityThreshold !== undefined && { similarityThreshold: userOpts.similarityThreshold }),
+      ...(userOpts.maxSpansForEmbeddings !== undefined && { maxSpansForEmbeddings: userOpts.maxSpansForEmbeddings }),
+    };
+  }
+
+  /**
+   * Get embeddings client status
+   */
+  getEmbeddingsStatus() {
+    return {
+      available: this.embeddingsClient?.isAvailable() || false,
+      cacheStats: this.embeddingsClient?.getCacheStats(),
+    };
+  }
+}
+
+/**
+ * Default span source implementation that throws an error
+ * Callers should implement their own span source
+ */
+export class DefaultSpanSource implements SpanSource {
+  async getSpans(subjectId: string): Promise<string[]> {
+    throw new Error(
+      `Span source not implemented. Please implement a SpanSource for subject ${subjectId}. ` +
+      'This service requires access to the subject\'s raw text content to estimate distinct spans.'
+    );
+  }
+}
