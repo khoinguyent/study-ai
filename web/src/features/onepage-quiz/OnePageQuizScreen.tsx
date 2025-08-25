@@ -7,7 +7,7 @@ import QuestionItem from "./QuestionItem";
 import { validate } from "./validate";
 
 // import your left-side chat component:
-import LeftClarifierSheet from "../../components/LeftClarifierSheet";
+import { StudyChat, StudyChatProvider, useStudyChat } from "../../components";
 // import your existing API method that returns { quiz: { questions: ... } }
 import { fetchQuiz } from "../quiz/api";        // adjust path
 
@@ -44,8 +44,10 @@ function useChatWidth() {
 
 type Answers = Record<string, Answer | undefined>;
 
-export default function OnePageQuizScreen() {
+// Inner component that uses the StudyChat context
+function OnePageQuizScreenInner() {
   const { sessionId = "" } = useParams();
+  const { mode, quizSummary, messages, ready, sending, error, sendMessage } = useStudyChat();
 
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const [chatOpen, setChatOpen] = useState<boolean>(isDesktop);
@@ -293,18 +295,15 @@ export default function OnePageQuizScreen() {
           "w-full"
         )}
       >
-        <LeftClarifierSheet
-          open={chatOpen}
-          inline
-          onClose={() => setChatOpen(false)}
-          launch={{
-            userId: sessionId || "",
-            subjectId: "",
-            docIds: []
-          }}
-          maxQuestions={50}
-          suggested={15}
-          onConfirm={() => {}}
+        <StudyChat
+          mode={mode}
+          quizSummary={quizSummary}
+          messages={messages}
+          ready={ready}
+          sending={sending}
+          error={error}
+          onSendMessage={sendMessage}
+          style={{ height: '100%' }}
         />
       </aside>
 
@@ -444,5 +443,23 @@ export default function OnePageQuizScreen() {
         Unblock
       </button>
     </div>
+  );
+}
+
+// Main component wrapped with StudyChatProvider
+export default function OnePageQuizScreen() {
+  const { sessionId = "" } = useParams();
+  
+  return (
+    <StudyChatProvider
+      sessionId={sessionId || ""}
+      userId={sessionId || ""}
+      subjectId="vietnam-history"
+      docIds={["doc1", "doc2", "doc3", "doc4"]}
+      onStartQuiz={() => console.log("Starting quiz...")}
+      onViewResults={() => console.log("Viewing results...")}
+    >
+      <OnePageQuizScreenInner />
+    </StudyChatProvider>
   );
 }

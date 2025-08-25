@@ -6,11 +6,11 @@ import "./components/notifications/notificationTheme.css";
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+  // <React.StrictMode>
     <NotificationProvider>
       <App />
       {/* Toasts render here, above all content */}
       <NotificationPortal />
     </NotificationProvider>
-  </React.StrictMode>
+  // </React.StrictMode>
 ); 

@@ -94,6 +94,56 @@ async def test_ollama():
             "message": f"Failed to connect to Ollama: {str(e)}"
         }
 
+@app.get("/test-openai")
+async def test_openai():
+    """Test OpenAI connectivity and configuration"""
+    try:
+        if not settings.OPENAI_API_KEY:
+            return {
+                "status": "error",
+                "message": "OpenAI API key not configured"
+            }
+        
+        # Test OpenAI client initialization
+        try:
+            import openai
+            openai.api_key = settings.OPENAI_API_KEY
+            openai.base_url = settings.OPENAI_BASE_URL
+            
+            # Test with a simple API call
+            response = await openai.chat.completions.acreate(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "user", "content": "Hello, this is a test message."}
+                ],
+                max_tokens=10
+            )
+            
+            return {
+                "status": "success",
+                "message": "OpenAI is accessible and working",
+                "model": settings.OPENAI_MODEL,
+                "base_url": settings.OPENAI_BASE_URL,
+                "test_response": response.choices[0].message.content
+            }
+            
+        except ImportError:
+            return {
+                "status": "error",
+                "message": "OpenAI package not available"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"OpenAI API test failed: {str(e)}"
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to test OpenAI: {str(e)}"
+        }
+
 # Enhanced Mock Quiz Generation Service
 class MockQuizGenerator:
     """Mock quiz generator that returns realistic quiz data for development"""
@@ -510,6 +560,55 @@ async def ingest_clarifier(
         )
 
 # Quiz management endpoints - Simplified for minimal requirements
+@app.post("/generate")
+async def generate_quiz_from_clarifier(
+    request: dict,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Generate a new quiz from clarifier service - minimal requirements"""
+    try:
+        logger.info(f"Generating quiz from clarifier: {request}")
+        
+        # Extract only the essential fields
+        doc_ids = request.get("docIds", [])
+        num_questions = request.get("count", 10)  # clarifier uses 'count'
+        difficulty = request.get("difficulty", "medium")
+        question_types = request.get("questionTypes", ["MCQ"])
+        session_id = request.get("sessionId", "")
+        
+        if not doc_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="docIds is required"
+            )
+        
+        # Generate mock quiz with the essential fields
+        quiz_data = mock_quiz_generator.generate_mock_quiz(
+            subject_id="mock-subject",  # Not required for quiz generation
+            doc_ids=doc_ids,
+            question_types=question_types,
+            difficulty=difficulty,
+            question_count=num_questions
+        )
+        
+        # Return success without sending notifications
+        return {
+            "status": "success",
+            "message": "Quiz generated successfully from clarifier",
+            "quiz": quiz_data,
+            "sessionId": session_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate quiz from clarifier: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate quiz: {str(e)}"
+        )
+
 @app.post("/quizzes/generate")
 async def generate_quiz(
     request: dict,

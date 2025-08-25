@@ -1,0 +1,17 @@
+# SageMaker Inference Dependencies
+sagemaker-inference>=1.8.0
+
+# Web Framework
+flask>=2.3.0
+gunicorn>=21.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Machine Learning
+torch>=2.0.0
+transformers>=4.30.0
+numpy>=1.24.0
+
+# Utilities
+python-json-logger>=2.0.0

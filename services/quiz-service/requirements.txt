@@ -13,4 +13,5 @@ celery==5.3.4
 PyJWT==2.8.0
 # Ollama support is via HTTP API, no additional packages needed
 numpy==1.25.2
-pandas==2.1.4 
+pandas==2.1.4
+openai==1.3.7 

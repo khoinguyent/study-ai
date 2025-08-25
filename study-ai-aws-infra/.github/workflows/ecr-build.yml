@@ -1,0 +1,63 @@
+name: Build & Push Ollama (schema v2)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ollama-sagemaker/Dockerfile
+      - ollama-sagemaker/inference.py
+      - ollama-sagemaker/requirements-min.txt
+      - ollama-sagemaker/start.sh
+      - .github/workflows/ecr-build.yml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-southeast-1
+      REPO: ollama-inference
+      TAG: sm-compat-v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build (linux/amd64) and load
+        run: |
+          docker buildx create --use
+          docker buildx build \
+            --platform linux/amd64 \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.REPO }}:${{ env.TAG }} \
+            --load \
+            ./ollama-sagemaker
+
+      - name: Install skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+
+      - name: Push as Docker v2 schema
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          PASS=$(aws ecr get-login-password --region $AWS_REGION)
+          skopeo copy --format v2s2 \
+            docker-daemon:${REGISTRY}/${REPO}:${TAG} \
+            docker://${REGISTRY}/${REPO}:${TAG} \
+            --dest-creds AWS:${PASS}
+
+      - name: Verify manifest type
+        run: |
+          aws ecr batch-get-image \
+            --repository-name $REPO \
+            --image-ids imageTag=$TAG \
+            --query 'images[0].imageManifestMediaType' --output text
+

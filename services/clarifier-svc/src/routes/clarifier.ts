@@ -185,10 +185,11 @@ export async function clarifierRoutes(fastify: FastifyInstance) {
 
         // For now, just return success since FlowRunner doesn't have confirm method
         // The flow completion is handled in the ingest method when all slots are filled
+        // No notifications should be sent on confirmation
         reply.send({ 
           sessionId, 
           status: 'confirmed',
-          message: 'Flow confirmation received'
+          message: 'Flow confirmation received - no notifications triggered'
         });
       } catch (error) {
         logger.error('Error confirming clarification flow:', error);

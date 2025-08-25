@@ -143,6 +143,7 @@ export const quizSetupFlow: FlowSpec = {
 
       if (!response.ok) {
         logger.error(`Quiz service failed: ${response.status}`);
+        // Don't send notifications on failure, just return error
         return {
           status: 502,
           body: { error: 'Failed to generate quiz questions' }
@@ -151,16 +152,18 @@ export const quizSetupFlow: FlowSpec = {
 
       const result = await response.json();
       
-              return {
-          status: 200,
-          body: {
-            sessionId: filled['sessionId'],
-            accepted: true,
-            quizData: result
-          }
-        };
+      // Return success without triggering any notification events
+      return {
+        status: 200,
+        body: {
+          sessionId: filled['sessionId'],
+          accepted: true,
+          quizData: result
+        }
+      };
     } catch (error) {
       logger.error('Failed to finalize quiz setup:', error);
+      // Don't send notifications on error, just return error
       return {
         status: 500,
         body: { error: 'Internal server error during quiz generation' }

@@ -1,6 +1,6 @@
 """
 Quiz Generator Service for Study AI Platform
-Handles AI-powered quiz generation using Ollama
+Handles AI-powered quiz generation using Ollama, HuggingFace, and OpenAI
 """
 
 import asyncio
@@ -23,11 +23,34 @@ class QuizGenerator:
         self.huggingface_token = settings.HUGGINGFACE_TOKEN
         self.question_model = settings.QUESTION_GENERATION_MODEL
         
+        # OpenAI configuration
+        self.openai_api_key = settings.OPENAI_API_KEY
+        self.openai_base_url = settings.OPENAI_BASE_URL
+        self.openai_model = settings.OPENAI_MODEL
+        self.openai_max_tokens = settings.OPENAI_MAX_TOKENS
+        self.openai_temperature = settings.OPENAI_TEMPERATURE
+        
+        # Initialize OpenAI client if API key is available
+        self.openai_client = None
+        if self.openai_api_key:
+            try:
+                import openai
+                openai.api_key = self.openai_api_key
+                openai.base_url = self.openai_base_url
+                self.openai_client = openai
+                logger.info("OpenAI client initialized successfully")
+            except ImportError:
+                logger.warning("OpenAI package not available, OpenAI integration disabled")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+        
         logger.info(f"Initialized QuizGenerator with strategy: {self.strategy}")
         if self.strategy in ["ollama", "auto"]:
             logger.info(f"Ollama URL: {self.ollama_url}, Model: {self.ollama_model}")
         if self.strategy in ["huggingface", "auto"]:
             logger.info(f"HuggingFace URL: {self.huggingface_url}, Model: {self.question_model}")
+        if self.strategy in ["openai", "auto"] and self.openai_client:
+            logger.info(f"OpenAI Model: {self.openai_model}, Base URL: {self.openai_base_url}")
     
     async def generate_quiz(
         self, 
@@ -239,12 +262,20 @@ Generate the quiz based ONLY on the provided context:"""
             return self._get_mock_quiz_data()
             
             # Uncomment the following code when ready to use real APIs
-            # if self.strategy == "huggingface":
+            # if self.strategy == "openai" and self.openai_client:
+            #     return await self._call_openai(prompt)
+            # elif self.strategy == "huggingface":
             #     return await self._call_huggingface(prompt)
             # elif self.strategy == "ollama":
             #     return await self._call_ollama(prompt)
             # elif self.strategy == "auto":
-            #     # Try HuggingFace first, fallback to Ollama
+            #     # Try OpenAI first, then HuggingFace, fallback to Ollama
+            #     try:
+            #         if self.openai_client:
+            #             return await self._call_openai(prompt)
+            #     except Exception as e:
+            #         logger.warning(f"OpenAI failed, trying HuggingFace: {str(e)}")
+            #     
             #     try:
             #         return await self._call_huggingface(prompt)
             #     except Exception as e:
@@ -412,8 +443,51 @@ Generate the quiz based ONLY on the provided context:"""
             logger.error(f"Model: {self.ollama_model}")
             raise
     
+    async def _call_openai(self, prompt: str) -> str:
+        """Call OpenAI API to generate content"""
+        try:
+            logger.info(f"Calling OpenAI API with model {self.openai_model}")
+            
+            if not self.openai_client:
+                raise Exception("OpenAI client not initialized")
+            
+            if not self.openai_api_key:
+                raise Exception("OpenAI API key not configured")
+            
+            # Create chat completion request
+            response = await self.openai_client.chat.completions.acreate(
+                model=self.openai_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert quiz creator. Generate quizzes in valid JSON format based on the user's request."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=self.openai_max_tokens,
+                temperature=self.openai_temperature,
+                response_format={"type": "json_object"}
+            )
+            
+            logger.info(f"OpenAI response received successfully")
+            
+            # Extract the response content
+            response_text = response.choices[0].message.content
+            logger.info(f"OpenAI response length: {len(response_text)} characters")
+            
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"Error calling OpenAI API: {str(e)}")
+            logger.error(f"OpenAI Model: {self.openai_model}")
+            logger.error(f"OpenAI Base URL: {self.openai_base_url}")
+            raise
+    
     def _parse_quiz_response(self, response: str) -> Dict[str, Any]:
-        """Parse the quiz response from Ollama"""
+        """Parse the quiz response from AI models (OpenAI, Ollama, HuggingFace)"""
         try:
             # Try to extract JSON from the response
             # Look for JSON content between ```json and ``` or just parse the whole response

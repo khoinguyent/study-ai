@@ -1,92 +1,65 @@
-# Study AI AWS Infrastructure
+# Studium-app AWS Infrastructure
 
-This repository contains Terraform configuration for deploying AWS infrastructure to support Study AI applications.
+## Important Notes
 
-## Project Structure
+### Region Consistency
+- **SageMaker model image and endpoint must be in the same region as the ECR repository.**
+- Default region is `ap-southeast-1` where the ECR repo exists.
+- Ensure `AWS_PROFILE` and `AWS_DEFAULT_REGION` (or `var.region`) match before running apply.
 
-```
-study-ai-aws-infra/
-├─ README.md
-├─ .gitignore
-├─ Makefile
-├─ infra/
-│  ├─ main.tf
-│  ├─ variables.tf
-│  ├─ outputs.tf
-│  ├─ user_data.sh
-│  └─ terraform.tfvars
-```
-
-## Prerequisites
-
-- Terraform >= 1.0
-- AWS CLI configured with appropriate credentials
-- Make (optional, for using the Makefile)
+### SageMaker Deployment Requirements
+- Docker images must use Docker v2 Schema 2 manifest (not OCI manifest)
+- Avoid `buildx --push` which defaults to OCI format
+- Use `buildx --load` + `docker push` to ensure Docker v2 compatibility
 
 ## Quick Start
 
-1. **Navigate to the infrastructure directory:**
-   ```bash
-   cd infra
-   ```
+### 1. Build and Push Docker Image
+```bash
+cd ollama-sagemaker
+export ECR_URI=542834090270.dkr.ecr.ap-southeast-1.amazonaws.com/ollama-inference
+export ECR_REPO=ollama-inference
 
-2. **Initialize Terraform:**
-   ```bash
-   terraform init
-   ```
+# Build and push with Docker v2 compatibility
+docker buildx create --use --name smbuilder || true
+docker buildx build --platform linux/amd64 --load -t ${ECR_URI}:sm-compat-v2 .
+aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin 542834090270.dkr.ecr.ap-southeast-1.amazonaws.com
+docker push ${ECR_URI}:sm-compat-v2
 
-3. **Review the plan:**
-   ```bash
-   terraform plan
-   ```
+# Verify manifest type
+aws ecr batch-get-image --repository-name ${ECR_REPO} \
+  --image-ids imageTag=sm-compat-v2 \
+  --query 'images[0].imageManifestMediaType' --output text
+# Should return: application/vnd.docker.distribution.manifest.v2+json
+```
 
-4. **Apply the configuration:**
-   ```bash
-   terraform apply
-   ```
+### 2. Deploy Infrastructure
+```bash
+cd infra
+terraform init -upgrade
+terraform apply -auto-approve
+```
 
-## Using the Makefile
+### 3. Test SageMaker Endpoint
+```bash
+aws sagemaker invoke-endpoint \
+  --endpoint-name <your-endpoint-name> \
+  --body '{"prompt":"ping"}' \
+  --content-type application/json \
+  /dev/stdout
+```
 
-The project includes a Makefile for common operations:
+## Architecture
 
-- `make init` - Initialize Terraform
-- `make plan` - Show Terraform plan
-- `make apply` - Apply Terraform configuration
-- `make destroy` - Destroy infrastructure
-- `make clean` - Clean up local files
+This infrastructure deploys:
+- **Minimal SageMaker**: Model + Endpoint for Ollama inference
+- **Security**: IAM roles, KMS encryption, VPC endpoints
+- **Monitoring**: CloudWatch logs, dashboards, alarms
+- **Resource Groups**: Tag-based organization for easy management
 
-## Infrastructure Components
+## Troubleshooting
 
-The Terraform configuration creates:
-
-- VPC with public and private subnets
-- EC2 instances for application servers
-- Security groups for network access control
-- Load balancer for traffic distribution
-- Auto Scaling Group for high availability
-
-## Configuration
-
-Edit `infra/terraform.tfvars` to customize:
-- AWS region
-- Instance types
-- Subnet CIDR blocks
-- Environment-specific variables
-
-## Security Notes
-
-- Never commit sensitive information like AWS access keys
-- Use IAM roles and policies with least privilege
-- Regularly rotate credentials and review access
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with `terraform plan`
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License.
+### Common Issues
+1. **OCI Manifest Error**: Ensure you're using `--load` + `docker push`, not `buildx --push`
+2. **Region Mismatch**: Verify ECR repo and SageMaker are in the same region
+3. **Resource Groups**: Using `AWS::AllSupported` with tag filters for compatibility

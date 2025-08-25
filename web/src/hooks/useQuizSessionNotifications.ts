@@ -22,30 +22,51 @@ export function useQuizSessionNotifications(options: UseQuizSessionNotifications
   const [lastStatus, setLastStatus] = useState<QuizSessionStatus | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 3;
   const sel = useSelection();
 
   const connect = useCallback(() => {
+    // Prevent connection if no userId or if already connected
     if (!sel.userId || wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
-              // Connect through API Gateway (Docker setup)
-              const wsUrl = `ws://localhost:8000/ws/${sel.userId}`;
+    // Prevent excessive reconnection attempts
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log("🔒 Max reconnection attempts reached, stopping WebSocket connections");
+      return;
+    }
+
+    // Connect through API Gateway (Docker setup)
+    const wsUrl = `ws://localhost:8000/ws/${sel.userId}`;
     console.log(`🔗 Connecting to WebSocket: ${wsUrl}`);
 
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      // Set connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.log("⏰ WebSocket connection timeout, closing");
+          ws.close();
+        }
+      }, 5000); // 5 second timeout
+
       ws.onopen = () => {
         console.log("🔗 WebSocket connection opened successfully");
         setIsConnected(true);
+        reconnectAttemptsRef.current = 0; // Reset reconnection attempts on successful connection
         
         // Clear any reconnect timeout
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
         }
+        
+        // Clear connection timeout
+        clearTimeout(connectionTimeout);
       };
 
       ws.onmessage = (event) => {
@@ -80,22 +101,27 @@ export function useQuizSessionNotifications(options: UseQuizSessionNotifications
       ws.onerror = (error) => {
         console.error("❌ WebSocket error:", error);
         setIsConnected(false);
+        clearTimeout(connectionTimeout);
       };
 
       ws.onclose = (event) => {
         console.log("🔌 WebSocket connection closed:", event.code, event.reason);
         setIsConnected(false);
+        clearTimeout(connectionTimeout);
         
-        // Attempt to reconnect after a delay
-        if (event.code !== 1000) { // Don't reconnect if closed normally
-          console.log("🔄 Attempting to reconnect in 3 seconds...");
+        // Only attempt to reconnect for non-normal closures and if under max attempts
+        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current += 1;
+          console.log(`🔄 Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts}) in 3 seconds...`);
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, 3000);
+        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          console.log("🔒 Max reconnection attempts reached, stopping WebSocket connections");
         }
       };
     } catch (error) {
-              console.error("❌ Failed to create WebSocket:", error);
+      console.error("❌ Failed to create WebSocket:", error);
       setIsConnected(false);
     }
   }, [sel.userId, options]);
@@ -112,11 +138,14 @@ export function useQuizSessionNotifications(options: UseQuizSessionNotifications
       reconnectTimeoutRef.current = null;
     }
     
+    // Reset reconnection attempts
+    reconnectAttemptsRef.current = 0;
     setIsConnected(false);
   }, []);
 
   useEffect(() => {
-    if (sel.userId) {
+    // Only connect if we have a userId and we're not already connected
+    if (sel.userId && !wsRef.current) {
       connect();
     }
 
