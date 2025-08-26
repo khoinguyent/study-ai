@@ -183,7 +183,7 @@ class DocumentProcessor:
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.post(
-                        f"{self.indexing_url}/index",
+                        f"{self.indexing_url}/index?document_id={document_id}&user_id={user_id}",
                         json=indexing_data,
                         timeout=30.0
                     )

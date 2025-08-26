@@ -140,9 +140,50 @@ const Dashboard: React.FC = () => {
   // Handle upload events and refresh dashboard on completion
   useUploadEvents({
     userId: userId || "",
-    onAnyComplete: () => {
-      // When an upload finishes, refresh dashboard data
-      fetchUserData();
+    onAnyComplete: async (docId: string) => {
+      // Targeted refresh: fetch the single document to get latest status and merge it
+      try {
+        const doc = await apiService.getDocument(docId);
+        if (doc?.category_id) {
+          // Update documents map for the affected category
+          let isNewInCategory = false;
+          setDocuments(prev => {
+            const next = { ...prev } as { [categoryId: string]: Document[] };
+            const list = next[doc.category_id] || [];
+            const idx = list.findIndex(d => d.id === doc.id);
+            if (idx >= 0) {
+              const updated = list.slice();
+              updated[idx] = { ...updated[idx], ...doc };
+              next[doc.category_id] = updated;
+            } else {
+              next[doc.category_id] = [doc, ...list];
+              isNewInCategory = true;
+            }
+            return next;
+          });
+
+          // Update category document_count if needed
+          setCategories(prev => {
+            const next = { ...prev } as { [subjectId: string]: Category[] };
+            // Find subject that owns this category and bump its document_count
+            const subjectId = Object.keys(next).find(sid => (next[sid] || []).some(c => c.id === doc.category_id));
+            if (subjectId) {
+              const cats = next[subjectId].map(c => {
+                if (c.id !== doc.category_id) return c;
+                if (isNewInCategory) {
+                  return { ...c, document_count: (c.document_count || 0) + 1 };
+                }
+                return c;
+              });
+              next[subjectId] = cats;
+            }
+            return next;
+          });
+        }
+      } catch (e) {
+        // Fallback: refresh dashboard if targeted update fails
+        fetchUserData();
+      }
     },
   });
 
@@ -533,7 +574,7 @@ const Dashboard: React.FC = () => {
     Object.values(documents).forEach(categoryDocs => {
       if (Array.isArray(categoryDocs)) {
         categoryDocs.forEach(doc => {
-          if (doc && selectedDocIds.includes(doc.id) && doc.status === 'completed') {
+          if (doc && selectedDocIds.includes(doc.id) && (doc.status === 'completed' || doc.status === 'ready')) {
             readyDocIds.push(doc.id);
           }
         });
@@ -581,7 +622,7 @@ const Dashboard: React.FC = () => {
     if (!documents || !categoryId || !selections?.documents) return 0;
     const categoryDocs = documents[categoryId] || [];
     return categoryDocs.filter(doc => 
-      doc && selections.documents.has(doc.id) && doc.status === 'completed'
+      doc && selections.documents.has(doc.id) && (doc.status === 'completed' || doc.status === 'ready')
     ).length;
   };
 

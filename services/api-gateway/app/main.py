@@ -35,6 +35,41 @@ graphql_app = GraphQLRouter(schema, context_getter=get_context)
 # Add GraphQL endpoint
 app.include_router(graphql_app, prefix="/graphql")
 
+@app.on_event("startup")
+def _log_routes():
+    """Log all registered routes in registration order for debugging"""
+    logging.info("=== ROUTE TABLE (registration order) ===")
+    for i, r in enumerate(app.router.routes):
+        path = getattr(r, "path", str(r))
+        methods = getattr(r, "methods", [])
+        name = getattr(r, "name", "")
+        logging.info("%03d: %s  methods=%s  name=%s", i, path, methods, name)
+    logging.info("=== END ROUTE TABLE ===")
+
+# Mock endpoints (only when enabled)
+if settings.ENABLE_GATEWAY_MOCKS:
+    @app.get("/api/mock/documents/{document_id}/status")
+    def _mock_document_status(document_id: str):
+        """Mock document status endpoint for development/testing"""
+        import random
+        mock_states = [
+            {"state": "ready", "progress": 100},
+            {"state": "processing", "progress": 78},
+            {"state": "failed", "progress": 0, "message": "Processing failed"},
+        ]
+        return random.choice(mock_states)
+    
+    @app.get("/api/mock/study-sessions/status")
+    def _mock_study_session_status():
+        """Mock study session status endpoint for development/testing"""
+        import random
+        mock_states = [
+            {"state": "queued", "progress": 25},
+            {"state": "running", "progress": 67},
+            {"state": "completed", "progress": 100},
+        ]
+        return random.choice(mock_states)
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -105,6 +140,37 @@ async def test_upload():
 
 # TODO: Implement real upload events endpoint that only triggers for actual uploads
 
+@app.get("/api/uploads/events")
+async def upload_events_proxy(userId: str = Query(...)):
+    """Proxy upload events to notification service"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{settings.NOTIFICATION_SERVICE_URL}/uploads/events",
+                params={"userId": userId}
+            )
+            if response.status_code == 200:
+                return StreamingResponse(
+                    response.aiter_bytes(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Headers": "*",
+                    }
+                )
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Notification service error: {response.text}"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Events proxy error: {str(e)}"
+        )
+
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     """WebSocket endpoint that proxies connections to notification service"""
@@ -157,22 +223,64 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             pass
 
 @app.get("/api/documents/{document_id}/status")
-async def get_document_status(document_id: str):
-    """Get document processing status - mock implementation for development"""
-    # Mock document status for testing
-    import random
+async def get_document_status(document_id: str, request: Request):
+    """Proxy document status requests to document service"""
+    print(f"DEBUG: Document status request for document_id: {document_id}")
+    print(f"DEBUG: Document service URL: {settings.DOCUMENT_SERVICE_URL}")
     
-    # Simulate different document states
-    states = ["processing", "ready", "failed"]
-    state = random.choice(states)
-    
-    if state == "processing":
-        progress = random.randint(10, 90)
-        return {"state": "processing", "progress": progress}
-    elif state == "ready":
-        return {"state": "ready", "progress": 100}
-    else:
-        return {"state": "failed", "progress": 0, "message": "Processing failed"}
+    try:
+        # Forward the Authorization header to Document Service
+        headers = {}
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        target_url = f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}/status"
+        print(f"DEBUG: Calling target URL: {target_url}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                target_url,
+                headers=headers,
+            )
+            
+            print(f"DEBUG: Document service response: {response.status_code} - {response.text}")
+            
+            if response.status_code == 200:
+                # Add no-cache headers for status endpoint
+                from fastapi.responses import Response
+                return Response(
+                    content=response.content,
+                    media_type="application/json",
+                    headers={
+                        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                        "Pragma": "no-cache",
+                    }
+                )
+            else:
+                error_detail = "Failed to get document status"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", error_detail)
+                except:
+                    pass
+                print(f"DEBUG: Raising HTTPException with status {response.status_code}: {error_detail}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=error_detail
+                )
+    except httpx.TimeoutException:
+        print("DEBUG: Timeout exception")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Status check timeout"
+        )
+    except Exception as e:
+        print(f"DEBUG: Exception: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
 
 @app.get("/auth/me-direct")
 async def me_direct(request: Request):
@@ -304,13 +412,19 @@ async def me_proxy(request: Request):
 
 # Proxy other endpoints that might be needed
 @app.get("/subjects")
-async def subjects_proxy(user_id: str = Depends(verify_auth_token)):
+async def subjects_proxy(request: Request, user_id: str = Depends(verify_auth_token)):
     """Proxy subjects requests to document service"""
     try:
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{settings.DOCUMENT_SERVICE_URL}/subjects",
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
@@ -325,14 +439,52 @@ async def subjects_proxy(user_id: str = Depends(verify_auth_token)):
             detail=f"Document service error: {str(e)}"
         )
 
+@app.post("/subjects")
+async def create_subject_proxy(request: Request, user_id: str = Depends(verify_auth_token)):
+    """Proxy subject creation requests to document service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.DOCUMENT_SERVICE_URL}/subjects",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to create subject"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
 @app.get("/categories")
-async def categories_proxy(user_id: str = Depends(verify_auth_token)):
+async def categories_proxy(request: Request, user_id: str = Depends(verify_auth_token)):
     """Proxy categories requests to document service"""
     try:
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{settings.DOCUMENT_SERVICE_URL}/categories",
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
@@ -340,6 +492,176 @@ async def categories_proxy(user_id: str = Depends(verify_auth_token)):
             raise HTTPException(
                 status_code=response.status_code,
                 detail="Failed to get categories"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.post("/categories")
+async def create_category_proxy(request: Request, user_id: str = Depends(verify_auth_token)):
+    """Proxy category creation requests to document service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.DOCUMENT_SERVICE_URL}/categories",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to create category"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.put("/subjects/{subject_id}")
+async def update_subject_proxy(subject_id: str, request: Request, user_id: str = Depends(verify_auth_token)):
+    """Proxy subject update requests to document service"""
+    try:
+        body = await request.json()
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{settings.DOCUMENT_SERVICE_URL}/subjects/{subject_id}",
+                json=body,
+                headers={"user_id": user_id},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to update subject"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.delete("/subjects/{subject_id}")
+async def delete_subject_proxy(subject_id: str, user_id: str = Depends(verify_auth_token)):
+    """Proxy subject deletion requests to document service"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{settings.DOCUMENT_SERVICE_URL}/subjects/{subject_id}",
+                headers={"user_id": user_id},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to delete subject"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.put("/categories/{category_id}")
+async def update_category_proxy(category_id: str, request: Request, user_id: str = Depends(verify_auth_token)):
+    """Proxy category update requests to document service"""
+    try:
+        body = await request.json()
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{settings.DOCUMENT_SERVICE_URL}/categories/{category_id}",
+                json=body,
+                headers={"user_id": user_id},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to update category"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.delete("/categories/{category_id}")
+async def delete_category_proxy(category_id: str, user_id: str = Depends(verify_auth_token)):
+    """Proxy category deletion requests to document service"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{settings.DOCUMENT_SERVICE_URL}/categories/{category_id}",
+                headers={"user_id": user_id},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to delete category"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.get("/subjects/{subject_id}/categories")
+async def get_subject_categories_proxy(subject_id: str, user_id: str = Depends(verify_auth_token)):
+    """Proxy subject categories requests to document service"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/subjects/{subject_id}/categories",
+                headers={"user_id": user_id},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to get subject categories"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.get("/categories/{category_id}/documents")
+async def get_category_documents_proxy(category_id: str, user_id: str = Depends(verify_auth_token), page: int = Query(1), page_size: int = Query(10)):
+    """Proxy category documents requests to document service"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/categories/{category_id}/documents?page={page}&page_size={page_size}",
+                headers={"user_id": user_id},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to get category documents"
             )
     except Exception as e:
         raise HTTPException(
@@ -1104,6 +1426,73 @@ async def clear_notifications_by_type(notification_type: str, request: Request):
     except Exception as e:
         logger.error(f"Error proxying clear notifications by type: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# MUST be last of all /api routes - catch-all proxy for any unmatched API calls
+@app.api_route("/api/{service}/{path:path}",
+               methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+async def proxy_catch_all(service: str, path: str, request: Request):
+    """Catch-all proxy for any unmatched API routes"""
+    logger.info(f"PROXY CATCH-ALL → {request.method} /api/{service}/{path}")
+    
+    # Map service names to URLs
+    service_urls = {
+        "document-service": settings.DOCUMENT_SERVICE_URL,
+        "auth-service": settings.AUTH_SERVICE_URL,
+        "quiz-service": settings.QUIZ_SERVICE_URL,
+        "notification-service": settings.NOTIFICATION_SERVICE_URL,
+        "indexing-service": settings.INDEXING_SERVICE_URL,
+        "clarifier-svc": settings.CLARIFIER_SERVICE_URL,
+    }
+    
+    if service not in service_urls:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown service: {service}"
+        )
+    
+    target_url = f"{service_urls[service]}/{path}"
+    logger.info(f"PROXY CATCH-ALL → {target_url}")
+    
+    try:
+        # Forward headers (excluding host)
+        headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                content=await request.body(),
+                headers=headers,
+            )
+        
+        logger.info(f"PROXY CATCH-ALL ← {response.status_code} {target_url}")
+        
+        # Disable caching for status endpoints
+        no_cache = (
+            path.endswith("/status")
+            and "/documents/" in path
+        )
+        
+        response_headers = {"content-type": response.headers.get("content-type", "application/json")}
+        if no_cache:
+            response_headers.update({
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+            })
+        
+        from fastapi.responses import Response
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=response_headers
+        )
+        
+    except Exception as e:
+        logger.error(f"PROXY CATCH-ALL error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Proxy error: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

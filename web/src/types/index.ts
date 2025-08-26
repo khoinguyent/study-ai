@@ -75,7 +75,7 @@ export interface Document {
   mime_type: string;
   category_id: string;
   user_id: string;
-  status: 'processing' | 'completed' | 'failed';
+  status: 'processing' | 'completed' | 'ready' | 'failed';
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +87,7 @@ export interface Quiz {
   category_id: string;
   user_id: string;
   questions: Question[] | string;
-  status: 'processing' | 'completed' | 'failed';
+  status: 'processing' | 'completed' | 'ready' | 'failed';
   created_at: string;
   updated_at: string;
 }
@@ -132,4 +132,34 @@ export interface ProtectedRouteProps {
 
 export interface PublicRouteProps {
   children: React.ReactNode;
+}
+
+// Question and Budget types
+export type QuestionType = "mcq" | "short" | "truefalse" | "fill_blank";
+
+export type QuestionMix = {
+  mcq: number;
+  short: number;
+  truefalse: number;
+  fill_blank: number;
+};
+
+export interface QuestionTypeConfig {
+  type: QuestionType;
+  label: string;
+  count: number;
+  maxCount?: number;
+}
+
+export interface BudgetEstimate {
+  maxQuestions: number;
+  perQuestionCost: number;
+  totalCost: number;
+  notes: string[];
+  breakdown: {
+    evidence: number;
+    cost: number;
+    policy: number;
+    lengthGuard: number;
+  };
 } 

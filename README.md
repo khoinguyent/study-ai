@@ -23,6 +23,58 @@ The clarifier service now supports multiple flows with a slot-filling engine:
 - **Clarifier Service** (port 8010) - **NEW: Extensible clarification flows**
 - **Question Budget Service** (port 8011) - Question count calculation
 
+## 🔍 **Indexing Service - Document Processing & Vector Search**
+
+The indexing service provides intelligent document chunking and vector-based search capabilities.
+
+### ✂️ **Chunking Modes**
+
+#### Dynamic Chunking (LaBSE-aware) ⭐ **ACTIVE**
+- **Mode**: `CHUNK_MODE=DYNAMIC`
+- **Base Tokens**: 320
+- **Min/Max Tokens**: 180-480
+- **Sentence Overlap Ratio**: 0.12
+- **LaBSE Max Tokens**: 512
+- **Density Weights**: Symbols (0.4), Average Words (0.3), Numbers (0.3)
+
+#### Fixed Chunking (Legacy)
+- **Mode**: `CHUNK_MODE=FIXED`
+- **Chunk Size**: 1000 characters
+- **Overlap**: 200 characters
+
+### 🤖 **Vector Model**
+- **Embedding Model**: `sentence-transformers/LaBSE`
+- **Dimensions**: 384
+- **Language Support**: Multi-language (LaBSE)
+
+### 🔧 **API Endpoints**
+- **Health**: `/health` - Service status
+- **Configuration**: `/debug-config` - Current config values
+- **Indexing**: `/index` - Document processing
+- **Search**: `/search` - Vector similarity search
+- **Category Search**: `/search/category` - Category-based search
+- **Subject Search**: `/search/subject` - Subject-based search
+- **Chunks**: `/chunks/{document_id}` - Retrieve chunks
+- **Statistics**: `/stats/category/{id}`, `/stats/subject/{id}` - Usage stats
+
+### ⚙️ **Environment Configuration**
+All configuration is loaded from Docker Compose environment variables:
+```yaml
+environment:
+  CHUNK_MODE: DYNAMIC
+  CHUNK_BASE_TOKENS: 320
+  CHUNK_MIN_TOKENS: 180
+  CHUNK_MAX_TOKENS: 480
+  EMBEDDING_MODEL: sentence-transformers/LaBSE
+```
+
+### 📊 **Current Status**
+- ✅ **Service**: Fully operational
+- ✅ **Configuration**: All environment variables loaded correctly
+- ✅ **Chunking**: DYNAMIC mode active
+- ✅ **API**: Clean, production-ready endpoints
+- ✅ **Test Functions**: Removed for production use
+
 ### Background Workers
 - **Document Worker** - Document processing
 - **Indexing Worker** - Document indexing
@@ -138,213 +190,3 @@ The service includes intelligent parsers that understand:
 **Question Types:**
 - "mcq", "multiple choice", "choice" → `mcq`
 - "true/false", "true false", "t/f", "tf" → `true_false`
-- "fill in the blank", "blank" → `fill_blank`
-- "short answer", "essay" → `short_answer`
-
-**Difficulty:**
-- "easy", "simple", "basic" → `easy`
-- "medium", "moderate" → `medium`
-- "hard", "difficult", "advanced" → `hard`
-- "mixed", "varied", "all" → `mixed`
-
-**Counts:**
-- "one", "two", "three" → 1, 2, 3
-- "max", "maximum", "all" → maximum allowed
-- Numeric patterns: "12 questions" → 12
-
-### LLM Extractor (Feature Flagged)
-
-When `USE_LLM_EXTRACTOR=true`, the service can handle complex inputs:
-
-```bash
-# Single input fills multiple slots
-curl -X POST http://localhost:8010/clarifier/ingest \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sessionId": "session-123",
-    "text": "12 hard MCQs and some true/false"
-  }'
-
-# LLM extracts: question_types=["mcq", "true_false"], difficulty="hard", requested_count=12
-```
-
-### Environment Variables
-
-```bash
-# Clarifier Service
-PORT=8010
-BUDGET_URL=http://question-budget-svc:8011
-QUIZ_URL=http://quiz-service:8004
-USE_LLM_EXTRACTOR=false  # Feature flag for LLM extraction
-EXTRACTOR_URL=           # Optional LLM service URL
-NODE_ENV=development
-LOG_LEVEL=info
-```
-
-## 🚀 **Quick Start**
-
-### 1. Start All Services
-```bash
-docker-compose up --build
-```
-
-### 2. Test the Clarifier Service
-```bash
-# Health check
-curl http://localhost:8010/health
-
-# Start quiz setup flow
-curl -X POST http://localhost:8010/clarifier/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sessionId": "test-1",
-    "userId": "user-1",
-    "subjectId": "subject-1",
-    "docIds": ["doc-1"],
-    "flow": "quiz_setup"
-  }'
-```
-
-### 3. Run Tests
-```bash
-cd services/clarifier-svc
-npm install
-npm test
-npm run test:coverage
-```
-
-## 🔍 **API Endpoints**
-
-### Clarifier Service
-
-| Endpoint | Method | Description |
-|-----------|--------|-------------|
-| `/health` | GET | Service health check |
-| `/clarifier/start` | POST | Start a new clarification flow |
-| `/clarifier/ingest` | POST | Process user input for current slot |
-| `/clarifier/confirm` | POST | **Legacy**: Confirm study session (backwards compatible) |
-
-### Request/Response Examples
-
-#### Start Flow
-```typescript
-// Request
-{
-  sessionId: string;
-  userId: string;
-  subjectId: string;
-  docIds: string[];
-  flow?: 'quiz_setup' | 'doc_summary' | 'doc_highlights' | 'doc_conclusion';
-}
-
-// Response
-{
-  sessionId: string;
-  flow: string;
-  nextPrompt: string;
-  ui: { quick?: string[] };
-}
-```
-
-#### Ingest Input
-```typescript
-// Request
-{
-  sessionId: string;
-  text: string;
-}
-
-// Response
-{
-  stage: 'next_slot' | 'complete' | 'redirect' | 'clarification' | 'error';
-  filled: Record<string, any>;
-  nextPrompt?: string;
-  ui?: { quick?: string[] };
-  done?: boolean;
-}
-```
-
-## 🧪 **Testing**
-
-### Parser Tests
-```bash
-npm run test parsers.test.ts
-```
-
-### Flow Runner Tests
-```bash
-npm run test runner.test.ts
-```
-
-### Coverage Report
-```bash
-npm run test:coverage
-```
-
-## 🔧 **Development**
-
-### Adding New Flows
-
-1. **Create Flow File** (`src/flows/new_flow.ts`)
-2. **Define Slots** with types, prompts, and validation
-3. **Register Flow** in `src/routes/clarifier.ts`
-4. **Add Tests** in `__tests__/`
-
-### Flow Structure
-```typescript
-export const newFlow: FlowSpec = {
-  id: 'new_flow',
-  
-  async init(ctx: any) {
-    // Initialize dynamic context
-    return { /* context data */ };
-  },
-
-  slots: [
-    {
-      key: 'slot_name',
-      type: 'enum' | 'multi_enum' | 'int' | 'bool' | 'string',
-      prompt: (ctx: any) => `User prompt text`,
-      ui: (ctx: any) => ({ quick: ['option1', 'option2'] }),
-      allowed: ['option1', 'option2'],
-      min?: number,
-      max?: number,
-      required?: boolean,
-      parserHint?: 'difficulty' | 'qtype' | 'count' | 'length' | 'audience' | 'style'
-    }
-  ],
-
-  async validate(filled: Record<string, any>, ctx: any) {
-    // Validate filled slots
-    return { ok: boolean, errors?: string[], filled: any };
-  },
-
-  async finalize(filled: Record<string, any>, ctx: any) {
-    // Execute flow logic
-    return { status: number, body: any };
-  }
-};
-```
-
-## 🎯 **Key Features**
-
-✅ **Extensible Flow Engine** - Easy to add new clarification flows  
-✅ **Deterministic Parsing** - No LLM calls for basic parsing  
-✅ **LLM Extraction** - Feature-flagged for complex inputs  
-✅ **Slot Validation** - Ensures data integrity  
-✅ **Backwards Compatibility** - Existing `/confirm` endpoint still works  
-✅ **Comprehensive Testing** - Jest tests with coverage  
-✅ **Type Safety** - Full TypeScript implementation  
-✅ **Production Ready** - Error handling, logging, health checks  
-
-## 🚀 **Next Steps**
-
-1. **Implement Future Flows** - Complete doc_summary, doc_highlights, doc_conclusion
-2. **Add More Parsers** - Support for additional input formats
-3. **Persistent Storage** - Move session state to Redis/database
-4. **Advanced UI** - Rich interface for flow management
-5. **Flow Templates** - Pre-configured flow configurations
-
----
-
-The Study AI Platform now has a **production-ready, extensible clarification backend** that can handle complex user interactions while maintaining clean, maintainable code! 🎉 

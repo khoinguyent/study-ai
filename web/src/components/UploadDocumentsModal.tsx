@@ -35,7 +35,7 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { add, addOrUpdate } = useNotifications();
+  const { add, addOrUpdate, remove } = useNotifications();
   const { track } = useUploadTracker();
 
   const formatFileSize = (bytes: number): string => {
@@ -104,6 +104,9 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
   };
 
   const removeFile = (fileId: string) => {
+    // Clean up any notifications for this file
+    remove(`upload-${fileId}`);
+    
     setSelectedFiles(prev => prev.filter(f => f.id !== fileId));
     setErrors([]);
   };
@@ -155,6 +158,9 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
           
           console.log('Starting upload tracker:', { uploadId, documentId: doc.id, filename: selectedFile.file.name });
           
+          // Remove the initial upload notification since tracker will handle progress
+          remove(`upload-${selectedFile.id}`);
+          
           // Start the upload tracker for this document
           track(uploadId, doc.id, selectedFile.file.name);
         }
@@ -173,14 +179,34 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
       setErrors([errorMessage]);
       
-      // Error handling - notifications handled by new system
+      // Close all upload notifications and show error notifications
+      selectedFiles.forEach(selectedFile => {
+        const notificationId = `upload-${selectedFile.id}`;
+        addOrUpdate({
+          id: notificationId,
+          title: 'Upload failed',
+          message: `Failed to upload ${selectedFile.file.name}`,
+          status: 'error',
+          autoClose: true,
+        });
+      });
     } finally {
+      // Clean up any remaining initial upload notifications
+      selectedFiles.forEach(selectedFile => {
+        remove(`upload-${selectedFile.id}`);
+      });
+      
       setIsUploading(false);
     }
   };
 
   const handleClose = () => {
     if (!isUploading) {
+      // Clean up any upload notifications when closing
+      selectedFiles.forEach(selectedFile => {
+        remove(`upload-${selectedFile.id}`);
+      });
+      
       setSelectedFiles([]);
       setUploadProgress(0);
       setErrors([]);

@@ -37,12 +37,20 @@ export default function StartStudyLauncher({
   async function handleConfirm(r: ClarifierResult, launch: LaunchContext) {
     try {
       setOpen(false);
-      // Use minimal payload - all fields are now optional
-      const resp = await startStudySession(apiBase, {
+      // Use enhanced payload with question mix and budget estimate
+      const payload: any = {
         questionTypes: r.questionTypes,
+        questionMix: r.questionMix,
         difficulty: r.difficulty,
         questionCount: r.questionCount,
-      });
+      };
+      
+      // Add budget estimate if available
+      if (r.budgetEstimate) {
+        payload.budgetEstimate = r.budgetEstimate;
+      }
+      
+      const resp = await startStudySession(apiBase, payload);
       setJobId(resp.jobId);
     } catch (e: any) {
       alert(`Failed to start: ${e.message ?? String(e)}`);
@@ -71,6 +79,7 @@ export default function StartStudyLauncher({
         maxQuestions={50}
         suggested={15}
         onConfirm={handleConfirm}
+        apiBase={apiBase}
       />
 
       {/* Progress indicator removed - notifications handled by Dashboard */}

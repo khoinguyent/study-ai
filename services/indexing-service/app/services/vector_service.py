@@ -10,6 +10,10 @@ from sqlalchemy import text
 import numpy as np
 # from sentence_transformers import SentenceTransformer  # Temporarily disabled
 from ..models import DocumentChunk
+# from ..config import settings  # Removed static import
+from .chunking.dynamic_chunker import chunk_section_dynamic, Chunk
+from .chunking.fixed_chunker import fixed_chunk_text
+from .chunking.sectionizer import sectionize_document, Section
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,26 +29,53 @@ class VectorService:
     async def process_document(self, document_id: str, document: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Process a document and create chunks with embeddings"""
         try:
-            # Simulate document text extraction (in real implementation, this would extract text from the file)
-            # For now, we'll create sample chunks
-            sample_text = f"Sample content for document {document_id}. This is a placeholder for the actual document content."
+            # Import config dynamically to ensure latest environment variables
+            from ..config import settings
             
-            # Create chunks (in real implementation, this would split the actual document text)
-            chunks = []
-            chunk_size = 500  # characters per chunk
-            overlap = 100     # overlap between chunks
-            
-            for i in range(0, len(sample_text), chunk_size - overlap):
-                chunk_text = sample_text[i:i + chunk_size]
-                if chunk_text.strip():
-                    # Generate mock embedding for the chunk
-                    embedding = await self.generate_embedding(chunk_text)
-                    
-                    chunks.append({
-                        "content": chunk_text,
-                        "embedding": embedding,
-                        "index": len(chunks)
-                    })
+            # Extract text (placeholder if missing)
+            full_text: str = document.get("text") or (
+                f"Sample content for document {document_id}. This is a placeholder for the actual document content."
+            )
+
+            logger.info(f"Processing document {document_id} with CHUNK_MODE: {settings.CHUNK_MODE}")
+            logger.info(f"Text length: {len(full_text)} characters")
+
+            produced_chunks: List[Chunk] = []
+
+            if settings.CHUNK_MODE.upper() == "DYNAMIC":
+                logger.info("Using DYNAMIC chunking mode")
+                # Sectionize the document then dynamically chunk each section
+                sections: List[Section] = sectionize_document(full_text, document.get("structure") or {})
+                logger.info(f"Created {len(sections)} sections")
+                for i, sec in enumerate(sections):
+                    logger.info(f"Processing section {i+1}: {sec.headingPath} (type: {sec.type})")
+                    sec_chunks = await chunk_section_dynamic(sec, settings)
+                    logger.info(f"Section {i+1} produced {len(sec_chunks)} chunks")
+                    produced_chunks.extend(sec_chunks)
+            else:
+                logger.info("Using FIXED chunking mode")
+                # Legacy fixed chunking by characters
+                legacy_chunks = fixed_chunk_text(full_text, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
+                logger.info(f"Fixed chunking produced {len(legacy_chunks)} chunks")
+                for lc in legacy_chunks:
+                    produced_chunks.append(Chunk(
+                        id=f"{document_id}-{len(produced_chunks)}",
+                        text=lc,
+                        tokens=0,
+                        meta={"mode": "FIXED"}
+                    ))
+
+            logger.info(f"Total chunks produced: {len(produced_chunks)}")
+
+            # Generate embeddings and return storage-ready chunks
+            chunks: List[Dict[str, Any]] = []
+            for idx, ch in enumerate(produced_chunks):
+                embedding = await self.generate_embedding(ch.text)
+                chunks.append({
+                    "content": ch.text,
+                    "embedding": embedding,
+                    "index": idx,
+                })
             
             logger.info(f"Processed document {document_id} into {len(chunks)} chunks")
             return chunks

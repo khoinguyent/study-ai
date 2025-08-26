@@ -53,6 +53,7 @@ class DocumentStatus(str, Enum):
     UPLOADED = "uploaded"
     PROCESSING = "processing"
     COMPLETED = "completed"
+    READY = "ready"
     FAILED = "failed"
 
 class DocumentBase(BaseModel):

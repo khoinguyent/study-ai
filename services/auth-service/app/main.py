@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -148,6 +148,31 @@ async def get_current_user(user_id: str = Depends(verify_token), db: Session = D
 @app.post("/verify")
 async def verify_token_endpoint(user_id: str = Depends(verify_token)):
     return {"valid": True, "user_id": user_id}
+
+@app.post("/verify-header")
+async def verify_token_header(authorization: str = Header(alias="Authorization")):
+    """Verify token from Authorization header for inter-service communication"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header"
+        )
+    
+    token = authorization.replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials"
+            )
+        return {"valid": True, "user_id": user_id}
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
 
 if __name__ == "__main__":
     import uvicorn

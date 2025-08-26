@@ -30,7 +30,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
   }, [autoClose, autoCloseDelay, onClose, status]);
 
   const isError = status === 'error' || status === 'failed';
-  const isSuccess = status === 'success' || status === 'completed';
+  const isSuccess = status === 'success' || status === 'completed' || status === 'ready';
   const isWarning = status === 'warning';
   const isInfo = status === 'info' || status === 'uploading';
   const isProcessing = status === 'processing';

@@ -1,12 +1,15 @@
 import { fetchJSON } from "./http";
+import { QuestionMix, BudgetEstimate } from "../types";
 
 export type StartStudyPayload = {
   userId?: string; // Make userId optional since we get it from token
   subjectId?: string; // Make subjectId optional
   docIds?: string[]; // Make docIds optional
   questionTypes?: string[]; // Make questionTypes optional
+  questionMix?: QuestionMix; // New: detailed question mix
   difficulty?: "easy" | "medium" | "hard" | "mixed"; // Make difficulty optional
   questionCount?: number; // Make questionCount optional
+  budgetEstimate?: BudgetEstimate; // New: budget estimate from service
 };
 
 export type StartStudyResp = { sessionId: string; jobId: string; message?: string };

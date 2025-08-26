@@ -158,6 +158,7 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   const getStatusColor = (status: string): string => {
     switch (status) {
       case 'completed':
+      case 'ready':
         return '#10b981';
       case 'processing':
         return '#f59e0b';
@@ -171,6 +172,7 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
   const getStatusText = (status: string): string => {
     switch (status) {
       case 'completed':
+      case 'ready':
         return 'Ready';
       case 'processing':
         return 'Processing';
@@ -239,7 +241,7 @@ const CategoryDocumentsList: React.FC<CategoryDocumentsListProps> = ({
                     className="action-button download-button" 
                     title="Download"
                     onClick={() => handleDownload(document)}
-                    disabled={document.status !== 'completed'}
+                    disabled={document.status !== 'completed' && document.status !== 'ready'}
                   >
                     <Download size={16} />
                   </button>

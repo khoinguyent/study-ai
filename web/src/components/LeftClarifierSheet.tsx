@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+import { QuestionType, QuestionMix, BudgetEstimate } from "../types";
+import { getBudgetEstimate } from "../api/questionBudget";
 
 type Msg = { id: string; role: "bot" | "user"; text: string; ts: number };
 type Difficulty = "easy" | "medium" | "hard" | "mixed";
@@ -8,7 +10,9 @@ type Difficulty = "easy" | "medium" | "hard" | "mixed";
 export type ClarifierResult = {
   questionCount: number;
   questionTypes: string[];
+  questionMix: QuestionMix;
   difficulty: Difficulty;
+  budgetEstimate?: BudgetEstimate;
 };
 
 export type LaunchContext = { userId: string; subjectId: string; docIds: string[] };
@@ -21,10 +25,19 @@ type Props = {
   suggested?: number;
   onConfirm?: (r: ClarifierResult, launch: LaunchContext) => void;
   inline?: boolean; // New prop for inline mode (no overlay on desktop)
+  apiBase?: string;
 };
 
 const SHEET_W = 360;
 const id = () => Math.random().toString(36).slice(2);
+
+// Question type configurations
+const QUESTION_TYPES: { [key in QuestionType]: { label: string; defaultCount: number } } = {
+  mcq: { label: "Multiple Choice", defaultCount: 5 },
+  short: { label: "Short Answer", defaultCount: 3 },
+  truefalse: { label: "True/False", defaultCount: 2 },
+  fill_blank: { label: "Fill in Blank", defaultCount: 2 }
+};
 
 export default function LeftClarifierSheet({
   open,
@@ -34,19 +47,29 @@ export default function LeftClarifierSheet({
   suggested = 15,
   onConfirm,
   inline = false,
+  apiBase = "/api",
 }: Props) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
-  const [stage, setStage] = useState<"types" | "difficulty" | "count" | "done">("types");
-  const [types, setTypes] = useState<string[]>([]);
+  const [stage, setStage] = useState<"types" | "mix" | "difficulty" | "count" | "done">("types");
+  const [types, setTypes] = useState<QuestionType[]>([]);
+  const [questionMix, setQuestionMix] = useState<QuestionMix>({
+    mcq: 0,
+    short: 0,
+    truefalse: 0,
+    fill_blank: 0
+  });
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [awaitingConfirm, setAwaitingConfirm] = useState(false);
+  const [budgetEstimate, setBudgetEstimate] = useState<BudgetEstimate | null>(null);
+  const [isLoadingBudget, setIsLoadingBudget] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const quickForStage = useMemo(() => {
-    if (stage === "types") return ["MCQ", "True/False", "Fill-in-blank", "Short answer"];
+    if (stage === "types") return Object.values(QUESTION_TYPES).map(qt => qt.label);
+    if (stage === "mix") return ["Done", "Reset"];
     if (stage === "difficulty") return ["Easy", "Medium", "Hard", "Mixed"];
     if (stage === "count") return [String(suggested), String(maxQuestions), "Max"];
     return [];
@@ -56,9 +79,16 @@ export default function LeftClarifierSheet({
     if (!open) return;
     setMessages([
       { id: "m1", role: "bot", ts: Date.now(), text: "Hi! I'm your AI Study Assistant. I'll set up your quiz—just need question types, difficulty, and how many questions." },
-      { id: "m2", role: "bot", ts: Date.now() + 1, text: "Which question types do you want? You can choose multiple: MCQ, True/False, Fill-in-blank, Short answer." },
+      { id: "m2", role: "bot", ts: Date.now() + 1, text: "Which question types do you want? You can choose multiple: Multiple Choice, Short Answer, True/False, Fill in Blank." },
     ]);
-    setStage("types"); setTypes([]); setDifficulty(null); setCount(null); setAwaitingConfirm(false); setInput("");
+    setStage("types"); 
+    setTypes([]); 
+    setQuestionMix({ mcq: 0, short: 0, truefalse: 0, fill_blank: 0 }); 
+    setDifficulty(null); 
+    setCount(null); 
+    setAwaitingConfirm(false); 
+    setInput("");
+    setBudgetEstimate(null);
   }, [open]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
@@ -66,33 +96,138 @@ export default function LeftClarifierSheet({
   const push = (role: "bot" | "user", text: string) =>
     setMessages((m) => [...m, { id: id(), role, text, ts: Date.now() }]);
 
-  const nextFromTypes = () => { setStage("difficulty"); push("bot", "Pick difficulty: Easy, Medium, Hard, or Mixed."); };
-  const nextFromDifficulty = () => { setStage("count"); push("bot", `How many questions? Up to ${maxQuestions}. I suggest ${suggested}.`); };
+  const nextFromTypes = () => { 
+    setStage("mix"); 
+    push("bot", "Great! Now let's set the count for each question type. How many of each do you want?"); 
+  };
+  
+  const nextFromMix = () => { 
+    setStage("difficulty"); 
+    push("bot", "Pick difficulty: Easy, Medium, Hard, or Mixed."); 
+  };
+  
+  const nextFromDifficulty = async () => { 
+    setStage("count"); 
+    await getBudgetEstimateForCurrentConfig();
+    push("bot", `How many total questions? I'll check the budget service for the maximum allowed.`); 
+  };
+
+  const getBudgetEstimateForCurrentConfig = async () => {
+    if (!launch.subjectId || launch.docIds.length === 0) return;
+    
+    setIsLoadingBudget(true);
+    try {
+      const totalCount = Object.values(questionMix).reduce((sum, count) => sum + count, 0);
+      if (totalCount === 0) return;
+
+      const request = {
+        subjectId: launch.subjectId,
+        totalTokens: 10000, // Default estimate - could be improved with actual document stats
+        distinctSpanCount: Math.max(1, Math.floor(10000 / 300)), // Simple estimation
+        mix: questionMix,
+        difficulty: difficulty || "mixed",
+        costBudgetUSD: 1.0, // Default budget
+        modelPricing: {
+          inputPerMTokUSD: 0.0015,
+          outputPerMTokUSD: 0.002
+        },
+        batching: {
+          questionsPerCall: 5,
+          fileSearchToolCostPer1kCallsUSD: 0.01
+        }
+      };
+
+      const estimate = await getBudgetEstimate(apiBase, request);
+      const budgetData: BudgetEstimate = {
+        maxQuestions: estimate.qMax,
+        perQuestionCost: estimate.perQuestionCostUSD,
+        totalCost: estimate.perQuestionCostUSD * totalCount,
+        notes: estimate.notes,
+        breakdown: {
+          evidence: estimate.qEvidence,
+          cost: estimate.qCost,
+          policy: estimate.qPolicy,
+          lengthGuard: estimate.qLengthGuard
+        }
+      };
+      
+      setBudgetEstimate(budgetData);
+      // Update maxQuestions based on budget
+      if (budgetData.maxQuestions < maxQuestions) {
+        // Could update the UI to show the new limit
+      }
+    } catch (error) {
+      console.error("Failed to get budget estimate:", error);
+      push("bot", "Couldn't get budget estimate, using default limits.");
+    } finally {
+      setIsLoadingBudget(false);
+    }
+  };
 
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-  const parseCount = (s: string) => (/max/i.test(s) ? maxQuestions : (s.match(/\d+/) ? clamp(parseInt(s.match(/\d+/)![0], 10), 1, maxQuestions) : undefined));
+  const parseCount = (s: string) => {
+    const maxQ = budgetEstimate ? budgetEstimate.maxQuestions : maxQuestions;
+    return (/max/i.test(s) ? maxQ : (s.match(/\d+/) ? clamp(parseInt(s.match(/\d+/)![0], 10), 1, maxQ) : undefined));
+  };
 
   const finish = (n: number) => {
-    const final: ClarifierResult = { questionCount: n, questionTypes: types, difficulty: (difficulty ?? "mixed") as Difficulty };
-    setStage("done"); setCount(n);
-    push("bot", `Perfect! I'll generate ${n} questions (${types.join(", ")}) at ${final.difficulty} difficulty. Ready to start?`);
+    const final: ClarifierResult = { 
+      questionCount: n, 
+      questionTypes: types, 
+      questionMix,
+      difficulty: (difficulty ?? "mixed") as Difficulty,
+      budgetEstimate: budgetEstimate || undefined
+    };
+    setStage("done"); 
+    setCount(n);
+    push("bot", `Perfect! I'll generate ${n} questions with your mix at ${final.difficulty} difficulty. Ready to start?`);
     push("bot", "Tap Start to begin generation, or Edit to change your choices.");
     setAwaitingConfirm(true);
   };
 
   const handleQuick = (label: string) => {
     if (stage === "types") { 
-      if (!types.includes(label)) setTypes((t) => [...t, label]); 
-      push("user", label);
+      const typeKey = Object.keys(QUESTION_TYPES).find(key => 
+        QUESTION_TYPES[key as QuestionType].label === label
+      ) as QuestionType;
+      
+      if (typeKey && !types.includes(typeKey)) {
+        setTypes((t) => [...t, typeKey]);
+        setQuestionMix(prev => ({
+          ...prev,
+          [typeKey]: QUESTION_TYPES[typeKey].defaultCount
+        }));
+        push("user", label);
+      }
+      
       if (types.length === 0) nextFromTypes(); 
       return; 
     }
+    
+    if (stage === "mix") {
+      if (label === "Done") {
+        const totalCount = Object.values(questionMix).reduce((sum, count) => sum + count, 0);
+        if (totalCount > 0) {
+          nextFromMix();
+        } else {
+          push("bot", "Please set at least one question type count before proceeding.");
+        }
+        return;
+      }
+      if (label === "Reset") {
+        setQuestionMix({ mcq: 0, short: 0, truefalse: 0, fill_blank: 0 });
+        push("user", "Reset counts");
+        return;
+      }
+    }
+    
     if (stage === "difficulty") { 
       setDifficulty(label.toLowerCase() as Difficulty); 
       push("user", label);
       nextFromDifficulty(); 
       return; 
     }
+    
     if (stage === "count") { 
       push("user", label);
       finish(parseCount(label) ?? suggested); 
@@ -101,28 +236,72 @@ export default function LeftClarifierSheet({
 
   const handleSend = () => {
     if (!input.trim()) return;
-    const text = input.trim(); setInput(""); push("user", text);
+    const text = input.trim(); 
+    setInput(""); 
+    push("user", text);
 
     if (stage === "types") {
-      const picked: string[] = [];
-      for (const t of ["MCQ", "True/False", "Fill-in-blank", "Short answer"]) {
-        const rx = new RegExp(t.replace(/[/-]/g, ".?"), "i");
-        if (rx.test(text)) picked.push(t);
+      const picked: QuestionType[] = [];
+      for (const [key, config] of Object.entries(QUESTION_TYPES)) {
+        const rx = new RegExp(config.label.replace(/[/-]/g, ".?"), "i");
+        if (rx.test(text)) {
+          picked.push(key as QuestionType);
+          setQuestionMix(prev => ({
+            ...prev,
+            [key]: config.defaultCount
+          }));
+        }
       }
-      if (picked.length) { setTypes((prev) => Array.from(new Set([...prev, ...picked]))); nextFromTypes(); }
-      else push("bot", "Please mention at least one: MCQ, True/False, Fill-in-blank, Short answer.");
+      if (picked.length) { 
+        setTypes((prev) => Array.from(new Set([...prev, ...picked]))); 
+        nextFromTypes(); 
+      }
+      else push("bot", "Please mention at least one: Multiple Choice, Short Answer, True/False, Fill in Blank.");
       return;
     }
+    
+    if (stage === "mix") {
+      // Handle setting counts for question types
+      const countMatch = text.match(/(\d+)\s*(multiple choice|mcq|short answer|true\/false|fill in blank)/i);
+      if (countMatch) {
+        const count = parseInt(countMatch[1]);
+        const typeText = countMatch[2].toLowerCase();
+        
+        let typeKey: QuestionType | null = null;
+        if (typeText.includes("multiple choice") || typeText.includes("mcq")) typeKey = "mcq";
+        else if (typeText.includes("short answer")) typeKey = "short";
+        else if (typeText.includes("true/false")) typeKey = "truefalse";
+        else if (typeText.includes("fill in blank")) typeKey = "fill_blank";
+        
+        if (typeKey) {
+          setQuestionMix(prev => ({ ...prev, [typeKey as keyof QuestionMix]: count }));
+          push("bot", `Set ${typeKey} to ${count} questions.`);
+        }
+      } else {
+        push("bot", "Please specify counts like '5 multiple choice' or '3 short answer'.");
+      }
+      return;
+    }
+    
     if (stage === "difficulty") {
       const k = ["easy","medium","hard","mixed"].find((d)=>new RegExp(d,"i").test(text));
-      if (k) { setDifficulty(k as Difficulty); nextFromDifficulty(); } else push("bot","Please choose: Easy, Medium, Hard, or Mixed.");
+      if (k) { setDifficulty(k as Difficulty); nextFromDifficulty(); } 
+      else push("bot","Please choose: Easy, Medium, Hard, or Mixed.");
       return;
     }
+    
     if (stage === "count") {
       const n = parseCount(text);
-      if (n && n > 0) finish(n); else push("bot", `Give me a number up to ${maxQuestions}, or say "Max".`);
+      if (n && n > 0) finish(n); 
+      else push("bot", `Give me a number up to ${budgetEstimate ? budgetEstimate.maxQuestions : maxQuestions}, or say "Max".`);
     }
   };
+
+  const updateQuestionMixCount = (type: QuestionType, count: number) => {
+    setQuestionMix(prev => ({ ...prev, [type]: Math.max(0, count) }));
+  };
+
+  const totalQuestionsInMix = Object.values(questionMix).reduce((sum, count) => sum + count, 0);
 
   return createPortal(
     <>
@@ -190,9 +369,55 @@ export default function LeftClarifierSheet({
               <div style={{ color: "#64748B" }}>Difficulty</div>
               <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{(difficulty ?? "mixed").toString()}</div>
               <div style={{ color: "#64748B" }}>Questions</div>
-              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{count ?? suggested}</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{(count ?? totalQuestionsInMix) || suggested}</div>
+              {budgetEstimate && (
+                <>
+                  <div style={{ color: "#64748B" }}>Max Allowed</div>
+                  <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{budgetEstimate.maxQuestions}</div>
+                  <div style={{ color: "#64748B" }}>Est. Cost</div>
+                  <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>${budgetEstimate.totalCost.toFixed(4)}</div>
+                </>
+              )}
             </div>
           </div>
+
+          {/* Question Mix Configuration (when in mix stage) */}
+          {stage === "mix" && types.length > 0 && (
+            <div style={{
+              background: "#FEF3C7",
+              border: "1px solid #F59E0B",
+              borderRadius: 8,
+              padding: 10,
+              marginBottom: 12
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", marginBottom: 8 }}>Question Mix</div>
+              {types.map(type => (
+                <div key={type} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: "#92400E" }}>{QUESTION_TYPES[type].label}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={() => updateQuestionMixCount(type, questionMix[type] - 1)}
+                      style={{ width: 24, height: 24, borderRadius: 12, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      -
+                    </button>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#92400E", minWidth: 20, textAlign: "center" }}>
+                      {questionMix[type]}
+                    </span>
+                    <button
+                      onClick={() => updateQuestionMixCount(type, questionMix[type] + 1)}
+                      style={{ width: 24, height: 24, borderRadius: 12, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: "#92400E", textAlign: "center" }}>
+                Total: {totalQuestionsInMix} questions
+              </div>
+            </div>
+          )}
 
           {messages.map((m)=>(
             <div key={m.id} style={{ 
@@ -228,6 +453,13 @@ export default function LeftClarifierSheet({
               </div>
             </div>
           ))}
+          
+          {isLoadingBudget && (
+            <div style={{ paddingLeft: 32, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "#6B7280" }}>🔄 Calculating budget estimate...</div>
+            </div>
+          )}
+          
           {!!quickForStage.length && (
             <div style={{ paddingLeft:32, display:"flex", flexWrap:"wrap", gap:8 }}>
               {quickForStage.map((q)=>(
@@ -250,9 +482,11 @@ export default function LeftClarifierSheet({
                 onClick={() => {
                   setAwaitingConfirm(false);
                   const result: ClarifierResult = {
-                    questionCount: count ?? suggested,
+                    questionCount: (count ?? totalQuestionsInMix) || suggested,
                     questionTypes: types,
+                    questionMix,
                     difficulty: (difficulty ?? "mixed"),
+                    budgetEstimate: budgetEstimate || undefined
                   };
                   onConfirm?.(result, launch);
                 }}
@@ -261,7 +495,13 @@ export default function LeftClarifierSheet({
               >Start</button>
               <button
                 onClick={() => {
-                  setStage("types"); setTypes([]); setDifficulty(null); setCount(null); setAwaitingConfirm(false);
+                  setStage("types"); 
+                  setTypes([]); 
+                  setQuestionMix({ mcq: 0, short: 0, truefalse: 0, fill_blank: 0 }); 
+                  setDifficulty(null); 
+                  setCount(null); 
+                  setAwaitingConfirm(false);
+                  setBudgetEstimate(null);
                   push("bot", "Okay — let's update your selections. Which question types do you want?");
                 }}
                 style={{ padding:"10px 14px", borderRadius:10, background:"#F3F4F6", border:"1px solid #E5E7EB", fontWeight:700 }}
@@ -271,12 +511,17 @@ export default function LeftClarifierSheet({
         )}
 
         <div style={{ borderTop:"1px solid #e5e7eb", padding:8, background:"#F9FAFB" }}>
-          <div style={{ display:"flex", gap:8 }}>
+          <div style={{ display: "flex", gap:8 }}>
             <input
               value={input}
               onChange={(e)=>setInput(e.target.value)}
               onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
-              placeholder={stage==="types" ? 'e.g., "MCQ and True/False"' : stage==="difficulty" ? 'e.g., "Mixed"' : 'e.g., "15" or "Max"'}
+              placeholder={
+                stage==="types" ? 'e.g., "Multiple Choice and Short Answer"' : 
+                stage==="mix" ? 'e.g., "5 multiple choice, 3 short answer"' :
+                stage==="difficulty" ? 'e.g., "Mixed"' : 
+                'e.g., "15" or "Max"'
+              }
               style={{ flex:1, background:"#fff", border:"1px solid #E5E7EB", borderRadius:10, padding:"10px 12px", fontSize:14, outline:"none" }}
             />
             <button onClick={handleSend} style={{ background:"#111827", color:"#fff", borderRadius:10, padding:"10px 16px", fontWeight:700 }}>Send</button>

@@ -54,10 +54,16 @@ docker-compose -f docker-compose.dev.yml up -d
 
 ### 🔍 Indexing Service
 - **Health Check** - Verify service is running
+- **Debug Config** - Check current configuration values
 - **Index Document** - Process document for search
-- **Search Documents** - Find relevant content
-- **Get Document Chunks** - Get processed chunks
-- **Delete Document Chunks** - Remove indexed data
+- **Search Documents** - Find relevant content using vector similarity
+- **Search by Category** - Category-based vector search
+- **Search by Subject** - Subject-based vector search
+- **Get Document Chunks** - Get processed chunks by document ID
+- **Get Chunks by Category** - Retrieve chunks by category ID
+- **Get Chunks by Subject** - Retrieve chunks by subject ID
+- **Get Category Statistics** - View category usage statistics
+- **Get Subject Statistics** - View subject usage statistics
 
 ### 🧠 Quiz Service
 - **Health Check** - Verify service is running
@@ -97,6 +103,8 @@ docker-compose -f docker-compose.dev.yml up -d
 3. **Content Processing:**
    ```
    Index Document → Search Documents → Get Document Chunks
+   Search by Category → Get Chunks by Category
+   Search by Subject → Get Chunks by Subject
    ```
 
 4. **Quiz Generation:**
