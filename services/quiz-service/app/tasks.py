@@ -4,7 +4,6 @@ Handles quiz generation tasks using Celery and event-driven architecture
 """
 
 import time
-from celery import current_task
 from app.database import get_db
 from app.models import Quiz
 from app.celery_app import celery_app, quiz_task
@@ -29,14 +28,16 @@ logger = logging.getLogger(__name__)
 # Initialize services
 event_publisher = _LocalEventPublisher()
 
-@quiz_task
-def generate_quiz(document_id: str, user_id: str, subject_id: str = None, category_id: str = None):
+@quiz_task(bind=True)
+def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, category_id: str = None):
     """
     Generate quiz questions for a document
     """
-    task_id = current_task.request.id
+    task_id = self.request.id
     
     try:
+        logger.info(f"Starting quiz generation for document {document_id}, user {user_id}")
+        
         # Publish quiz generation started event
         event_publisher.publish_quiz_generation_started(
             user_id=user_id,
@@ -46,7 +47,7 @@ def generate_quiz(document_id: str, user_id: str, subject_id: str = None, catego
         )
         
         # Update task status
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'progress': 0, 'message': 'Starting quiz generation...'}
         )
@@ -64,7 +65,7 @@ def generate_quiz(document_id: str, user_id: str, subject_id: str = None, catego
             progress = min((generated_questions / total_questions) * 100, 100)
             
             # Update task status
-            current_task.update_state(
+            self.update_state(
                 state='PROGRESS',
                 meta={
                     'progress': int(progress),
@@ -140,22 +141,24 @@ def generate_quiz(document_id: str, user_id: str, subject_id: str = None, catego
         
         raise
 
-@quiz_task
-def regenerate_quiz(quiz_id: str, user_id: str):
+@quiz_task(bind=True)
+def regenerate_quiz(self, quiz_id: str, user_id: str):
     """
     Regenerate an existing quiz
     """
     return generate_quiz.delay(quiz_id, user_id)
 
-@quiz_task
-def generate_quiz_background_task(quiz_id: str, topic: str, difficulty: str, num_questions: int, 
+@quiz_task(bind=True)
+def generate_quiz_background_task(self, quiz_id: str, topic: str, difficulty: str, num_questions: int, 
                                  context_chunks: list, source_type: str, source_id: str, user_id: str):
     """
     Background task to generate quiz content using Celery
     """
-    task_id = current_task.request.id
+    task_id = self.request.id
     
     try:
+        logger.info(f"Starting background quiz generation for quiz {quiz_id}, user {user_id}")
+        
         # Publish quiz generation started event
         event_publisher.publish_quiz_generation_started(
             user_id=user_id,
@@ -165,7 +168,7 @@ def generate_quiz_background_task(quiz_id: str, topic: str, difficulty: str, num
         )
         
         # Update task status
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'progress': 0, 'message': 'Starting quiz generation...'}
         )
