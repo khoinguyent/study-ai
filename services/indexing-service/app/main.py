@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, status, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -117,6 +117,7 @@ async def health_check():
 
 @app.post("/index", response_model=dict)
 async def index_document(
+    request: Request,
     document_id: str = Query(..., description="Document ID to index"),
     user_id: str = Query(..., description="User ID for notifications"),
     db: Session = Depends(get_db)
@@ -143,14 +144,23 @@ async def index_document(
             message="Fetching document content..."
         )
         
-        # For now, create mock document data since we can't access document service
-        # In production, this would fetch from document service with proper authentication
-        mock_document = {
+        # Try to read real content from request body if provided
+        provided_document = {}
+        try:
+            if request.headers.get("content-type", "").lower().startswith("application/json"):
+                provided_document = await request.json()
+        except Exception:
+            provided_document = {}
+
+        # Build document payload: prefer provided text/metadata; fallback to mock
+        document_payload = {
             "id": document_id,
-            "filename": f"document_{document_id}.txt",
-            "content": f"Sample content for document {document_id}. This is a placeholder for the actual document content.",
-            "subject_id": "9e329560-b3db-48b9-9867-630bc7d8dc42",  # History
-            "category_id": "f967c95a-db9d-4442-9957-f553e5dd5aa3"  # Tay Son Rebellion
+            "filename": provided_document.get("filename") or f"document_{document_id}.txt",
+            # text field is used by vector service; keep "content" for backward compatibility
+            "text": provided_document.get("text") or provided_document.get("content"),
+            "structure": provided_document.get("structure") or {},
+            "subject_id": provided_document.get("subject_id") or "9e329560-b3db-48b9-9867-630bc7d8dc42",
+            "category_id": provided_document.get("category_id") or "f967c95a-db9d-4442-9957-f553e5dd5aa3",
         }
         
         # Update progress: Processing document
@@ -161,7 +171,7 @@ async def index_document(
         )
         
         # Process document and create chunks
-        chunks = await vector_service.process_document(document_id, mock_document)
+        chunks = await vector_service.process_document(document_id, document_payload)
         
         # Update progress: Generating embeddings
         await notification_service.update_task_status(
@@ -174,8 +184,8 @@ async def index_document(
         for i, chunk in enumerate(chunks):
             db_chunk = DocumentChunk(
                 document_id=document_id,
-                subject_id=mock_document["subject_id"],
-                category_id=mock_document["category_id"],
+                subject_id=document_payload["subject_id"],
+                category_id=document_payload["category_id"],
                 content=chunk["content"],
                 embedding=chunk["embedding"],
                 chunk_index=chunk["index"]
@@ -229,8 +239,8 @@ async def index_document(
             "message": "Document indexed successfully",
             "chunks_created": len(chunks),
             "document_id": document_id,
-            "subject_id": mock_document["subject_id"],
-            "category_id": mock_document["category_id"],
+            "subject_id": document_payload["subject_id"],
+            "category_id": document_payload["category_id"],
             "task_id": task_id
         }
         

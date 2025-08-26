@@ -52,7 +52,7 @@ export default function LeftClarifierSheet({
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
-  const [stage, setStage] = useState<"types" | "mix" | "difficulty" | "count" | "done">("types");
+  const [stage, setStage] = useState<"types" | "difficulty" | "count" | "done">("types");
   const [types, setTypes] = useState<QuestionType[]>([]);
   const [questionMix, setQuestionMix] = useState<QuestionMix>({
     mcq: 0,
@@ -69,7 +69,6 @@ export default function LeftClarifierSheet({
 
   const quickForStage = useMemo(() => {
     if (stage === "types") return Object.values(QUESTION_TYPES).map(qt => qt.label);
-    if (stage === "mix") return ["Done", "Reset"];
     if (stage === "difficulty") return ["Easy", "Medium", "Hard", "Mixed"];
     if (stage === "count") return [String(suggested), String(maxQuestions), "Max"];
     return [];
@@ -97,11 +96,6 @@ export default function LeftClarifierSheet({
     setMessages((m) => [...m, { id: id(), role, text, ts: Date.now() }]);
 
   const nextFromTypes = () => { 
-    setStage("mix"); 
-    push("bot", "Great! Now let's set the count for each question type. How many of each do you want?"); 
-  };
-  
-  const nextFromMix = () => { 
     setStage("difficulty"); 
     push("bot", "Pick difficulty: Easy, Medium, Hard, or Mixed."); 
   };
@@ -117,7 +111,7 @@ export default function LeftClarifierSheet({
     
     setIsLoadingBudget(true);
     try {
-      const totalCount = Object.values(questionMix).reduce((sum, count) => sum + count, 0);
+      const totalCount = count ?? 0;
       if (totalCount === 0) return;
 
       const request = {
@@ -204,22 +198,7 @@ export default function LeftClarifierSheet({
       return; 
     }
     
-    if (stage === "mix") {
-      if (label === "Done") {
-        const totalCount = Object.values(questionMix).reduce((sum, count) => sum + count, 0);
-        if (totalCount > 0) {
-          nextFromMix();
-        } else {
-          push("bot", "Please set at least one question type count before proceeding.");
-        }
-        return;
-      }
-      if (label === "Reset") {
-        setQuestionMix({ mcq: 0, short: 0, truefalse: 0, fill_blank: 0 });
-        push("user", "Reset counts");
-        return;
-      }
-    }
+    // mix stage removed
     
     if (stage === "difficulty") { 
       setDifficulty(label.toLowerCase() as Difficulty); 
@@ -260,28 +239,7 @@ export default function LeftClarifierSheet({
       return;
     }
     
-    if (stage === "mix") {
-      // Handle setting counts for question types
-      const countMatch = text.match(/(\d+)\s*(multiple choice|mcq|short answer|true\/false|fill in blank)/i);
-      if (countMatch) {
-        const count = parseInt(countMatch[1]);
-        const typeText = countMatch[2].toLowerCase();
-        
-        let typeKey: QuestionType | null = null;
-        if (typeText.includes("multiple choice") || typeText.includes("mcq")) typeKey = "mcq";
-        else if (typeText.includes("short answer")) typeKey = "short";
-        else if (typeText.includes("true/false")) typeKey = "truefalse";
-        else if (typeText.includes("fill in blank")) typeKey = "fill_blank";
-        
-        if (typeKey) {
-          setQuestionMix(prev => ({ ...prev, [typeKey as keyof QuestionMix]: count }));
-          push("bot", `Set ${typeKey} to ${count} questions.`);
-        }
-      } else {
-        push("bot", "Please specify counts like '5 multiple choice' or '3 short answer'.");
-      }
-      return;
-    }
+    // mix stage removed
     
     if (stage === "difficulty") {
       const k = ["easy","medium","hard","mixed"].find((d)=>new RegExp(d,"i").test(text));
@@ -297,11 +255,7 @@ export default function LeftClarifierSheet({
     }
   };
 
-  const updateQuestionMixCount = (type: QuestionType, count: number) => {
-    setQuestionMix(prev => ({ ...prev, [type]: Math.max(0, count) }));
-  };
-
-  const totalQuestionsInMix = Object.values(questionMix).reduce((sum, count) => sum + count, 0);
+  // Removed per-type question mix editing
 
   return createPortal(
     <>
@@ -369,7 +323,7 @@ export default function LeftClarifierSheet({
               <div style={{ color: "#64748B" }}>Difficulty</div>
               <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{(difficulty ?? "mixed").toString()}</div>
               <div style={{ color: "#64748B" }}>Questions</div>
-              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{(count ?? totalQuestionsInMix) || suggested}</div>
+              <div style={{ textAlign: "right", fontWeight: 600, color: "#1E293B" }}>{count ?? suggested}</div>
               {budgetEstimate && (
                 <>
                   <div style={{ color: "#64748B" }}>Max Allowed</div>
@@ -381,43 +335,7 @@ export default function LeftClarifierSheet({
             </div>
           </div>
 
-          {/* Question Mix Configuration (when in mix stage) */}
-          {stage === "mix" && types.length > 0 && (
-            <div style={{
-              background: "#FEF3C7",
-              border: "1px solid #F59E0B",
-              borderRadius: 8,
-              padding: 10,
-              marginBottom: 12
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", marginBottom: 8 }}>Question Mix</div>
-              {types.map(type => (
-                <div key={type} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, color: "#92400E" }}>{QUESTION_TYPES[type].label}</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button
-                      onClick={() => updateQuestionMixCount(type, questionMix[type] - 1)}
-                      style={{ width: 24, height: 24, borderRadius: 12, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}
-                    >
-                      -
-                    </button>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#92400E", minWidth: 20, textAlign: "center" }}>
-                      {questionMix[type]}
-                    </span>
-                    <button
-                      onClick={() => updateQuestionMixCount(type, questionMix[type] + 1)}
-                      style={{ width: 24, height: 24, borderRadius: 12, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              ))}
-              <div style={{ fontSize: 11, color: "#92400E", textAlign: "center" }}>
-                Total: {totalQuestionsInMix} questions
-              </div>
-            </div>
-          )}
+          {/* Question Mix UI removed */}
 
           {messages.map((m)=>(
             <div key={m.id} style={{ 
@@ -482,7 +400,7 @@ export default function LeftClarifierSheet({
                 onClick={() => {
                   setAwaitingConfirm(false);
                   const result: ClarifierResult = {
-                    questionCount: (count ?? totalQuestionsInMix) || suggested,
+                    questionCount: (count ?? suggested),
                     questionTypes: types,
                     questionMix,
                     difficulty: (difficulty ?? "mixed"),
@@ -518,7 +436,6 @@ export default function LeftClarifierSheet({
               onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
               placeholder={
                 stage==="types" ? 'e.g., "Multiple Choice and Short Answer"' : 
-                stage==="mix" ? 'e.g., "5 multiple choice, 3 short answer"' :
                 stage==="difficulty" ? 'e.g., "Mixed"' : 
                 'e.g., "15" or "Max"'
               }

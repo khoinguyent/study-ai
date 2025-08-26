@@ -93,10 +93,13 @@ class DocumentProcessor:
             
             # Extract text using the text extractor
             if document.content_type == "application/pdf":
-                # Use enhanced PDF extraction with fallback strategies
-                extraction_result = await self.text_extractor.extract_pdf_with_fallback(
-                    file_content=file_content,
-                    filename=document.filename
+                # Use enhanced PDF extraction with fallback strategies in a worker thread
+                loop = asyncio.get_event_loop()
+                extraction_result = await loop.run_in_executor(
+                    None,
+                    self.text_extractor.extract_pdf_with_fallback,
+                    file_content,
+                    document.filename,
                 )
             else:
                 # Use standard text extraction for other formats
