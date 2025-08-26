@@ -1,6 +1,7 @@
 // src/hooks/useUploadTracker.ts
 import { useEffect, useRef } from "react";
 import { useNotifications } from "../components/notifications/NotificationContext";
+import { authService } from "../services/auth";
 
 /**
  * Poll a single document by id until ready/failed.
@@ -34,7 +35,15 @@ export function useUploadTracker() {
     // Poll the document status endpoint. Adjust to your API shape.
     timers.current[uploadId] = window.setInterval(async () => {
       try {
-        const res = await fetch(`/api/documents/${documentId}/status`);
+        const token = authService.getToken();
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const res = await fetch(`/api/documents/${documentId}/status`, {
+          headers
+        });
         if (!res.ok) return;
         const { state, progress } = await res.json(); // expect: {state: "processing"|"ready"|"failed", progress?:number}
         if (state === "processing") {
