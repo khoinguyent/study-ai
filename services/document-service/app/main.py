@@ -180,7 +180,10 @@ async def process_document_with_notifications(document_id: str, user_id: str, ta
 
 async def verify_auth_token(authorization: str = Header(alias="Authorization")):
     """Verify JWT token with auth service"""
+    logger.info(f"Verifying auth token: {authorization[:20]}..." if authorization else "No authorization header")
+    
     if not authorization:
+        logger.warning("No authorization header provided")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header required"
@@ -188,17 +191,27 @@ async def verify_auth_token(authorization: str = Header(alias="Authorization")):
     
     async with httpx.AsyncClient() as client:
         try:
+            logger.info(f"Calling auth service at {settings.AUTH_SERVICE_URL}/verify-header")
             response = await client.post(
-                f"{settings.AUTH_SERVICE_URL}/verify",
+                f"{settings.AUTH_SERVICE_URL}/verify-header",
                 headers={"Authorization": authorization}
             )
+            logger.info(f"Auth service response: {response.status_code}")
+            
             if response.status_code != 200:
+                logger.warning(f"Auth service returned {response.status_code}: {response.text}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token"
                 )
-            return response.json()["user_id"]
+            
+            user_data = response.json()
+            user_id = user_data.get("user_id")
+            logger.info(f"Token verified for user: {user_id}")
+            return user_id
+            
         except Exception as e:
+            logger.error(f"Token verification error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token verification failed"
@@ -206,7 +219,18 @@ async def verify_auth_token(authorization: str = Header(alias="Authorization")):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "document-service"}
+    """Health check with database connectivity test"""
+    from .database import check_database_health, get_pool_status
+    
+    db_healthy = check_database_health()
+    pool_status = get_pool_status()
+    
+    return {
+        "status": "healthy" if db_healthy else "unhealthy",
+        "service": "document-service",
+        "database": "healthy" if db_healthy else "unhealthy",
+        "pool_status": pool_status
+    }
 
 @app.get("/supported-formats")
 async def get_supported_formats():
@@ -321,16 +345,16 @@ async def create_simple_subject(subject: SubjectCreateModel, user_id: str = Depe
 # Subject Management Endpoints
 @app.post("/subjects")
 async def create_subject(
-    request: dict,
+    subject: SubjectCreate,
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
     """Create a new subject"""
     # Extract data from request
-    name = request.get("name")
-    description = request.get("description")
-    icon = request.get("icon", "microscope")
-    color_theme = request.get("color_theme", "green")
+    name = subject.name
+    description = subject.description
+    icon = subject.icon
+    color_theme = subject.color_theme
     
     if not name:
         raise HTTPException(
@@ -992,6 +1016,65 @@ async def get_document(
         created_at=document.created_at,
         updated_at=document.updated_at
     )
+
+@app.get("/documents/{document_id}/status")
+async def get_document_status(
+    document_id: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Get document processing status"""
+    logger.info(f"Getting status for document {document_id} for user {user_id}")
+    
+    try:
+        document = db.query(Document).filter(
+            Document.id == document_id,
+            Document.user_id == user_id
+        ).first()
+        
+        if not document:
+            logger.warning(f"Document {document_id} not found for user {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        logger.info(f"Document {document_id} found with status: {document.status}")
+        
+    except Exception as e:
+        logger.error(f"Error querying document {document_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+    
+    # Map backend status to frontend expected states
+    status_mapping = {
+        "uploaded": "processing",
+        "processing": "processing", 
+        "completed": "ready",
+        "failed": "failed"
+    }
+    
+    frontend_state = status_mapping.get(document.status, "processing")
+    
+    # Calculate progress based on status
+    progress = 0
+    if document.status == "uploaded":
+        progress = 25  # File uploaded, starting processing
+    elif document.status == "processing":
+        progress = 50  # Processing in progress
+    elif document.status == "completed":
+        progress = 100  # Processing complete
+    elif document.status == "failed":
+        progress = 0  # Failed
+    
+    return {
+        "state": frontend_state,
+        "progress": progress,
+        "status": document.status,
+        "message": f"Document {document.filename} is {document.status}"
+    }
 
 @app.get("/documents/{document_id}/download")
 async def download_document(

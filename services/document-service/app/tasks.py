@@ -10,6 +10,7 @@ from app.models import Document
 from app.database import get_db
 from app.services.storage_service import StorageService
 from app.services.document_processor import DocumentProcessor
+from app.config import settings
 import sys
 import os
 
@@ -19,7 +20,7 @@ if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
 
 from .celery_app import celery_app
-from shared.celery_app import EventDrivenTask, document_task
+from shared.celery_app import EventDrivenTask
 from shared.event_publisher import EventPublisher
 from shared.events import EventType, create_event
 import logging
@@ -31,7 +32,7 @@ storage_service = StorageService()
 document_processor = DocumentProcessor()
 event_publisher = EventPublisher()
 
-@document_task
+@celery_app.task(bind=True, queue='document_queue')
 def upload_document_to_s3(self, document_id: str, user_id: str, file_content: bytes, filename: str, content_type: str):
     """
     Upload document to S3 storage
@@ -39,14 +40,17 @@ def upload_document_to_s3(self, document_id: str, user_id: str, file_content: by
     task_id = self.request.id
     
     try:
-        # Publish upload started event
-        event_publisher.publish_document_uploaded(
-            user_id=user_id,
-            document_id=document_id,
-            filename=filename,
-            file_size=len(file_content),
-            content_type=content_type
-        )
+        # Publish upload started event (with error handling)
+        try:
+            event_publisher.publish_document_uploaded(
+                user_id=user_id,
+                document_id=document_id,
+                filename=filename,
+                file_size=len(file_content),
+                content_type=content_type
+            )
+        except Exception as event_error:
+            logger.error(f"Failed to publish upload started event: {event_error}")
         
         # Update task status
         self.update_state(
@@ -70,15 +74,18 @@ def upload_document_to_s3(self, document_id: str, user_id: str, file_content: by
                 
                 logger.info(f"Document {document_id} uploaded to S3 successfully")
                 
-                # Publish upload completed event
-                event_publisher.publish_task_status_update(
-                    user_id=user_id,
-                    task_id=task_id,
-                    task_type="document_upload",
-                    status="completed",
-                    progress=100,
-                    message=f"Document {filename} uploaded successfully"
-                )
+                # Publish upload completed event (with error handling)
+                try:
+                    event_publisher.publish_task_status_update(
+                        user_id=user_id,
+                        task_id=task_id,
+                        task_type="document_upload",
+                        status="completed",
+                        progress=100,
+                        message=f"Document {filename} uploaded successfully"
+                    )
+                except Exception as event_error:
+                    logger.error(f"Failed to publish upload completed event: {event_error}")
                 
                 # Trigger document processing
                 process_document.delay(document_id, user_id)
@@ -105,26 +112,32 @@ def upload_document_to_s3(self, document_id: str, user_id: str, file_content: by
         finally:
             db.close()
         
-        # Publish failure event
-        event_publisher.publish_document_failed(
-            user_id=user_id,
-            document_id=document_id,
-            error_message=str(e)
-        )
+        # Publish failure event (with error handling)
+        try:
+            event_publisher.publish_document_failed(
+                user_id=user_id,
+                document_id=document_id,
+                error_message=str(e)
+            )
+        except Exception as event_error:
+            logger.error(f"Failed to publish document failed event: {event_error}")
         
-        # Publish task failure event
-        event_publisher.publish_task_status_update(
-            user_id=user_id,
-            task_id=task_id,
-            task_type="document_upload",
-            status="failed",
-            progress=0,
-            message=f"Upload failed: {str(e)}"
-        )
+        # Publish task failure event (with error handling)
+        try:
+            event_publisher.publish_task_status_update(
+                user_id=user_id,
+                task_id=task_id,
+                task_type="document_upload",
+                status="failed",
+                progress=0,
+                message=f"Upload failed: {str(e)}"
+            )
+        except Exception as event_error:
+            logger.error(f"Failed to publish task status update event: {event_error}")
         
         raise
 
-@document_task
+@celery_app.task(bind=True, queue='document_queue')
 def process_document(self, document_id: str, user_id: str):
     """
     Process document content (extract text, chunk, etc.)
@@ -132,12 +145,15 @@ def process_document(self, document_id: str, user_id: str):
     task_id = self.request.id
     
     try:
-        # Publish processing started event
-        event_publisher.publish_document_processing(
-            user_id=user_id,
-            document_id=document_id,
-            progress=0
-        )
+        # Publish processing started event (with error handling)
+        try:
+            event_publisher.publish_document_processing(
+                user_id=user_id,
+                document_id=document_id,
+                progress=0
+            )
+        except Exception as event_error:
+            logger.error(f"Failed to publish processing started event: {event_error}")
         
         # Update task status
         self.update_state(
@@ -145,9 +161,10 @@ def process_document(self, document_id: str, user_id: str):
             meta={'progress': 0, 'message': 'Starting document processing...'}
         )
         
-        # Get document from database
-        db = next(get_db())
+        # Get document from database with retry logic
+        db = None
         try:
+            db = next(get_db())
             document = db.query(Document).filter(Document.id == document_id).first()
             if not document:
                 raise Exception(f"Document {document_id} not found")
@@ -155,77 +172,79 @@ def process_document(self, document_id: str, user_id: str):
             # Update document status to processing
             document.status = "processing"
             db.commit()
+            logger.info(f"Document {document_id} status updated to processing")
             
             # Process document
             start_time = time.time()
             
-            # Simulate processing steps
-            self.update_state(
-                state='PROGRESS',
-                meta={'progress': 25, 'message': 'Extracting text...'}
-            )
-            asyncio.run(document_processor._extract_text(document_id, user_id))
-            
-            self.update_state(
-                state='PROGRESS',
-                meta={'progress': 50, 'message': 'Chunking document...'}
-            )
-            asyncio.run(document_processor._chunk_document(document_id, user_id))
-            
-            self.update_state(
-                state='PROGRESS',
-                meta={'progress': 75, 'message': 'Preparing for indexing...'}
-            )
-            asyncio.run(document_processor._trigger_indexing(document_id, user_id))
+            # Use the main process_document method instead of calling individual methods
+            result = asyncio.run(document_processor.process_document(document_id, user_id, db))
             
             processing_time = time.time() - start_time
             
             # Update document status to completed
-            document.status = "completed"
-            db.commit()
+            if db and document:
+                document.status = "completed"
+                db.commit()
+                logger.info(f"Document {document_id} status updated to completed")
             
             logger.info(f"Document {document_id} processed successfully in {processing_time:.2f}s")
             
-            # Publish processing completed event
-            event_publisher.publish_document_processed(
-                user_id=user_id,
-                document_id=document_id,
-                chunks_count=10,  # Simulated chunks count
-                processing_time=processing_time
-            )
+            # Publish processing completed event (with error handling)
+            try:
+                event_publisher.publish_document_processed(
+                    user_id=user_id,
+                    document_id=document_id,
+                    chunks_count=10,  # Simulated chunks count
+                    processing_time=processing_time
+                )
+            except Exception as event_error:
+                logger.error(f"Failed to publish document processed event: {event_error}")
             
-            # Publish task completed event
-            event_publisher.publish_task_status_update(
-                user_id=user_id,
-                task_id=task_id,
-                task_type="document_processing",
-                status="completed",
-                progress=100,
-                message=f"Document {document.filename} processed successfully"
-            )
+            # Publish task completed event (with error handling)
+            try:
+                event_publisher.publish_task_status_update(
+                    user_id=user_id,
+                    task_id=task_id,
+                    task_type="document_processing",
+                    status="completed",
+                    progress=100,
+                    message=f"Document {document.filename} processed successfully"
+                )
+            except Exception as event_error:
+                logger.error(f"Failed to publish task status update event: {event_error}")
             
             # Trigger indexing via HTTP call to indexing service
             try:
                 import httpx
                 async def trigger_indexing():
+                    indexing_url = f"{os.environ.get('INDEXING_SERVICE_URL', 'http://indexing-service:8003')}/index"
+                    params = {
+                        "document_id": document_id,
+                        "user_id": user_id
+                    }
+                    logger.info(f"Calling indexing service: {indexing_url} with params: {params}")
+                    
                     async with httpx.AsyncClient(timeout=30.0) as client:
                         response = await client.post(
-                            f"{os.environ.get('INDEXING_SERVICE_URL', 'http://indexing-service:8003')}/index",
-                            params={
-                                "document_id": document_id,
-                                "user_id": user_id
-                            }
+                            indexing_url,
+                            params=params
                         )
+                        logger.info(f"Indexing service response: {response.status_code} - {response.text}")
+                        
                         if response.status_code == 200:
                             logger.info(f"Indexing triggered successfully for document {document_id}")
                         else:
                             logger.error(f"Failed to trigger indexing for document {document_id}: {response.status_code}")
+                            logger.error(f"Response: {response.text}")
                 
                 # Run the async function
                 asyncio.run(trigger_indexing())
             except Exception as e:
                 logger.error(f"Failed to trigger indexing for document {document_id}: {str(e)}")
                 # Don't fail the entire task if indexing trigger fails
+                # Just log the error and continue
+                logger.warning(f"Document processing will continue without indexing for {document_id}")
             
             return {
                 'status': 'success',
@@ -235,40 +254,59 @@ def process_document(self, document_id: str, user_id: str):
             }
             
         finally:
-            db.close()
+            if db:
+                db.close()
+                logger.debug(f"Database session closed for document {document_id}")
             
     except Exception as e:
         logger.error(f"Failed to process document {document_id}: {str(e)}")
         
-        # Update document status to failed
-        db = next(get_db())
-        try:
-            document = db.query(Document).filter(Document.id == document_id).first()
-            if document:
+        # Update document status to failed using existing session if available
+        if db and document:
+            try:
                 document.status = "failed"
                 db.commit()
-        finally:
-            db.close()
+                logger.info(f"Document {document_id} status updated to failed")
+            except Exception as db_error:
+                logger.error(f"Failed to update document status to failed: {db_error}")
+        else:
+            # Create a new session only if needed
+            try:
+                temp_db = next(get_db())
+                temp_document = temp_db.query(Document).filter(Document.id == document_id).first()
+                if temp_document:
+                    temp_document.status = "failed"
+                    temp_db.commit()
+                    logger.info(f"Document {document_id} status updated to failed using new session")
+                temp_db.close()
+            except Exception as temp_db_error:
+                logger.error(f"Failed to update document status using new session: {temp_db_error}")
         
-        # Publish failure events
-        event_publisher.publish_document_failed(
-            user_id=user_id,
-            document_id=document_id,
-            error_message=str(e)
-        )
+        # Publish failure events (with error handling)
+        try:
+            event_publisher.publish_document_failed(
+                user_id=user_id,
+                document_id=document_id,
+                error_message=str(e)
+            )
+        except Exception as event_error:
+            logger.error(f"Failed to publish document failed event: {event_error}")
         
-        event_publisher.publish_task_status_update(
-            user_id=user_id,
-            task_id=task_id,
-            task_type="document_processing",
-            status="failed",
-            progress=0,
-            message=f"Processing failed: {str(e)}"
-        )
+        try:
+            event_publisher.publish_task_status_update(
+                user_id=user_id,
+                task_id=task_id,
+                task_type="document_processing",
+                status="failed",
+                progress=0,
+                message=f"Processing failed: {str(e)}"
+            )
+        except Exception as event_error:
+            logger.error(f"Failed to publish task status update event: {event_error}")
         
         raise
 
-@document_task
+@celery_app.task(bind=True, queue='document_queue')
 def cleanup_failed_document(self, document_id: str, user_id: str):
     """
     Clean up failed document (remove from S3, update database)
@@ -294,7 +332,7 @@ def cleanup_failed_document(self, document_id: str, user_id: str):
         logger.error(f"Failed to cleanup document {document_id}: {str(e)}")
         raise
 
-@document_task  
+@celery_app.task(bind=True, queue='document_queue')
 def delete_document_async(self, document_id: str, user_id: str):
     """
     Asynchronously delete document and all related data
@@ -434,7 +472,7 @@ def delete_document_async(self, document_id: str, user_id: str):
         
         raise
 
-@document_task  
+@celery_app.task(bind=True, queue='document_queue')
 def bulk_delete_documents_async(self, document_ids: list, user_id: str):
     """
     Asynchronously delete multiple documents and all related data
