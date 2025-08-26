@@ -42,7 +42,7 @@ class EventPublisher:
             broker = self._get_message_broker()
             if broker and broker.is_connected():
                 channel = f"{self.channel_prefix}:{event.event_type.value}"
-                message = json.dumps(event.dict())
+                message = json.dumps(event.model_dump())
                 success = broker.publish(channel, message)
                 if success:
                     logger.debug(f"Published event {event.event_type.value} to channel {channel}")
@@ -61,11 +61,10 @@ class EventPublisher:
             event_type=EventType.DOCUMENT_UPLOADED,
             user_id=user_id,
             document_id=document_id,
-            metadata={
-                "filename": filename,
-                "file_size": file_size,
-                "content_type": content_type
-            }
+            service_name="document-service",
+            filename=filename,
+            file_size=file_size,
+            content_type=content_type
         )
         return self._publish_event(event)
     
@@ -76,6 +75,7 @@ class EventPublisher:
             event_type=EventType.DOCUMENT_PROCESSING,
             user_id=user_id,
             document_id=document_id,
+            service_name="document-service",
             metadata={
                 "progress": progress,
                 "message": message
@@ -90,6 +90,7 @@ class EventPublisher:
             event_type=EventType.DOCUMENT_PROCESSED,
             user_id=user_id,
             document_id=document_id,
+            service_name="document-service",
             metadata={
                 "processing_time": processing_time,
                 "chunks_count": chunks_count
@@ -104,6 +105,7 @@ class EventPublisher:
             event_type=EventType.DOCUMENT_FAILED,
             user_id=user_id,
             document_id=document_id,
+            service_name="document-service",
             metadata={
                 "error": error_message
             }
@@ -117,6 +119,7 @@ class EventPublisher:
             event_type=EventType.INDEXING_STARTED,
             user_id=user_id,
             document_id=document_id,
+            service_name="indexing-service",
             metadata={
                 "chunks_count": chunks_count
             }
@@ -130,6 +133,7 @@ class EventPublisher:
             event_type=EventType.INDEXING_PROGRESS,
             user_id=user_id,
             document_id=document_id,
+            service_name="indexing-service",
             metadata={
                 "progress": progress,
                 "message": message
@@ -144,6 +148,7 @@ class EventPublisher:
             event_type=EventType.INDEXING_COMPLETED,
             user_id=user_id,
             document_id=document_id,
+            service_name="indexing-service",
             metadata={
                 "indexing_time": indexing_time,
                 "vectors_count": vectors_count
@@ -158,6 +163,7 @@ class EventPublisher:
             event_type=EventType.INDEXING_FAILED,
             user_id=user_id,
             document_id=document_id,
+            service_name="indexing-service",
             metadata={
                 "error": error_message
             }
@@ -171,6 +177,7 @@ class EventPublisher:
             event_type=EventType.QUIZ_GENERATION_STARTED,
             user_id=user_id,
             document_id=source_document_id,
+            service_name="quiz-service",
             metadata={
                 "quiz_id": quiz_id,
                 "num_questions": num_questions
@@ -185,6 +192,7 @@ class EventPublisher:
             event_type=EventType.QUIZ_GENERATION_PROGRESS,
             user_id=user_id,
             document_id=quiz_id,  # Use quiz_id as document_id for consistency
+            service_name="quiz-service",
             metadata={
                 "quiz_id": quiz_id,
                 "progress": progress,
@@ -223,19 +231,17 @@ class EventPublisher:
         return self._publish_event(event)
     
     def publish_task_status_update(self, user_id: str, task_id: str, task_type: str,
-                                 status: str, progress: int, message: str) -> bool:
+                                 status: str, progress: int, message: str, service_name: str = "document-service") -> bool:
         """Publish task status update event"""
         event = create_event(
             event_type=EventType.TASK_STATUS_UPDATE,
             user_id=user_id,
-            document_id=task_id,  # Use task_id as document_id for consistency
-            metadata={
-                "task_id": task_id,
-                "task_type": task_type,
-                "status": status,
-                "progress": progress,
-                "message": message
-            }
+            service_name=service_name,
+            task_id=task_id,
+            task_type=task_type,
+            status=status,
+            progress=progress,
+            message=message
         )
         return self._publish_event(event)
     
@@ -247,6 +253,7 @@ class EventPublisher:
             event_type=EventType.USER_NOTIFICATION,
             user_id=user_id,
             document_id="",  # Not applicable for notifications
+            service_name="notification-service",
             metadata={
                 "notification_type": notification_type,
                 "title": title,
@@ -261,9 +268,10 @@ class EventPublisher:
                           original_queue: str, retry_count: int = 0) -> bool:
         """Publish dead letter queue event"""
         event = create_event(
-            event_type=EventType.DLQ_ALERT,
+            event_type=EventType.DLQ_MESSAGE,  # Use DLQ_MESSAGE instead of DLQ_ALERT
             user_id="system",
             document_id=task_id,  # Use task_id as document_id for consistency
+            service_name="system",
             metadata={
                 "task_id": task_id,
                 "task_name": task_name,

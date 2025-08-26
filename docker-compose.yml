@@ -241,6 +241,18 @@ services:
       REDIS_URL: redis://redis:6379
       DOCUMENT_SERVICE_URL: http://document-service:8002
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
+      # Chunking configuration
+      CHUNK_MODE: DYNAMIC
+      CHUNK_BASE_TOKENS: 320
+      CHUNK_MIN_TOKENS: 180
+      CHUNK_MAX_TOKENS: 480
+      CHUNK_SENT_OVERLAP_RATIO: 0.12
+      LABSE_MAX_TOKENS: 512
+      DENSITY_WEIGHT_SYMBOLS: 0.4
+      DENSITY_WEIGHT_AVGWORD: 0.3
+      DENSITY_WEIGHT_NUMBERS: 0.3
+      DYNAMIC_HIERARCHY_ENABLE: "false"
+      EMBEDDING_MODEL: sentence-transformers/LaBSE
     depends_on:
       indexing-db:
         condition: service_healthy
@@ -402,6 +414,11 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@document-db:5432/document_db
       REDIS_URL: redis://redis:6379
+      # Environment and infrastructure configuration
+      ENVIRONMENT: local
+      INFRASTRUCTURE_PROVIDER: local
+      MESSAGE_BROKER_TYPE: redis
+      TASK_QUEUE_TYPE: celery
       # MinIO configuration
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -435,12 +452,28 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@indexing-db:5432/indexing_db
       REDIS_URL: redis://redis:6379
+      # Environment and infrastructure configuration
+      ENVIRONMENT: local
+      INFRASTRUCTURE_PROVIDER: local
+      MESSAGE_BROKER_TYPE: redis
+      TASK_QUEUE_TYPE: celery
       DOCUMENT_SERVICE_URL: http://document-service:8002
       NOTIFICATION_SERVICE_URL: http://notification-service:8005
       # Vector model settings
-      EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      EMBEDDING_MODEL: sentence-transformers/LaBSE
       CHUNK_SIZE: 1000
       CHUNK_OVERLAP: 200
+      # Dynamic chunking
+      CHUNK_MODE: DYNAMIC
+      CHUNK_BASE_TOKENS: 320
+      CHUNK_MIN_TOKENS: 180
+      CHUNK_MAX_TOKENS: 480
+      CHUNK_SENT_OVERLAP_RATIO: 0.12
+      LABSE_MAX_TOKENS: 512
+      DENSITY_WEIGHT_SYMBOLS: 0.4
+      DENSITY_WEIGHT_AVGWORD: 0.3
+      DENSITY_WEIGHT_NUMBERS: 0.3
+      DYNAMIC_HIERARCHY_ENABLE: "false"
       # HuggingFace Configuration (for embedding model)
       HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
     depends_on:
@@ -465,6 +498,11 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
       REDIS_URL: redis://redis:6379
+      # Environment and infrastructure configuration
+      ENVIRONMENT: local
+      INFRASTRUCTURE_PROVIDER: local
+      MESSAGE_BROKER_TYPE: redis
+      TASK_QUEUE_TYPE: celery
       # Quiz Generation Strategy
       QUIZ_GENERATION_STRATEGY: huggingface  # Options: "ollama", "huggingface", "auto"
       # Ollama configuration
