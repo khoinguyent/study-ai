@@ -152,6 +152,13 @@ class ApiService {
   }
 
   // Documents endpoints
+  async getDocument(id: string): Promise<Document> {
+    const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse<Document>(response);
+  }
+
   async getDocuments(categoryId?: string): Promise<Document[]> {
     const url = categoryId 
       ? `${API_BASE_URL}/documents?category_id=${categoryId}`

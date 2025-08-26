@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -53,7 +53,6 @@ def get_db():
         try:
             db = SessionLocal()
             # Test the connection
-            from sqlalchemy import text
             db.execute(text("SELECT 1"))
             try:
                 yield db

@@ -181,4 +181,9 @@ go.work
 
 # Docker
 .dockerignore
-docker-compose.override.yml 
+docker-compose.override.yml
+
+# Database clearing scripts (dangerous operations)
+scripts/clear_all_databases.sh
+scripts/clear_databases_docker.sh
+scripts/README_DATABASE_CLEARING.md 

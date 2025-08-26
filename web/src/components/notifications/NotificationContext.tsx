@@ -308,8 +308,8 @@ export const NotificationPortal: React.FC = () => {
 
   return ReactDOM.createPortal(
     <div className="notification-portal">
-      {/* Notification management controls */}
-      {(hasProcessingNotifications || hasOldNotifications || hasNotifications) && (
+      {/* Notification management controls - REMOVED */}
+      {/* {(hasProcessingNotifications || hasOldNotifications || hasNotifications) && (
         <div className="notification-controls">
           {hasProcessingNotifications && (
             <button 
@@ -344,7 +344,7 @@ export const NotificationPortal: React.FC = () => {
             </div>
           )}
         </div>
-      )}
+      )} */}
       
       {/* Individual notifications */}
       {items.map((item) => (

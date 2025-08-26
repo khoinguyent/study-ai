@@ -35,6 +35,7 @@ class EventType(str, Enum):
     # Dead Letter Queue Events
     DLQ_MESSAGE = "dlq.message"
     DLQ_PROCESSED = "dlq.processed"
+    DLQ_ALERT = "dlq.alert"
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -51,6 +52,12 @@ class BaseEvent(BaseModel):
     user_id: str
     service_name: str
     metadata: Dict[str, Any] = {}
+    
+    model_config = {
+        "json_encoders": {
+            datetime: lambda v: v.isoformat()
+        }
+    }
     
     def __init__(self, **data):
         super().__init__(**data)
@@ -198,6 +205,7 @@ def create_event(event_type: EventType, **kwargs) -> BaseEvent:
         EventType.USER_NOTIFICATION: UserNotificationEvent,
         EventType.DLQ_MESSAGE: DLQMessageEvent,
         EventType.DLQ_PROCESSED: DLQProcessedEvent,
+        EventType.DLQ_ALERT: DLQMessageEvent,  # Use DLQMessageEvent for DLQ_ALERT
     }
     
     event_class = event_classes.get(event_type)

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8000"]
     
+    # Gateway Configuration
+    ENABLE_GATEWAY_MOCKS: bool = False
+    
     class Config:
         env_file = ".env"
 

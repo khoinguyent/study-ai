@@ -4,6 +4,14 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import httpx
 import uuid
+import logging
+import os
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 from .database import get_db, create_tables
 from .models import Base, DocumentChunk
@@ -109,7 +117,7 @@ async def health_check():
 
 @app.post("/index", response_model=dict)
 async def index_document(
-    document_id: str, 
+    document_id: str = Query(..., description="Document ID to index"),
     user_id: str = Query(..., description="User ID for notifications"),
     db: Session = Depends(get_db)
 ):
@@ -491,47 +499,33 @@ async def get_category_stats(
         "unique_documents": unique_documents
     }
 
-@app.get("/test-index")
-async def test_indexing(db: Session = Depends(get_db)):
-    """Test indexing with mock data"""
-    try:
-        # Create mock document data
-        mock_document = {
-            "id": "test-document-123",
-            "filename": "test.txt",
-            "content": "This is a test document for indexing.",
-            "subject_id": "9e329560-b3db-48b9-9867-630bc7d8dc42",
-            "category_id": "f967c95a-db9d-4442-9957-f553e5dd5aa3"
+@app.get("/debug-config")
+async def debug_config():
+    """Debug endpoint to check current config values"""
+    # Import config dynamically to ensure latest environment variables
+    from .config import settings
+    import os
+    return {
+        "CHUNK_MODE": settings.CHUNK_MODE,
+        "CHUNK_BASE_TOKENS": settings.CHUNK_BASE_TOKENS,
+        "CHUNK_MIN_TOKENS": settings.CHUNK_MIN_TOKENS,
+        "CHUNK_MAX_TOKENS": settings.CHUNK_MAX_TOKENS,
+        "LABSE_MAX_TOKENS": settings.LABSE_MAX_TOKENS,
+        "DENSITY_WEIGHT_SYMBOLS": settings.DENSITY_WEIGHT_SYMBOLS,
+        "DENSITY_WEIGHT_AVGWORD": settings.DENSITY_WEIGHT_AVGWORD,
+        "DENSITY_WEIGHT_NUMBERS": settings.DENSITY_WEIGHT_NUMBERS,
+        "EMBEDDING_MODEL": settings.EMBEDDING_MODEL,
+        "DATABASE_URL": settings.DATABASE_URL,
+        "REDIS_URL": settings.REDIS_URL,
+        "SERVICE_NAME": settings.SERVICE_NAME,
+        "SERVICE_PORT": settings.SERVICE_PORT,
+        "environment_vars": {
+            "CHUNK_MODE": os.environ.get("CHUNK_MODE", "NOT_SET"),
+            "CHUNK_BASE_TOKENS": os.environ.get("CHUNK_BASE_TOKENS", "NOT_SET"),
+            "LABSE_MAX_TOKENS": os.environ.get("LABSE_MAX_TOKENS", "NOT_SET"),
+            "EMBEDDING_MODEL": os.environ.get("EMBEDDING_MODEL", "NOT_SET")
         }
-        
-        # Process document and create chunks
-        chunks = await vector_service.process_document("test-document-123", mock_document)
-        
-        # Store chunks in database
-        for chunk in chunks:
-            db_chunk = DocumentChunk(
-                document_id="test-document-123",
-                subject_id=mock_document["subject_id"],
-                category_id=mock_document["category_id"],
-                content=chunk["content"],
-                embedding=chunk["embedding"],
-                chunk_index=chunk["index"]
-            )
-            db.add(db_chunk)
-        
-        db.commit()
-        
-        return {
-            "message": "Test indexing successful",
-            "chunks_created": len(chunks),
-            "document_id": "test-document-123"
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Test indexing failed: {str(e)}"
-        )
+    }
 
 if __name__ == "__main__":
     import uvicorn

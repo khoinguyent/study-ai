@@ -1057,6 +1057,7 @@ async def get_document_status(
         "uploaded": "processing",
         "processing": "processing", 
         "completed": "ready",
+        "ready": "ready",
         "failed": "failed"
     }
     
@@ -1070,6 +1071,8 @@ async def get_document_status(
         progress = 50  # Processing in progress
     elif document.status == "completed":
         progress = 100  # Processing complete
+    elif document.status == "ready":
+        progress = 100  # Ready for quiz generation
     elif document.status == "failed":
         progress = 0  # Failed
     
