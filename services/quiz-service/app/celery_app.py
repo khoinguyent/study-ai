@@ -4,7 +4,12 @@ Standalone Celery app setup for the quiz service.
 """
 
 import os
+import logging
 from celery import Celery
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Use Redis URL from env (docker-compose provides REDIS_URL)
 BROKER_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -15,27 +20,8 @@ celery_app = Celery(
     backend=BROKER_URL,
 )
 
-# Add error handling for broker connection
-@celery_app.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    """Setup periodic tasks and error handling"""
-    logger.info("Celery app configured successfully")
-    logger.info(f"Broker URL: {BROKER_URL}")
-
-@celery_app.on_after_finalize.connect
-def finalize_app(sender, **kwargs):
-    """Finalize app configuration"""
-    logger.info("Celery app finalized successfully")
-
-@celery_app.on_worker_init.connect
-def worker_init(sender, **kwargs):
-    """Worker initialization"""
-    logger.info("Celery worker initialized successfully")
-
-@celery_app.on_worker_shutdown.connect
-def worker_shutdown(sender, **kwargs):
-    """Worker shutdown"""
-    logger.info("Celery worker shutting down")
+# Log configuration
+logger.info(f"Celery app configured with broker URL: {BROKER_URL}")
 
 celery_app.conf.update(
     task_serializer="json",
