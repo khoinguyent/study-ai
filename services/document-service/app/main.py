@@ -7,7 +7,11 @@ import httpx
 from typing import List, Optional
 import json
 import asyncio
+import logging
 from pydantic import BaseModel
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 from .database import get_db, create_tables
 from .models import Subject, Category, Document
