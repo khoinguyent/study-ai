@@ -4,29 +4,36 @@ Handles quiz generation tasks using Celery and event-driven architecture
 """
 
 import time
+import logging
 from app.database import get_db
 from app.models import Quiz
 from app.celery_app import celery_app, quiz_task
-# Lightweight local event publisher fallback
-class _LocalEventPublisher:
-    def publish_quiz_generation_started(self, **kwargs):
-        logger.info(f"[events] quiz_generation_started {kwargs}")
-    def publish_quiz_generation_progress(self, **kwargs):
-        logger.info(f"[events] quiz_generation_progress {kwargs}")
-    def publish_quiz_generation_completed(self, **kwargs):
-        logger.info(f"[events] quiz_generation_completed {kwargs}")
-    def publish_quiz_generation_failed(self, **kwargs):
-        logger.info(f"[events] quiz_generation_failed {kwargs}")
-    def publish_task_status_update(self, **kwargs):
-        logger.info(f"[events] task_status_update {kwargs}")
-    def publish_user_notification(self, **kwargs):
-        logger.info(f"[events] user_notification {kwargs}")
-import logging
+
+# Import the proper shared event publisher
+try:
+    from shared.event_publisher import EventPublisher
+    event_publisher = EventPublisher()
+    logger.info("Using shared event publisher for notifications")
+except ImportError:
+    # Fallback to local event publisher if shared module not available
+    class _LocalEventPublisher:
+        def publish_quiz_generation_started(self, **kwargs):
+            logger.info(f"[events] quiz_generation_started {kwargs}")
+        def publish_quiz_generation_progress(self, **kwargs):
+            logger.info(f"[events] quiz_generation_progress {kwargs}")
+        def publish_quiz_generation_completed(self, **kwargs):
+            logger.info(f"[events] quiz_generation_completed {kwargs}")
+        def publish_quiz_generation_failed(self, **kwargs):
+            logger.info(f"[events] quiz_generation_failed {kwargs}")
+        def publish_task_status_update(self, **kwargs):
+            logger.info(f"[events] task_status_update {kwargs}")
+        def publish_user_notification(self, **kwargs):
+            logger.info(f"[events] user_notification {kwargs}")
+    
+    event_publisher = _LocalEventPublisher()
+    logger.warning("Using local event publisher fallback - notifications may not reach notification service")
 
 logger = logging.getLogger(__name__)
-
-# Initialize services
-event_publisher = _LocalEventPublisher()
 
 @quiz_task(bind=True)
 def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, category_id: str = None):
@@ -41,9 +48,11 @@ def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, 
         # Publish quiz generation started event
         event_publisher.publish_quiz_generation_started(
             user_id=user_id,
-            document_id=document_id,
-            subject_id=subject_id,
-            category_id=category_id
+            quiz_id=task_id,
+            source_document_id=document_id,
+            num_questions=10,
+            topic="Document Quiz",
+            difficulty="medium"
         )
         
         # Update task status
@@ -76,10 +85,9 @@ def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, 
             # Publish quiz generation progress event
             event_publisher.publish_quiz_generation_progress(
                 user_id=user_id,
-                document_id=document_id,
+                quiz_id=task_id,
                 progress=int(progress),
-                generated_questions=generated_questions,
-                total_questions=total_questions
+                message=f'Generating questions {generated_questions}/{total_questions}...'
             )
         
         generation_time = time.time() - start_time
@@ -87,11 +95,11 @@ def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, 
         logger.info(f"Quiz for document {document_id} generated successfully in {generation_time:.2f}s")
         
         # Publish quiz generation completed event
-        event_publisher.publish_quiz_generation_completed(
+        event_publisher.publish_quiz_generated(
             user_id=user_id,
-            document_id=document_id,
-            questions_count=total_questions,
-            generation_time=generation_time
+            quiz_id=task_id,
+            generation_time=generation_time,
+            questions_count=total_questions
         )
         
         # Publish task completed event
@@ -101,7 +109,8 @@ def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, 
             task_type="quiz_generation",
             status="completed",
             progress=100,
-            message=f"Quiz generated successfully with {total_questions} questions"
+            message=f"Quiz generated successfully with {total_questions} questions",
+            service_name="quiz-service"
         )
         
         # Publish quiz ready notification
@@ -126,7 +135,7 @@ def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, 
         # Publish failure events
         event_publisher.publish_quiz_generation_failed(
             user_id=user_id,
-            document_id=document_id,
+            quiz_id=task_id,
             error_message=str(e)
         )
         
@@ -136,7 +145,8 @@ def generate_quiz(self, document_id: str, user_id: str, subject_id: str = None, 
             task_type="quiz_generation",
             status="failed",
             progress=0,
-            message=f"Quiz generation failed: {str(e)}"
+            message=f"Quiz generation failed: {str(e)}",
+            service_name="quiz-service"
         )
         
         raise
@@ -162,9 +172,11 @@ def generate_quiz_background_task(self, quiz_id: str, topic: str, difficulty: st
         # Publish quiz generation started event
         event_publisher.publish_quiz_generation_started(
             user_id=user_id,
-            document_id=source_id,
-            subject_id=source_id if source_type == "subject" else None,
-            category_id=source_id if source_type == "category" else None
+            quiz_id=quiz_id,
+            source_document_id=source_id,
+            num_questions=num_questions,
+            topic=topic,
+            difficulty=difficulty
         )
         
         # Update task status
@@ -210,11 +222,11 @@ def generate_quiz_background_task(self, quiz_id: str, topic: str, difficulty: st
                 logger.info(f"Quiz generation completed successfully for quiz ID: {quiz_id}")
                 
                 # Publish quiz generation completed event
-                event_publisher.publish_quiz_generation_completed(
+                event_publisher.publish_quiz_generated(
                     user_id=user_id,
-                    document_id=source_id,
-                    questions_count=len(quiz_content.get("questions", [])),
-                    generation_time=0  # Could calculate actual time if needed
+                    quiz_id=quiz_id,
+                    generation_time=0,  # Could calculate actual time if needed
+                    questions_count=len(quiz_content.get("questions", []))
                 )
                 
                 # Publish task completed event
@@ -224,7 +236,8 @@ def generate_quiz_background_task(self, quiz_id: str, topic: str, difficulty: st
                     task_type="quiz_generation",
                     status="completed",
                     progress=100,
-                    message=f"Quiz generated successfully with {len(quiz_content.get('questions', []))} questions"
+                    message=f"Quiz generated successfully with {len(quiz_content.get('questions', []))} questions",
+                    service_name="quiz-service"
                 )
                 
                 # Publish quiz ready notification
@@ -268,7 +281,7 @@ def generate_quiz_background_task(self, quiz_id: str, topic: str, difficulty: st
         # Publish failure events
         event_publisher.publish_quiz_generation_failed(
             user_id=user_id,
-            document_id=source_id,
+            quiz_id=quiz_id,
             error_message=str(e)
         )
         
@@ -278,7 +291,8 @@ def generate_quiz_background_task(self, quiz_id: str, topic: str, difficulty: st
             task_type="quiz_generation",
             status="failed",
             progress=0,
-            message=f"Quiz generation failed: {str(e)}"
+            message=f"Quiz generation failed: {str(e)}",
+            service_name="quiz-service"
         )
         
         raise

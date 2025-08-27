@@ -11,7 +11,24 @@ httpx==0.25.2
 redis==5.0.1
 celery==5.3.4
 PyJWT==2.8.0
+jwt==1.3.1
 # Ollama support is via HTTP API, no additional packages needed
 numpy==1.25.2
 pandas==2.1.4
-openai==1.3.7 
+openai==1.3.7
+jinja2==3.1.4
+requests==2.32.3
+
+# Language detection dependencies - using more compatible versions
+lingua-language-detector==2.0.2
+langdetect==1.0.9
+# Removed pycld3 as it requires protobuf compiler and can be problematic
+
+# Additional dependencies for new generator system
+# These are already included above but listed for clarity
+# - typing (built-in)
+# - json (built-in)
+# - logging (built-in)
+# - hashlib (built-in)
+# - sqlalchemy.orm (included in sqlalchemy)
+# - jinja2 (already included)

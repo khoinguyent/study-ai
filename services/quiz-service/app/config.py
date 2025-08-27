@@ -13,12 +13,19 @@ class Settings(BaseSettings):
     
     # Quiz Generation Strategy
     QUIZ_GENERATION_STRATEGY: str = "openai"  # Options: "ollama", "huggingface", "openai", "auto"
+
+    # Language & Provider
+    QUIZ_LANG_DEFAULT: str = "en"
+    QUIZ_LANG_MODE: str = "auto"  # 'auto' | 'vi' | 'en'
+    QUIZ_PROVIDER: str = "openai"  # 'openai' | 'ollama' | 'huggingface'
     
     # HuggingFace Configuration
     HUGGINGFACE_TOKEN: str = ""
     HUGGINGFACE_API_URL: str = "https://api-inference.huggingface.co/models"
     QUESTION_GENERATION_MODEL: str = "google/flan-t5-base"
     DISTRACTOR_GENERATION_MODEL: str = "google/flan-t5-base"
+    HF_MODEL_ID: str = "meta-llama/Meta-Llama-3-8B-Instruct"
+    HF_API_KEY: str = ""
     
     # OpenAI Configuration
     OPENAI_API_KEY: str = ""
@@ -26,6 +33,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-3.5-turbo"
     OPENAI_MAX_TOKENS: int = 2000
     OPENAI_TEMPERATURE: float = 0.7
+    VECTOR_STORE_IDS: str = ""  # comma-separated list
     
     # Services
     AUTH_SERVICE_URL: str = "http://auth-service:8001"

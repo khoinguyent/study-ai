@@ -1,0 +1,20 @@
+TASK
+Generate {{ TOTAL_COUNT }} questions for subject "{{ SUBJECT_NAME }}".
+
+AllowedTypes: {{ ALLOWED_TYPES_JSON }}
+CountsByType: {{ COUNTS_BY_TYPE_JSON }}
+DifficultyMix: {{ DIFFICULTY_MIX_JSON }}
+
+CITATIONS
+- For every question include ≥1 source:
+  { "context_id": "<id of the retrieved context you used>", "quote": "<=30 words copied verbatim" }
+- If a source does not fully support a question, do not write that question.
+
+SCHEMA (return exactly this shape)
+{{ SCHEMA_JSON }}
+
+OUTPUT
+- Return the single JSON object as defined by SCHEMA, including "output_language".
+- No prose.
+
+

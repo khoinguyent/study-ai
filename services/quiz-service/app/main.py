@@ -10,7 +10,7 @@ from sqlalchemy import and_
 import httpx
 
 from .database import get_db, create_tables
-from .models import Quiz, CustomDocumentSet
+from . import models
 from .schemas import (
     QuizCreate, QuizResponse, QuizGenerationRequest, 
     SubjectQuizGenerationRequest, CategoryQuizGenerationRequest,
@@ -29,8 +29,12 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_event():
     """Initialize database tables on startup"""
-    create_tables()
-    logger.info("Quiz service started and database tables created")
+    try:
+        create_tables()
+        logger.info("Quiz service started and database tables created")
+    except Exception as e:
+        logger.warning(f"Database connection failed during startup: {e}")
+        logger.info("Quiz service started without database connection (for testing)")
 
 async def verify_auth_token(authorization: str = Header(alias="Authorization")):
     """Verify JWT token and extract user ID"""
@@ -327,7 +331,7 @@ async def start_study_session(
                 "status": "generating"
             }
             
-            quiz = Quiz(**quiz_data)
+            quiz = models.Quiz(**quiz_data)
             db.add(quiz)
             db.commit()
             db.refresh(quiz)

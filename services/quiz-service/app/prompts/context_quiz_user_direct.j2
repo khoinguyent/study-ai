@@ -1,0 +1,19 @@
+REQUEST
+- Subject: {{ SUBJECT_NAME }}
+- Total: {{ TOTAL_COUNT }}
+- AllowedTypes: {{ ALLOWED_TYPES_JSON }}
+- CountsByType: {{ COUNTS_BY_TYPE_JSON }}
+- DifficultyMix: {{ DIFFICULTY_MIX_JSON }}
+
+CONTEXT (use these ids in metadata.sources[].context_id)
+Each object: {id, doc_id, file_name, chunk_id, section_path, char_range, text}
+{{ CONTEXT_BLOCKS_JSON }}
+
+SCHEMA (return exactly this shape)
+{{ SCHEMA_JSON }}
+
+OUTPUT
+- Return a single JSON object defined by SCHEMA (include "output_language").
+- No commentary; JSON only.
+
+

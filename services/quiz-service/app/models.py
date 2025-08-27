@@ -3,7 +3,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
-from .database import Base
+from database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())

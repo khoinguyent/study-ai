@@ -23,5 +23,5 @@ def get_db():
 # Create all tables
 def create_tables():
     # Import models here to ensure they are registered with Base
-    from .models import Quiz, CustomDocumentSet
+    from . import models
     Base.metadata.create_all(bind=engine) 

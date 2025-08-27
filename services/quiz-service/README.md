@@ -1,138 +1,251 @@
 # Quiz Service
 
-The Quiz Service is a core component of the Study AI platform that handles AI-powered quiz generation for educational content.
+## Overview
+
+The Quiz Service is a microservice that generates AI-powered quizzes using multiple LLM providers (OpenAI, Ollama, Hugging Face). It implements a Direct Chunks Generator that works directly with document chunks without relying on OpenAI File Search.
 
 ## Features
 
-- **Multiple AI Backends**: Support for OpenAI, HuggingFace, and Ollama
-- **Context-Aware Generation**: Creates quizzes based on specific documents, subjects, and categories
-- **Real-time Progress Tracking**: WebSocket-based progress updates during quiz generation
-- **Background Processing**: Celery-based asynchronous quiz generation
-- **AI Clarifier**: Intelligent assistance for quiz setup and customization
+- 🚀 **Multi-LLM Support**: OpenAI, Ollama, and Hugging Face
+- 📚 **Direct Chunks Generation**: Uses document chunks directly from database
+- 🌍 **Language Auto-Detection**: Automatically detects and enforces output language
+- ✅ **Validation Pipeline**: JSON structure, citations, and type validation
+- 🔄 **Repair System**: Automatic repair attempts for failed generations
+- 📊 **LLM Trace Storage**: Complete metadata for all generated questions
+- 🐳 **Docker Ready**: Fully containerized with all dependencies
 
-## AI Models Supported
+## Quick Start
 
-### 1. OpenAI (Recommended)
-- **Models**: GPT-3.5-turbo, GPT-4, and other OpenAI models
-- **Features**: High-quality quiz generation with JSON format enforcement
-- **Configuration**: Set `QUIZ_GENERATION_STRATEGY=openai`
+### Using Docker (Recommended)
 
-### 2. HuggingFace
-- **Models**: Google Flan-T5 and other HuggingFace models
-- **Features**: Open-source models with good performance
-- **Configuration**: Set `QUIZ_GENERATION_STRATEGY=huggingface`
+```bash
+# Build the service
+docker build -t quiz-service .
 
-### 3. Ollama (Local)
-- **Models**: Llama2:7b and other local models
-- **Features**: Privacy-focused, runs locally
-- **Configuration**: Set `QUIZ_GENERATION_STRATEGY=ollama`
+# Run the service
+docker run -p 8004:8004 quiz-service
+```
 
-### 4. Auto Strategy
-- **Behavior**: Tries OpenAI first, then HuggingFace, falls back to Ollama
-- **Configuration**: Set `QUIZ_GENERATION_STRATEGY=auto`
+### Local Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the service
+uvicorn app.main:app --host 0.0.0.0 --port 8004
+```
+
+## API Endpoints
+
+### Health Check
+```
+GET /health
+```
+
+### Test Endpoints
+```
+GET /test-ollama    # Test Ollama connectivity
+GET /test-openai    # Test OpenAI connectivity
+```
+
+### Quiz Generation
+```
+POST /generate-quiz
+POST /generate-quiz-from-subject
+POST /generate-quiz-from-category
+```
 
 ## Configuration
 
 ### Environment Variables
 
-Create a `.env` file based on `env.example`:
-
 ```bash
-# Quiz Generation Strategy
-QUIZ_GENERATION_STRATEGY=openai
+# Database
+DATABASE_URL=postgresql://user:pass@localhost/quizdb
 
-# OpenAI Configuration
-OPENAI_API_KEY=your-openai-api-key-here
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-3.5-turbo
-OPENAI_MAX_TOKENS=2000
-OPENAI_TEMPERATURE=0.7
+# LLM Providers
+OPENAI_API_KEY=your_openai_key
+OLLAMA_BASE_URL=http://localhost:11434
+HF_API_KEY=your_huggingface_key
 
-# HuggingFace Configuration
-HUGGINGFACE_TOKEN=your-huggingface-token-here
-HUGGINGFACE_API_URL=https://api-inference.huggingface.co/models
-QUESTION_GENERATION_MODEL=google/flan-t5-base
-
-# Ollama Configuration
-OLLAMA_BASE_URL=http://ollama:11434
-OLLAMA_MODEL=llama2:7b
+# Service Settings
+QUIZ_GENERATION_STRATEGY=auto  # auto, openai, ollama, huggingface
 ```
-
-## API Endpoints
-
-### Health & Testing
-- `GET /health` - Service health check
-- `GET /test-openai` - Test OpenAI connectivity
-- `GET /test-ollama` - Test Ollama connectivity
-
-### Study Sessions
-- `POST /study-sessions/start` - Start a new study session
-- `GET /study-sessions/status` - Get session status
-- `GET /study-sessions/events` - Get real-time events
-- `POST /study-sessions/ingest` - Add input to session
-- `POST /study-sessions/confirm` - Confirm and generate quiz
-
-### Quiz Management
-- `POST /quizzes/generate` - Generate a new quiz
-- `POST /quizzes/generate-simple` - Generate quiz without auth (testing)
-- `GET /quizzes/{quiz_id}` - Get specific quiz
-- `GET /quizzes` - List user quizzes
-
-### AI Clarifier
-- `POST /clarifier/start` - Start AI clarifier session
-- `POST /clarifier/ingest` - Process clarifier input
-
-## Quiz Generation Process
-
-1. **Session Start**: User initiates study session with parameters
-2. **AI Processing**: Selected AI model generates questions based on context
-3. **Progress Tracking**: Real-time updates via WebSocket events
-4. **Quiz Delivery**: Final quiz with questions, options, and explanations
-
-## Question Types Supported
-
-- **Multiple Choice**: 4 options with correct answer and explanation
-- **True/False**: Binary questions with explanations
-- **Fill in the Blank**: Text completion questions
-
-## Development
-
-### Running Locally
-
-```bash
-cd services/quiz-service
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8004
-```
-
-### Docker
-
-```bash
-docker-compose up quiz-service
-```
-
-### Testing OpenAI Integration
-
-1. Set your OpenAI API key in `.env`
-2. Set `QUIZ_GENERATION_STRATEGY=openai`
-3. Test connectivity: `GET /test-openai`
-4. Generate a quiz: `POST /quizzes/generate`
 
 ## Architecture
 
-- **FastAPI**: Modern web framework
-- **SQLAlchemy**: Database ORM
-- **Celery**: Background task processing
-- **Redis**: Caching and message broker
-- **PostgreSQL**: Primary database
-- **Event-Driven**: Real-time notifications and progress updates
+### Core Components
+
+1. **QuizGenerator Service** (`app/services/quiz_generator.py`)
+   - Main service class with multiple generation strategies
+   - Integrates with new Direct Chunks Generator
+
+2. **Direct Chunks Generator** (`app/generator/`)
+   - `orchestrator.py` - Main generation flow
+   - `context_builder.py` - Document chunk management
+   - `validators.py` - Validation and repair logic
+
+3. **LLM Providers** (`app/llm/providers/`)
+   - `base.py` - Common interface
+   - `openai_adapter.py` - OpenAI integration
+   - `ollama_adapter.py` - Ollama integration
+   - `hf_adapter.py` - HuggingFace integration
+
+4. **Language Detection** (`app/lang/`)
+   - `detect.py` - Multi-library language detection
+   - `language.py` - Language utilities
+
+### Data Flow
+
+1. **Document Selection** → User selects documents to generate questions from
+2. **Chunk Fetching** → System fetches relevant chunks from database
+3. **Context Curation** → Chunks are curated and prepared for prompts
+4. **Language Detection** → System detects language from chunk content
+5. **Prompt Generation** → Jinja2 templates render prompts with context
+6. **LLM Generation** → Selected provider generates questions
+7. **Validation** → JSON structure, citations, and language are validated
+8. **Storage** → Questions are saved with complete LLM traces
+
+## Usage Examples
+
+### Basic Quiz Generation
+
+```python
+from app.services.quiz_generator import QuizGenerator
+
+generator = QuizGenerator()
+
+# Generate quiz from documents
+quiz_data = await generator.generate_quiz_from_documents_direct(
+    session=db_session,
+    subject_name="Vietnamese History",
+    doc_ids=[1, 2, 3],
+    total_count=10,
+    allowed_types=["MCQ", "TF"],
+    budget_cap=10
+)
+```
+
+### Using Different LLM Providers
+
+```python
+from app.llm.providers.ollama_adapter import OllamaProvider
+from app.generator.orchestrator import generate_from_documents
+
+# Create provider
+provider = OllamaProvider(base_url="http://localhost:11434", model="llama3")
+
+# Generate directly
+batch, blocks, lang_code = generate_from_documents(
+    session=db_session,
+    provider=provider,
+    subject_name="Mathematics",
+    doc_ids=[1, 2],
+    total_count=5,
+    allowed_types=["MCQ"]
+)
+```
+
+## Testing
+
+### Run Tests
+
+```bash
+# Test dependencies
+python3 test_docker_build.py
+
+# Test Docker build
+./build_test.sh
+
+# Test direct generator
+python3 test_direct_generator.py
+```
+
+### Test Coverage
+
+- ✅ Import tests
+- ✅ Language detection
+- ✅ Provider creation
+- ✅ Docker build
+- ✅ Service startup
 
 ## Dependencies
 
-- `fastapi==0.104.1`
-- `uvicorn==0.24.0`
-- `openai==1.3.7`
-- `httpx==0.25.2`
-- `celery==5.3.4`
-- `sqlalchemy==2.0.23`
-- `redis==5.0.1`
+### Python Packages
+- **Framework**: FastAPI, Uvicorn, SQLAlchemy
+- **AI/ML**: OpenAI, NumPy, Pandas
+- **Language**: Jinja2, Lingua, pycld3
+- **Database**: psycopg2-binary, Redis
+- **Background**: Celery
+
+### System Dependencies
+- **Build Tools**: gcc, g++, build-essential
+- **Libraries**: libffi-dev, libssl-dev
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Language Detection Fails**
+   - Check if `lingua-language-detector` and `pycld3` are installed
+   - Verify system dependencies in Dockerfile
+
+2. **Import Errors**
+   - Ensure all Python packages are installed
+   - Check Python path configuration
+
+3. **Database Connection**
+   - Verify PostgreSQL is running
+   - Check `DATABASE_URL` environment variable
+
+4. **LLM Provider Issues**
+   - Verify API keys and endpoints
+   - Check network connectivity
+
+### Debug Mode
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+## Development
+
+### Project Structure
+
+```
+app/
+├── generator/           # Direct chunks generator
+│   ├── orchestrator.py
+│   ├── context_builder.py
+│   └── validators.py
+├── llm/                # LLM provider adapters
+│   └── providers/
+├── lang/               # Language detection
+├── models/             # Database models
+├── services/           # Business logic
+└── main.py            # FastAPI application
+```
+
+### Adding New LLM Providers
+
+1. Create new adapter in `app/llm/providers/`
+2. Implement `LLMProvider` protocol
+3. Add to provider selection logic
+4. Update tests and documentation
+
+## Contributing
+
+1. Follow the existing code structure
+2. Add tests for new functionality
+3. Update documentation
+4. Ensure Docker build passes
+
+## License
+
+This project is part of the Study AI platform.
+
+## Support
+
+For issues and questions, please check the troubleshooting section or create an issue in the project repository.
