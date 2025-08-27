@@ -831,14 +831,23 @@ async def upload_document(
 async def upload_multiple_documents(
     files: List[UploadFile] = File(...),  # Files will be validated for size in the function
     subject_id: Optional[str] = Form(None),
+    subjectId: Optional[str] = Form(None),  # alias for safety
     category_id: Optional[str] = Form(None),
+    categoryId: Optional[str] = Form(None),  # alias for safety
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
     """Upload multiple documents with optional subject and category assignment"""
+    # Validate required fields
+    if not files or len(files) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one file is required"
+        )
+    
     if len(files) > 10:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Maximum 10 files allowed per upload"
         )
     
@@ -876,10 +885,21 @@ async def upload_multiple_documents(
                 detail=f"Error reading file {file.filename}: {str(e)}"
             )
     
+    # Use aliases for safety - accept both snake_case and camelCase
+    sid = subject_id or subjectId
+    cid = category_id or categoryId
+    
+    # Validate required subject_id
+    if not sid:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="subject_id is required"
+        )
+    
     # Validate subject and category if provided
-    if subject_id:
+    if sid:
         subject = db.query(Subject).filter(
-            Subject.id == subject_id,
+            Subject.id == sid,
             Subject.user_id == user_id
         ).first()
         if not subject:
@@ -888,9 +908,9 @@ async def upload_multiple_documents(
                 detail="Subject not found"
             )
     
-    if category_id:
+    if cid:
         category = db.query(Category).join(Subject).filter(
-            Category.id == category_id,
+            Category.id == cid,
             Subject.user_id == user_id
         ).first()
         if not category:
@@ -899,7 +919,7 @@ async def upload_multiple_documents(
                 detail="Category not found"
             )
         # Ensure category belongs to the specified subject
-        if subject_id and category.subject_id != subject_id:
+        if sid and category.subject_id != sid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Category does not belong to the specified subject"
@@ -916,8 +936,8 @@ async def upload_multiple_documents(
             file_size=0,  # Will be updated after upload
             file_path="",  # Will be updated after upload
             status=str(DocumentStatus.UPLOADED),
-            subject_id=subject_id,
-            category_id=category_id
+            subject_id=sid,
+            category_id=cid
         )
         db.add(document)
         db.commit()

@@ -5,7 +5,7 @@ import datetime
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from fastapi import WebSocket, WebSocketDisconnect
 from strawberry.fastapi import GraphQLRouter
 from .graphql_schema import schema
@@ -46,30 +46,6 @@ def _log_routes():
         logging.info("%03d: %s  methods=%s  name=%s", i, path, methods, name)
     logging.info("=== END ROUTE TABLE ===")
 
-# Mock endpoints (only when enabled)
-if settings.ENABLE_GATEWAY_MOCKS:
-    @app.get("/api/mock/documents/{document_id}/status")
-    def _mock_document_status(document_id: str):
-        """Mock document status endpoint for development/testing"""
-        import random
-        mock_states = [
-            {"state": "ready", "progress": 100},
-            {"state": "processing", "progress": 78},
-            {"state": "failed", "progress": 0, "message": "Processing failed"},
-        ]
-        return random.choice(mock_states)
-    
-    @app.get("/api/mock/study-sessions/status")
-    def _mock_study_session_status():
-        """Mock study session status endpoint for development/testing"""
-        import random
-        mock_states = [
-            {"state": "queued", "progress": 25},
-            {"state": "running", "progress": 67},
-            {"state": "completed", "progress": 100},
-        ]
-        return random.choice(mock_states)
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -85,58 +61,9 @@ async def root():
         "docs": "/docs"
     }
 
-@app.get("/test-auth")
-async def test_auth(request: Request):
-    auth_header = request.headers.get("authorization")
-    return {"message": "Test endpoint reached", "auth_header": auth_header}
-
-@app.post("/test-upload")
-async def test_upload():
-    """Test upload endpoint"""
-    return {"message": "Test upload endpoint working"}
-
 # Mock auth endpoints removed - using proxy endpoints to auth service instead
 
 # DISABLED: Mock upload events endpoint - was causing automatic fake notifications
-# @app.get("/api/uploads/events")
-# async def upload_events_stream(userId: str = Query(...)):
-#     """SSE stream for upload events - mock implementation for development"""
-#     async def event_generator():
-#         # Mock upload events for testing
-#         import asyncio
-#         
-#         # Simulate upload progress for multiple documents
-#         documents = [
-#             {"filename": "Exercise 2 - ADD - Critical Feature Launch Delay.pdf", "uploadId": f"upload-{userId}-doc1"},
-#             {"filename": "Project Requirements Document.pdf", "uploadId": f"upload-{userId}-doc2"},
-#             {"filename": "Technical Specification.pdf", "uploadId": f"upload-{userId}-doc3"}
-#         ]
-#         
-#         for doc in documents:
-#             # Queued event
-#             yield f"data: {json.dumps({'type': 'queued', 'uploadId': doc['uploadId'], 'filename': doc['filename']})}\n\n"
-#             await asyncio.sleep(0.5)
-#             
-#             # Progress events
-#             for progress in range(10, 101, 20):
-#                 yield f"data: {json.dumps({'type': 'running', 'uploadId': doc['uploadId'], 'progress': progress, 'filename': doc['filename']})}\n\n"
-#                 await asyncio.sleep(0.5)
-#             
-#             # Completed event
-#             doc_id = f'doc-{doc["uploadId"]}'
-#             yield f"data: {json.dumps({'type': 'completed', 'uploadId': doc['uploadId'], 'documentId': doc_id, 'filename': doc['filename']})}\n\n"
-#             await asyncio.sleep(0.5)
-#     
-#     return StreamingResponse(
-#         event_generator(),
-#         media_type="text/event-stream",
-#         headers={
-#             "Cache-Control": "no-cache",
-#             "Connection": "keep-alive",
-#             "Access-Control-Allow-Origin": "*",
-#             "Access-Control-Allow-Headers": "*",
-#         }
-#     )
 
 # TODO: Implement real upload events endpoint that only triggers for actual uploads
 
@@ -151,7 +78,7 @@ async def upload_events_proxy(userId: str = Query(...)):
             )
             if response.status_code == 200:
                 return StreamingResponse(
-                    response.aiter_bytes(),
+                    response.iter_content(chunk_size=1024),
                     media_type="text/event-stream",
                     headers={
                         "Cache-Control": "no-cache",
@@ -163,149 +90,87 @@ async def upload_events_proxy(userId: str = Query(...)):
             else:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"Notification service error: {response.text}"
+                    detail=f"Events proxy error: {response.text}"
                 )
     except Exception as e:
+        logger.error(f"Events proxy error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Events proxy error: {str(e)}"
         )
 
+# WebSocket endpoint for notifications
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """WebSocket endpoint that proxies connections to notification service"""
     await websocket.accept()
     
     try:
-        # Connect to notification service WebSocket
-        notification_ws_url = f"ws://notification-service:8005/ws/{user_id}"
-        print(f"Proxying WebSocket connection for user {user_id} to {notification_ws_url}")
-        
-        # For now, send a connection message and keep the connection alive
         # In a full implementation, this would establish a bidirectional proxy
-        await websocket.send_text(json.dumps({
-            "type": "connection",
-            "message": f"WebSocket connected for user {user_id}",
-            "status": "connected",
-            "note": "Proxied through API Gateway"
-        }))
+        # to the notification service WebSocket endpoint
+        notification_ws_url = f"{settings.NOTIFICATION_SERVICE_URL}/ws/{user_id}"
         
-        # Keep connection alive and handle messages
+        # For now, just echo back messages
         while True:
-            try:
-                # Wait for messages from client
-                data = await websocket.receive_text()
-                message = json.loads(data)
-                
-                # Echo back for now (replace with actual notification service proxy)
-                await websocket.send_text(json.dumps({
-                    "type": "echo",
-                    "message": f"Received: {message}",
-                    "timestamp": str(datetime.datetime.now()),
-                    "note": "Message echoed by API Gateway (proxy not fully implemented)"
-                }))
-                
-            except WebSocketDisconnect:
-                print(f"WebSocket disconnected for user {user_id}")
-                break
-            except Exception as e:
-                print(f"WebSocket error for user {user_id}: {e}")
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "message": str(e)
-                }))
-                
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Message received: {data}")
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for user {user_id}")
     except Exception as e:
-        print(f"WebSocket connection error: {e}")
+        logger.error(f"WebSocket error for user {user_id}: {e}")
         try:
             await websocket.close()
         except:
             pass
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global exception handler: {str(exc)}")
+    return {"detail": "Internal server error"}
+
+# Document Service Proxy Routes
+
 @app.get("/api/documents/{document_id}/status")
-async def get_document_status(document_id: str, request: Request):
+async def document_status_proxy(document_id: str, request: Request):
     """Proxy document status requests to document service"""
-    print(f"DEBUG: Document status request for document_id: {document_id}")
-    print(f"DEBUG: Document service URL: {settings.DOCUMENT_SERVICE_URL}")
-    
     try:
         # Forward the Authorization header to Document Service
-        headers = {}
         auth_header = request.headers.get("authorization")
+        headers = {}
         if auth_header:
             headers["Authorization"] = auth_header
         
         target_url = f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}/status"
-        print(f"DEBUG: Calling target URL: {target_url}")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                target_url,
-                headers=headers,
-            )
-            
-            print(f"DEBUG: Document service response: {response.status_code} - {response.text}")
+            response = await client.get(target_url, headers=headers)
             
             if response.status_code == 200:
-                # Add no-cache headers for status endpoint
-                from fastapi.responses import Response
-                return Response(
-                    content=response.content,
-                    media_type="application/json",
-                    headers={
-                        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                        "Pragma": "no-cache",
-                    }
-                )
+                return response.json()
             else:
-                error_detail = "Failed to get document status"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
-                print(f"DEBUG: Raising HTTPException with status {response.status_code}: {error_detail}")
+                error_detail = response.text
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=error_detail
                 )
+                
     except httpx.TimeoutException:
-        print("DEBUG: Timeout exception")
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Status check timeout"
+            detail="Document service timeout"
         )
     except Exception as e:
-        print(f"DEBUG: Exception: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Document service error: {str(e)}"
         )
 
-@app.get("/auth/me-direct")
-async def me_direct(request: Request):
-    """Direct auth proxy without dependencies"""
-    auth_header = request.headers.get("authorization")
-    if not auth_header:
-        return {"error": "No auth header"}
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.AUTH_SERVICE_URL}/me",
-                headers={"Authorization": auth_header},
-                timeout=10.0
-            )
-            return {"status": response.status_code, "data": response.text}
-    except Exception as e:
-        return {"error": str(e)}
-
-# Proxy endpoints for authentication
+# Direct auth proxy without dependencies
 @app.post("/auth/login")
 async def login_proxy(request_data: dict):
     """Proxy login requests to auth service"""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{settings.AUTH_SERVICE_URL}/login",
                 json=request_data,
@@ -314,21 +179,10 @@ async def login_proxy(request_data: dict):
             if response.status_code == 200:
                 return response.json()
             else:
-                error_detail = "Authentication failed"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=error_detail
+                    detail="Login failed"
                 )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Auth service timeout"
-        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -339,30 +193,19 @@ async def login_proxy(request_data: dict):
 async def register_proxy(request_data: dict):
     """Proxy register requests to auth service"""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{settings.AUTH_SERVICE_URL}/register",
                 json=request_data,
                 timeout=30.0
             )
-            if response.status_code in [200, 201]:
+            if response.status_code == 200:
                 return response.json()
             else:
-                error_detail = "Registration failed"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=error_detail
+                    detail="Registration failed"
                 )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Auth service timeout"
-        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -371,46 +214,35 @@ async def register_proxy(request_data: dict):
 
 @app.api_route("/auth/me", methods=["GET", "OPTIONS"])
 async def me_proxy(request: Request):
-    """Get current user info"""
-    if request.method == "OPTIONS":
-        return {"message": "OK"}
-    
+    """Proxy me requests to auth service"""
     try:
+        # Forward the Authorization header to auth service
         auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(status_code=401, detail="No auth header")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{settings.AUTH_SERVICE_URL}/me",
-                headers={"Authorization": auth_header},
-                timeout=10.0
+                headers=headers,
+                timeout=30.0
             )
-            
             if response.status_code == 200:
                 return response.json()
             else:
-                raise HTTPException(status_code=401, detail="Auth failed")
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Auth service timeout"
-        )
-    except HTTPException:
-        raise
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to get user info"
+                )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Auth service error: {str(e)}"
         )
 
-# Add CORS preflight handler - temporarily disabled to fix upload routing
-# @app.options("/{path:path}")
-# async def options_handler(path: str):
-#     """Handle CORS preflight requests"""
-#     return {"message": "OK"}
-
 # Proxy other endpoints that might be needed
+
 @app.get("/subjects")
 async def subjects_proxy(request: Request, user_id: str = Depends(verify_auth_token)):
     """Proxy subjects requests to document service"""
@@ -535,13 +367,20 @@ async def create_category_proxy(request: Request, user_id: str = Depends(verify_
 async def update_subject_proxy(subject_id: str, request: Request, user_id: str = Depends(verify_auth_token)):
     """Proxy subject update requests to document service"""
     try:
+        # Get the request body
         body = await request.json()
+        
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
         async with httpx.AsyncClient() as client:
             response = await client.put(
                 f"{settings.DOCUMENT_SERVICE_URL}/subjects/{subject_id}",
                 json=body,
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
@@ -560,14 +399,20 @@ async def update_subject_proxy(subject_id: str, request: Request, user_id: str =
 async def delete_subject_proxy(subject_id: str, user_id: str = Depends(verify_auth_token)):
     """Proxy subject deletion requests to document service"""
     try:
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{settings.DOCUMENT_SERVICE_URL}/subjects/{subject_id}",
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
-                return response.json()
+                return {"message": "Subject deleted successfully"}
             raise HTTPException(
                 status_code=response.status_code,
                 detail="Failed to delete subject"
@@ -582,13 +427,20 @@ async def delete_subject_proxy(subject_id: str, user_id: str = Depends(verify_au
 async def update_category_proxy(category_id: str, request: Request, user_id: str = Depends(verify_auth_token)):
     """Proxy category update requests to document service"""
     try:
+        # Get the request body
         body = await request.json()
+        
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
         async with httpx.AsyncClient() as client:
             response = await client.put(
                 f"{settings.DOCUMENT_SERVICE_URL}/categories/{category_id}",
                 json=body,
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
@@ -607,14 +459,20 @@ async def update_category_proxy(category_id: str, request: Request, user_id: str
 async def delete_category_proxy(category_id: str, user_id: str = Depends(verify_auth_token)):
     """Proxy category deletion requests to document service"""
     try:
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{settings.DOCUMENT_SERVICE_URL}/categories/{category_id}",
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
-                return response.json()
+                return {"message": "Category deleted successfully"}
             raise HTTPException(
                 status_code=response.status_code,
                 detail="Failed to delete category"
@@ -629,14 +487,23 @@ async def delete_category_proxy(category_id: str, user_id: str = Depends(verify_
 async def get_subject_categories_proxy(subject_id: str, user_id: str = Depends(verify_auth_token)):
     """Proxy subject categories requests to document service"""
     try:
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{settings.DOCUMENT_SERVICE_URL}/subjects/{subject_id}/categories",
-                headers={"user_id": user_id},
+                f"{settings.DOCUMENT_SERVICE_URL}/categories",
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                # Filter categories by subject_id
+                filtered_categories = [cat for cat in data if cat.get('subject_id') == subject_id]
+                return filtered_categories
             raise HTTPException(
                 status_code=response.status_code,
                 detail="Failed to get subject categories"
@@ -647,853 +514,953 @@ async def get_subject_categories_proxy(subject_id: str, user_id: str = Depends(v
             detail=f"Document service error: {str(e)}"
         )
 
-@app.get("/categories/{category_id}/documents")
+@app.get("/api/categories/{category_id}/documents")
 async def get_category_documents_proxy(category_id: str, user_id: str = Depends(verify_auth_token), page: int = Query(1), page_size: int = Query(10)):
     """Proxy category documents requests to document service"""
     try:
+        # Forward the Authorization header to document service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{settings.DOCUMENT_SERVICE_URL}/categories/{category_id}/documents?page={page}&page_size={page_size}",
-                headers={"user_id": user_id},
+                headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
                 return response.json()
-            raise HTTPException(
-                status_code=response.status_code,
-                detail="Failed to get category documents"
-            )
+            else:
+                # Return the actual error from the document service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Document service error: {str(e)}"
         )
 
-@app.get("/documents/{document_id}/download")
+@app.get("/api/documents/{document_id}/download")
 async def download_document_proxy(document_id: str, request: Request):
     """Proxy document download requests to document service"""
     try:
         # Forward the Authorization header to Document Service
-        headers = {}
         auth_header = request.headers.get("authorization")
+        headers = {}
         if auth_header:
             headers["Authorization"] = auth_header
         
-        async with httpx.AsyncClient(timeout=60.0) as client:  # Longer timeout for downloads
-            response = await client.get(
-                f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}/download",
-                headers=headers,
-            )
+        target_url = f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}/download"
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(target_url, headers=headers)
             
             if response.status_code == 200:
-                # Get content type and filename from response headers
-                content_type = response.headers.get('content-type', 'application/octet-stream')
-                content_disposition = response.headers.get('content-disposition', f'attachment; filename=document_{document_id}')
-                
-                # Return the file content with proper headers
-                from fastapi.responses import Response
+                # Return the file content
                 return Response(
                     content=response.content,
-                    media_type=content_type,
+                    media_type=response.headers.get("content-type", "application/octet-stream"),
                     headers={
-                        "Content-Disposition": content_disposition,
-                        "Content-Length": response.headers.get('content-length', str(len(response.content)))
+                        "Content-Disposition": response.headers.get("content-disposition", f"attachment; filename=document_{document_id}"),
+                        "Content-Length": str(len(response.content))
                     }
                 )
             else:
-                error_detail = "Failed to download document"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
-                raise HTTPException(
+                # Return the actual error from the document service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
                     status_code=response.status_code,
-                    detail=error_detail
+                    media_type="application/json"
                 )
+                
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Download timeout"
+            detail="Document service timeout"
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Download service error: {str(e)}"
+            detail=f"Document service error: {str(e)}"
         )
 
-@app.post("/upload")
+# Document upload proxy endpoints
+
+@app.post("/api/documents/upload")
 async def upload_document_proxy(request: Request):
     """Proxy single document upload requests to document service"""
     try:
         # Forward the Authorization header to Document Service
-        headers = {}
         auth_header = request.headers.get("authorization")
+        headers = {}
         if auth_header:
             headers["Authorization"] = auth_header
         
-        # Get the raw request body to preserve multipart structure
-        body = await request.body()
+        # Get the form data
+        form_data = await request.form()
         
         # Forward the request with proper content type
-        content_type = request.headers.get("content-type", "")
-        if content_type:
-            headers["Content-Type"] = content_type
-        
-        async with httpx.AsyncClient(timeout=300.0) as client:  # Longer timeout for uploads
+        async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{settings.DOCUMENT_SERVICE_URL}/upload",
-                content=body,
+                data=form_data,
                 headers=headers,
+                timeout=60.0
             )
             
             if response.status_code == 200:
                 return response.json()
             else:
-                error_detail = "Failed to upload document"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
-                raise HTTPException(
+                # Return the actual error from the document service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
                     status_code=response.status_code,
-                    detail=error_detail
+                    media_type="application/json"
                 )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Upload timeout"
-        )
+                
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Upload service error: {str(e)}"
+            detail=f"Document service error: {str(e)}"
         )
 
-@app.post("/upload-multiple")
+@app.post("/api/documents/upload-multiple")
 async def upload_multiple_documents_proxy(request: Request):
     """Proxy multiple document upload requests to document service"""
-    print(f"DEBUG: Upload multiple endpoint called with method: {request.method}")
     try:
         # Forward the Authorization header to Document Service
-        headers = {}
         auth_header = request.headers.get("authorization")
+        headers = {}
         if auth_header:
             headers["Authorization"] = auth_header
         
-        # Get the raw request body to preserve multipart structure
+        # Get the raw body and preserve all headers except Host
         body = await request.body()
-        print(f"DEBUG: Request body size: {len(body)} bytes")
+        headers.update({k: v for k, v in request.headers.items() if k.lower() != "host"})
         
-        # Forward the request with proper content type
-        content_type = request.headers.get("content-type", "")
-        if content_type:
-            headers["Content-Type"] = content_type
-        
-        async with httpx.AsyncClient(timeout=300.0) as client:  # Longer timeout for uploads
+        # Forward the request with raw body and preserved headers
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{settings.DOCUMENT_SERVICE_URL}/upload-multiple",
                 content=body,
                 headers=headers,
             )
             
-            if response.status_code == 200:
-                return response.json()
-            else:
-                error_detail = "Failed to upload documents"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
-                print(f"DEBUG: Document service returned {response.status_code}: {error_detail}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=error_detail
-                )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Upload timeout"
-        )
-    except Exception as e:
-        print(f"DEBUG: Exception in upload multiple: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Upload service error: {str(e)}"
-        )
-
-@app.post("/api/study-sessions/start")
-async def start_study_session_proxy(request: Request):
-    """Mock study session start endpoint for development"""
-    try:
-        # Verify authentication
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header required"
+            # Bubble up status + error details so the UI sees the real cause
+            return Response(
+                content=response.content, 
+                status_code=response.status_code, 
+                headers={"content-type": response.headers.get("content-type", "application/json")}
             )
-        
-        # Get the request body
-        body = await request.json()
-        
-        # Extract parameters - make most fields optional
-        question_types = body.get("questionTypes", ["MCQ"])
-        difficulty = body.get("difficulty", "medium")
-        question_count = body.get("questionCount", 10)
-        
-        # These fields are now truly optional - use defaults if not provided
-        subject_id = body.get("subjectId", "mock-subject")
-        doc_ids = body.get("docIds", ["mock-doc"])
-        
-        # Generate mock response
-        import uuid
-        session_id = str(uuid.uuid4())
-        job_id = str(uuid.uuid4())
-        quiz_id = str(uuid.uuid4())
-        
-        logger.info(f"Mock study session started: session_id={session_id}, job_id={job_id}, quiz_id={quiz_id}")
-        logger.info(f"Parameters: subject_id={subject_id}, doc_ids={doc_ids}, question_types={question_types}, difficulty={difficulty}, question_count={question_count}")
-        
-        return {
-            "sessionId": session_id,
-            "jobId": job_id,
-            "quizId": quiz_id,
-            "message": "Mock study session started successfully"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Mock study session start failed: {repr(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mock study session start error: {repr(e)}"
-        )
-
-@app.post("/api/study-sessions/ingest")
-async def ingest_study_session_proxy(request: Request):
-    """Mock study session ingest endpoint for development"""
-    try:
-        # Verify authentication
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header required"
-            )
-        
-        # Get the request body
-        body = await request.json()
-        
-        # Return mock response
-        logger.info(f"Mock study session ingest received: {body}")
-        
-        return {
-            "status": "success",
-            "message": "Mock study session input ingested successfully",
-            "sessionId": "mock-session-id"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Mock study session ingest failed: {repr(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mock study session ingest error: {repr(e)}"
-        )
-
-@app.get("/api/study-sessions/status")
-async def get_study_session_status_proxy(
-    request: Request,
-    job_id: str = Query(..., description="Job ID to check status for")
-):
-    """Mock study session status endpoint for development"""
-    try:
-        # Verify authentication
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header required"
-            )
-        
-        # Return mock status
-        logger.info(f"Mock study session status requested for job_id: {job_id}")
-        
-        return {
-            "state": "completed",
-            "progress": 100,
-            "sessionId": "mock-session-id",
-            "quizId": "mock-quiz-id"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Mock study session status failed: {repr(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mock study session status error: {repr(e)}"
-        )
-
-@app.get("/api/study-sessions/events")
-async def get_study_session_events_proxy(
-    request: Request,
-    job_id: str = Query(..., description="Job ID to get events for")
-):
-    """Mock study session events endpoint for development - no auth required for SSE"""
-    try:
-        # For development, don't require authentication for SSE events
-        # In production, this should be secured
-        logger.info(f"Mock study session events requested for job_id: {job_id}")
-        
-        # Return proper SSE format
-        from fastapi.responses import StreamingResponse
-        import asyncio
-        
-        async def event_stream():
-            # Send initial connection established event
-            yield "data: {\"state\": \"queued\", \"progress\": 0, \"message\": \"SSE connection established\"}\n\n"
-            
-            # Wait a bit before sending the first event
-            await asyncio.sleep(0.5)
-            
-            # Send quiz generation started event
-            yield f"data: {{\"state\": \"running\", \"progress\": 25, \"message\": \"Quiz generation started\", \"jobId\": \"{job_id}\"}}\n\n"
-            
-            # Wait before sending completion event
-            await asyncio.sleep(1.0)
-            
-            # Send quiz generation completed event
-            yield f"data: {{\"state\": \"running\", \"progress\": 75, \"message\": \"Quiz generation completed successfully\", \"jobId\": \"{job_id}\"}}\n\n"
-            
-            # Wait before sending final event
-            await asyncio.sleep(1.0)
-            
-            # Send final event with quiz data
-            mock_quiz_data = {
-                "state": "completed",
-                "progress": 100,
-                "sessionId": f"session-{job_id}",
-                "quizId": f"quiz-{job_id}",
-                "quiz": {
-                    "id": f"quiz-{job_id}",
-                    "title": "Mock Quiz - Vietnam History",
-                    "questions": [
-                        {
-                            "id": "q1",
-                            "type": "single_choice",
-                            "prompt": "Who was the founder of the Tay Son dynasty?",
-                            "options": [
-                                {"id": "opt1", "text": "Nguyen Hue"},
-                                {"id": "opt2", "text": "Nguyen Anh"},
-                                {"id": "opt3", "text": "Nguyen Phuc Anh"},
-                                {"id": "opt4", "text": "Nguyen Kim"}
-                            ]
-                        },
-                        {
-                            "id": "q2",
-                            "type": "multiple_choice",
-                            "prompt": "Which of the following are characteristics of the Tay Son rebellion?",
-                            "options": [
-                                {"id": "opt1", "text": "Peasant uprising"},
-                                {"id": "opt2", "text": "Anti-feudal movement"},
-                                {"id": "opt3", "text": "Foreign invasion"},
-                                {"id": "opt4", "text": "Religious conflict"}
-                            ]
-                        },
-                        {
-                            "id": "q3",
-                            "type": "true_false",
-                            "prompt": "The Tay Son rebellion began in 1771.",
-                            "trueLabel": "True",
-                            "falseLabel": "False"
-                        },
-                        {
-                            "id": "q4",
-                            "type": "fill_blank",
-                            "prompt": "The Tay Son rebellion began in the year _____ in the province of _____.",
-                            "blanks": 2,
-                            "labels": ["Year", "Province"]
-                        },
-                        {
-                            "id": "q5",
-                            "type": "short_answer",
-                            "prompt": "Explain the main causes of the Tay Son rebellion and its impact on Vietnamese history.",
-                            "minWords": 50
-                        }
-                    ]
-                }
-            }
-            yield f"data: {json.dumps(mock_quiz_data)}\n\n"
-        
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Cache-Control"
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Mock study session events failed: {repr(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mock study session events error: {repr(e)}"
-        )
-
-@app.post("/api/quiz-sessions/notify")
-async def notify_quiz_session_proxy(
-    request: Request,
-    user_id: str = Query(..., description="User ID to notify"),
-    session_id: str = Query(..., description="Session ID"),
-    job_id: str = Query(..., description="Job ID"),
-    status: str = Query(..., description="Status: queued, running, completed, failed"),
-    progress: int = Query(0, description="Progress percentage"),
-    message: str = Query(None, description="Status message")
-):
-    """Proxy quiz session notifications to the notification service"""
-    try:
-        # Get quiz_data from request body if present
-        body = await request.json() if request.headers.get("content-type") == "application/json" else {}
-        quiz_data = body.get("quiz_data")
-        
-        logger.info(f"Quiz session notification proxy: user_id={user_id}, session_id={session_id}, status={status}")
-        
-        # Forward to notification service
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.NOTIFICATION_SERVICE_URL}/quiz-sessions/notify",
-                params={
-                    "user_id": user_id,
-                    "session_id": session_id,
-                    "job_id": job_id,
-                    "status": status,
-                    "progress": progress,
-                    "message": message
-                },
-                json={"quiz_data": quiz_data} if quiz_data else {},
-                timeout=10.0
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Notification service error: {response.status_code} - {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Notification service error: {response.text}"
-                )
                 
     except Exception as e:
-        logger.error(f"Quiz session notification proxy error: {repr(e)}")
+        logger.error(f"Upload multiple proxy error: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Quiz session notification proxy error: {repr(e)}"
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
         )
 
-@app.post("/api/study-sessions/confirm")
-async def confirm_study_session_proxy(request: Request):
-    """Proxy study session confirm to quiz service"""
+# Document CRUD Proxy Routes
+
+@app.get("/api/documents")
+async def get_documents_proxy(
+    category_id: str = Query(None),
+    page: int = Query(1),
+    page_size: int = Query(10),
+    request: Request = None
+):
+    """Proxy document list requests to document service"""
     try:
-        # Verify authentication
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header required"
-            )
+        # Forward the Authorization header to Document Service
+        auth_header = request.headers.get("authorization") if request else None
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
-        # Get the request body
-        body = await request.json()
+        # Build query parameters
+        params = {"page": page, "page_size": page_size}
+        if category_id:
+            params["category_id"] = category_id
         
-        # Forward to quiz service
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.QUIZ_SERVICE_URL}/study-sessions/confirm",
-                json=body,
-                headers={"Authorization": auth_header},
+            response = await client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/documents",
+                params=params,
+                headers=headers,
                 timeout=30.0
             )
             
             if response.status_code == 200:
                 return response.json()
             else:
-                error_detail = "Failed to confirm study session"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
-                raise HTTPException(
+                # Return the actual error from the document service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
                     status_code=response.status_code,
-                    detail=error_detail
+                    media_type="application/json"
                 )
-        
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Quiz service timeout"
-        )
+                
     except Exception as e:
-        logger.error(f"Study session confirm service error: {repr(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Study session confirm service error: {str(e)}"
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.get("/api/documents/{document_id}")
+async def get_document_proxy(document_id: str, request: Request):
+    """Proxy single document requests to document service"""
+    try:
+        # Forward the Authorization header to Document Service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the document service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+                
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+@app.delete("/api/documents/{document_id}")
+async def delete_document_proxy(document_id: str, request: Request):
+    """Proxy document deletion requests to document service"""
+    try:
+        # Forward the Authorization header to Document Service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the document service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+                
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Document service error: {str(e)}"
+        )
+
+# Quiz Service Proxy Routes
+
+@app.post("/api/quiz/start-study-session")
+async def start_study_session_proxy(request: Request):
+    """Proxy study session start to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quiz/start-study-session",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.post("/api/quiz/ingest-study-session")
+async def ingest_study_session_proxy(request: Request):
+    """Proxy study session ingest to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quiz/ingest-study-session",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/quiz/study-session-status/{job_id}")
+async def get_study_session_status_proxy(
+    job_id: str,
+    request: Request
+):
+    """Proxy study session status to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/quiz/study-session-status/{job_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/quiz/study-session-events/{job_id}")
+async def get_study_session_events_proxy(
+    job_id: str,
+    request: Request
+):
+    """Proxy study session events to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/quiz/study-session-events/{job_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return StreamingResponse(
+                    response.iter_content(chunk_size=1024),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Headers": "*",
+                    }
+                )
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+# Quiz session notification proxy
+@app.post("/api/quiz/notify-session")
+async def notify_quiz_session_proxy(
+    session_id: str = Body(...),
+    status: str = Body(...),
+    user_id: str = Depends(verify_auth_token)
+):
+    """Proxy quiz session notifications to the notification service"""
+    try:
+        logger.info(f"Quiz session notification proxy: user_id={user_id}, session_id={session_id}, status={status}")
+        
+        # Forward to notification service
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications",
+                json={
+                    "user_id": user_id,
+                    "title": "Quiz Session Update",
+                    "message": f"Your quiz session {session_id} is now {status}",
+                    "notification_type": "quiz_session",
+                    "metadata": {
+                        "session_id": session_id,
+                        "status": status
+                    }
+                },
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                return {"message": "Notification sent successfully"}
+            else:
+                logger.warning(f"Notification service returned {response.status_code}: {response.text}")
+                return {"message": "Notification service unavailable"}
+                
+    except Exception as e:
+        logger.error(f"Quiz session notification proxy error: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz session notification proxy error: {str(e)}"
+        )
+
+@app.post("/api/quiz/confirm-study-session")
+async def confirm_study_session_proxy(request: Request):
+    """Proxy study session confirm to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quiz/confirm-study-session",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
         )
 
 # New clarifier proxy routes for /api/clarifier/*
+
 @app.post("/api/clarifier/start")
 async def clarifier_start_proxy(request: Request):
-    """Mock clarifier start endpoint for development"""
+    """Proxy clarifier start to clarifier service"""
     try:
-        # Verify authentication
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header required"
-            )
-        
         # Get the request body
-        body = await request.body()
+        body = await request.json()
         
-        # Return mock response
-        logger.info(f"Mock clarifier start received: {body}")
+        # Forward the Authorization header to clarifier service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
-        return {
-            "status": "success",
-            "message": "Mock clarifier session started successfully",
-            "sessionId": "mock-clarifier-session-id"
-        }
-        
-    except HTTPException:
-        raise
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.CLARIFIER_SERVICE_URL}/clarifier/start",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the clarifier service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
     except Exception as e:
-        logger.error(f"Mock clarifier start failed: {repr(e)}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mock clarifier start error: {repr(e)}"
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Clarifier service error: {str(e)}"
         )
 
 @app.post("/api/clarifier/ingest")
 async def clarifier_ingest_proxy(request: Request):
-    """Mock clarifier ingest endpoint for development"""
+    """Proxy clarifier ingest to clarifier service"""
     try:
-        # Verify authentication
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header required"
-            )
-        
         # Get the request body
         body = await request.json()
         
-        # Return mock response
-        logger.info(f"Mock clarifier ingest received: {body}")
+        # Forward the Authorization header to clarifier service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
-        return {
-            "status": "success",
-            "message": "Mock clarifier input ingested successfully",
-            "sessionId": "mock-clarifier-session-id"
-        }
-        
-    except HTTPException:
-        raise
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.CLARIFIER_SERVICE_URL}/clarifier/ingest",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the clarifier service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
     except Exception as e:
-        logger.error(f"Mock clarifier ingest failed: {repr(e)}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mock clarifier ingest error: {repr(e)}"
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Clarifier service error: {str(e)}"
         )
 
-# Quiz endpoints
-@app.get("/api/study-sessions/{session_id}/quiz")
-async def get_quiz(session_id: str):
-    """Get quiz for a study session"""
+@app.get("/api/clarifier/quiz/{session_id}")
+async def clarifier_quiz_proxy(session_id: str, request: Request):
+    """Proxy clarifier quiz to clarifier service"""
     try:
-        # For now, return mock quiz data
-        mock_quiz = {
-            "sessionId": session_id,
-            "quizId": f"quiz-{session_id}",
-            "questions": [
-                {
-                    "id": "q1",
-                    "type": "single_choice",
-                    "prompt": "Who was the founder of the Tay Son dynasty?",
-                    "options": [
-                        {"id": "opt1", "text": "Nguyen Hue"},
-                        {"id": "opt2", "text": "Nguyen Anh"},
-                        {"id": "opt3", "text": "Nguyen Phuc Anh"},
-                        {"id": "opt4", "text": "Nguyen Kim"}
-                    ]
-                },
-                {
-                    "id": "q2",
-                    "type": "multiple_choice",
-                    "prompt": "Which of the following are characteristics of the Tay Son rebellion?",
-                    "options": [
-                        {"id": "opt1", "text": "Peasant uprising"},
-                        {"id": "opt2", "text": "Anti-feudal movement"},
-                        {"id": "opt3", "text": "Foreign invasion"},
-                        {"id": "opt4", "text": "Religious conflict"}
-                    ]
-                },
-                {
-                    "id": "q3",
-                    "type": "true_false",
-                    "prompt": "The Tay Son rebellion began in 1771.",
-                    "trueLabel": "True",
-                    "falseLabel": "False"
-                },
-                {
-                    "id": "q4",
-                    "type": "fill_blank",
-                    "prompt": "The Tay Son rebellion began in the year _____ in the province of _____.",
-                    "blanks": 2,
-                    "labels": ["Year", "Province"]
-                },
-                {
-                    "id": "q5",
-                    "type": "short_answer",
-                    "prompt": "Explain the main causes of the Tay Son rebellion and its impact on Vietnamese history.",
-                    "minWords": 50
-                }
-            ]
-        }
-        return mock_quiz
+        # Forward the Authorization header to clarifier service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.CLARIFIER_SERVICE_URL}/clarifier/quiz/{session_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the clarifier service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
     except Exception as e:
-        logger.error(f"Error getting quiz: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Clarifier service error: {str(e)}"
+        )
 
-@app.post("/api/study-sessions/{session_id}/answers")
-async def save_quiz_answers(session_id: str, answers: dict = Body(...)):
-    """Save quiz answers (autosave)"""
+@app.post("/api/clarifier/grade/{session_id}")
+async def clarifier_grade_proxy(session_id: str, request: Request):
+    """Proxy clarifier grade to clarifier service"""
     try:
-        # For now, just log the answers
-        logger.info(f"Saving answers for session {session_id}: {answers}")
-        return {"ok": True}
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to clarifier service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.CLARIFIER_SERVICE_URL}/clarifier/grade/{session_id}",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to grade clarifier quiz"
+                )
     except Exception as e:
-        logger.error(f"Error saving answers: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Clarifier service error: {str(e)}"
+        )
 
-@app.post("/api/study-sessions/{session_id}/submit")
-async def submit_quiz(session_id: str):
-    """Submit and grade quiz"""
+# Quiz Generation Proxy Routes
+
+@app.post("/api/quiz/generate/category")
+async def generate_quiz_category_proxy(request: Request):
+    """Proxy quiz generation by category to quiz service"""
     try:
-        # For now, return mock grading results
-        mock_result = {
-            "scorePercent": 85.0,
-            "correctCount": 4,
-            "total": 5,
-            "graded": [
-                {
-                    "id": "q1",
-                    "type": "single_choice",
-                    "prompt": "Who was the founder of the Tay Son dynasty?",
-                    "options": [
-                        {"id": "opt1", "text": "Nguyen Hue"},
-                        {"id": "opt2", "text": "Nguyen Anh"},
-                        {"id": "opt3", "text": "Nguyen Phuc Anh"},
-                        {"id": "opt4", "text": "Nguyen Kim"}
-                    ],
-                    "correctChoiceIds": ["opt1"],
-                    "explanation": "Nguyen Hue was indeed the founder and leader of the Tay Son dynasty."
-                },
-                {
-                    "id": "q2",
-                    "type": "multiple_choice",
-                    "prompt": "Which of the following are characteristics of the Tay Son rebellion?",
-                    "options": [
-                        {"id": "opt1", "text": "Peasant uprising"},
-                        {"id": "opt2", "text": "Anti-feudal movement"},
-                        {"id": "opt3", "text": "Foreign invasion"},
-                        {"id": "opt4", "text": "Religious conflict"}
-                    ],
-                    "correctChoiceIds": ["opt1", "opt2"],
-                    "explanation": "The Tay Son rebellion was primarily a peasant uprising and anti-feudal movement."
-                },
-                {
-                    "id": "q3",
-                    "type": "true_false",
-                    "prompt": "The Tay Son rebellion began in 1771.",
-                    "trueLabel": "True",
-                    "falseLabel": "False",
-                    "correct": True,
-                    "explanation": "Correct! The Tay Son rebellion began in 1771 in Binh Dinh province."
-                },
-                {
-                    "id": "q4",
-                    "type": "fill_blank",
-                    "prompt": "The Tay Son rebellion began in the year _____ in the province of _____.",
-                    "blanks": 2,
-                    "labels": ["Year", "Province"],
-                    "correctValues": ["1771", "Binh Dinh"],
-                    "explanation": "The rebellion began in 1771 in Binh Dinh province."
-                },
-                {
-                    "id": "q5",
-                    "type": "short_answer",
-                    "prompt": "Explain the main causes of the Tay Son rebellion and its impact on Vietnamese history.",
-                    "minWords": 50,
-                    "explanation": "The Tay Son rebellion was caused by widespread corruption, heavy taxation, and social inequality under the Nguyen lords. It led to significant social reforms and the eventual unification of Vietnam under the Nguyen dynasty."
-                }
-            ]
-        }
-        return mock_result
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/generate",
+                json=body,
+                headers=headers,
+                timeout=60.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
     except Exception as e:
-        logger.error(f"Error submitting quiz: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/quiz/{quiz_id}")
+async def get_quiz_proxy(quiz_id: str, request: Request):
+    """Proxy get quiz by ID to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/{quiz_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/quiz")
+async def get_quizzes_proxy(
+    category_id: str = Query(None),
+    request: Request = None
+):
+    """Proxy get quizzes list to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization") if request else None
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Build query parameters
+        params = {}
+        if category_id:
+            params["category_id"] = category_id
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes",
+                params=params,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
 
 # Notification Service Proxy Routes
+
 @app.get("/api/notifications/queue-status")
-async def get_notification_queue_status(request: Request):
+async def notification_queue_status_proxy(request: Request):
     """Proxy notification queue status to notification service"""
     try:
+        # Forward the Authorization header to notification service
         auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(status_code=401, detail="Authorization header required")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{settings.NOTIFICATION_SERVICE_URL}/notifications/queue-status",
-                headers={"Authorization": auth_header}
+                headers=headers,
+                timeout=30.0
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to get notification queue status"
+                )
     except Exception as e:
         logger.error(f"Error proxying notification queue status: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Notification service error: {str(e)}"
+        )
 
-@app.delete("/api/notifications/clear-all")
-async def clear_all_notifications(request: Request):
+@app.post("/api/notifications/clear-all")
+async def clear_all_notifications_proxy(request: Request):
     """Proxy clear all notifications to notification service"""
     try:
+        # Forward the Authorization header to notification service
         auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(status_code=401, detail="Authorization header required")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
         async with httpx.AsyncClient() as client:
-            response = await client.delete(
+            response = await client.post(
                 f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-all",
-                headers={"Authorization": auth_header}
+                headers=headers,
+                timeout=30.0
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to clear all notifications"
+                )
     except Exception as e:
         logger.error(f"Error proxying clear all notifications: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Notification service error: {str(e)}"
+        )
 
-@app.delete("/api/notifications/clear-pending")
-async def clear_pending_notifications(request: Request):
+@app.post("/api/notifications/clear-pending")
+async def clear_pending_notifications_proxy(request: Request):
     """Proxy clear pending notifications to notification service"""
     try:
+        # Forward the Authorization header to notification service
         auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(status_code=401, detail="Authorization header required")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
         async with httpx.AsyncClient() as client:
-            response = await client.delete(
+            response = await client.post(
                 f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-pending",
-                headers={"Authorization": auth_header}
+                headers=headers,
+                timeout=30.0
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to clear pending notifications"
+                )
     except Exception as e:
         logger.error(f"Error proxying clear pending notifications: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Notification service error: {str(e)}"
+        )
 
-@app.delete("/api/notifications/clear-by-type/{notification_type}")
-async def clear_notifications_by_type(notification_type: str, request: Request):
+@app.post("/api/notifications/clear-by-type")
+async def clear_notifications_by_type_proxy(request: Request):
     """Proxy clear notifications by type to notification service"""
     try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to notification service
         auth_header = request.headers.get("authorization")
-        if not auth_header:
-            raise HTTPException(status_code=401, detail="Authorization header required")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
         
         async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-by-type/{notification_type}",
-                headers={"Authorization": auth_header}
+            response = await client.post(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-by-type",
+                json=body,
+                headers=headers,
+                timeout=30.0
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to clear notifications by type"
+                )
     except Exception as e:
         logger.error(f"Error proxying clear notifications by type: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Notification service error: {str(e)}"
+        )
 
 # MUST be last of all /api routes - catch-all proxy for any unmatched API calls
 @app.api_route("/api/{service}/{path:path}",
-               methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+               methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def proxy_catch_all(service: str, path: str, request: Request):
     """Catch-all proxy for any unmatched API routes"""
     logger.info(f"PROXY CATCH-ALL → {request.method} /api/{service}/{path}")
     
-    # Map service names to URLs
+    # Determine target service URL based on service name
     service_urls = {
-        "document-service": settings.DOCUMENT_SERVICE_URL,
-        "auth-service": settings.AUTH_SERVICE_URL,
-        "quiz-service": settings.QUIZ_SERVICE_URL,
-        "notification-service": settings.NOTIFICATION_SERVICE_URL,
-        "indexing-service": settings.INDEXING_SERVICE_URL,
-        "clarifier-svc": settings.CLARIFIER_SERVICE_URL,
+        "auth": settings.AUTH_SERVICE_URL,
+        "documents": settings.DOCUMENT_SERVICE_URL,
+        "indexing": settings.INDEXING_SERVICE_URL,
+        "quiz": settings.QUIZ_SERVICE_URL,
+        "notifications": settings.NOTIFICATION_SERVICE_URL,
+        "clarifier": settings.CLARIFIER_SERVICE_URL,
+        "question-budget": settings.QUESTION_BUDGET_SERVICE_URL,
     }
     
-    if service not in service_urls:
+    target_service_url = service_urls.get(service)
+    if not target_service_url:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Unknown service: {service}"
         )
     
-    target_url = f"{service_urls[service]}/{path}"
+    target_url = f"{target_service_url}/api/{path}"
     logger.info(f"PROXY CATCH-ALL → {target_url}")
     
+    # Forward headers (excluding host)
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    
+    # Forward the request
     try:
-        # Forward headers (excluding host)
-        headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
-        
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.request(
-                method=request.method,
-                url=target_url,
-                content=await request.body(),
-                headers=headers,
+            if request.method == "GET":
+                response = await client.get(target_url, headers=headers, params=request.query_params)
+            elif request.method == "POST":
+                body = await request.body()
+                response = await client.post(target_url, headers=headers, content=body)
+            elif request.method == "PUT":
+                body = await request.body()
+                response = await client.put(target_url, headers=headers, content=body)
+            elif request.method == "DELETE":
+                response = await client.delete(target_url, headers=headers)
+            elif request.method == "PATCH":
+                body = await request.body()
+                response = await client.patch(target_url, headers=headers, content=body)
+            elif request.method == "OPTIONS":
+                response = await client.options(target_url, headers=headers)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                    detail=f"Method {request.method} not supported"
+                )
+            
+            # Return the response
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get("content-type")
             )
-        
-        logger.info(f"PROXY CATCH-ALL ← {response.status_code} {target_url}")
-        
-        # Disable caching for status endpoints
-        no_cache = (
-            path.endswith("/status")
-            and "/documents/" in path
+            
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Service {service} timeout"
         )
-        
-        response_headers = {"content-type": response.headers.get("content-type", "application/json")}
-        if no_cache:
-            response_headers.update({
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-            })
-        
-        from fastapi.responses import Response
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            headers=response_headers
-        )
-        
     except Exception as e:
-        logger.error(f"PROXY CATCH-ALL error: {str(e)}")
+        logger.error(f"Proxy catch-all error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Proxy error: {str(e)}"
+            detail=f"Service {service} error: {str(e)}"
         )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

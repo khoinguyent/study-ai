@@ -1,4 +1,4 @@
-version: '3.8'
+# Docker Compose file for Study AI Platform
 
 services:
   # API Gateway
@@ -253,6 +253,10 @@ services:
       DENSITY_WEIGHT_NUMBERS: 0.3
       DYNAMIC_HIERARCHY_ENABLE: "false"
       EMBEDDING_MODEL: sentence-transformers/LaBSE
+      # PDF Processing Configuration
+      PDF_OCR_ENABLED: "true"
+      PDF_OCR_LANG: "vie+eng"
+      PDF_OCR_DPI: "300"
     depends_on:
       indexing-db:
         condition: service_healthy
