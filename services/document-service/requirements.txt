@@ -4,6 +4,7 @@ uvicorn[standard]
 
 # Document processing - PDF (core functionality)
 PyPDF2
+pymupdf==1.23.8  # Robust PDF parsing with OCR fallback
 pdf2image
 Pillow
 pytesseract

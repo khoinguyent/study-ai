@@ -68,6 +68,8 @@ RUN python -c "import docx; print('python-docx installed successfully')"
 RUN python -c "import pandas; print(f'pandas version: {pandas.__version__}')"
 RUN python -c "import openpyxl; print('openpyxl installed successfully')"
 RUN python -c "import PIL; print(f'Pillow version: {PIL.__version__}')"
+RUN python -c "import fitz; print('PyMuPDF (fitz) installed successfully')"
+RUN python -c "import pytesseract; print('pytesseract installed successfully')"
 
 # Copy application code
 COPY app/ ./app/

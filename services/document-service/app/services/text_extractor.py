@@ -4,6 +4,7 @@ import os
 from typing import Optional, Dict, Any
 from pathlib import Path
 import logging
+import re
 
 # Import text extraction libraries
 try:
@@ -19,6 +20,14 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
     logging.warning("PyPDF2 not available. PDF files cannot be processed.")
+
+# Try to import the new robust PDF parser
+try:
+    import fitz  # PyMuPDF
+    ROBUST_PDF_AVAILABLE = True
+except ImportError:
+    ROBUST_PDF_AVAILABLE = False
+    logging.warning("PyMuPDF (fitz) not available. Robust PDF parsing disabled.")
 
 # OCR dependencies (optional)
 try:
@@ -38,6 +47,45 @@ except ImportError:
     logging.warning("pandas not available. Excel files cannot be processed.")
 
 logger = logging.getLogger(__name__)
+
+def _clean_text_enhanced(text: str) -> str:
+    """Enhanced text cleaning for better quality"""
+    if not text:
+        return ""
+    
+    # Dehyphenation and paragraph join
+    text = re.sub(r"-\s*\n", "", text)           # join hyphenated line-breaks
+    text = re.sub(r"[ \t]+\n", "\n", text)       # trim trailing spaces
+    text = re.sub(r"\n{3,}", "\n\n", text)       # collapse huge gaps
+    text = re.sub(r"\s+", " ", text)             # normalize whitespace
+    
+    # Remove common PDF artifacts
+    text = re.sub(r'\x00', '', text)             # null characters
+    text = re.sub(r'\x0c', '', text)             # form feed
+    
+    # Clean up common PDF text issues
+    text = text.replace('ﬁ', 'fi')               # ligatures
+    text = text.replace('ﬂ', 'fl')
+    text = text.replace('ﬀ', 'ff')
+    text = text.replace('ﬃ', 'ffi')
+    text = text.replace('ﬄ', 'ffl')
+    
+    # Remove lines that are just punctuation or symbols
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        if line.strip() and len(line.strip()) > 2:
+            cleaned_lines.append(line.strip())
+        elif line.strip() and line.strip().isalnum():
+            cleaned_lines.append(line.strip())
+    
+    text = '\n'.join(cleaned_lines)
+    
+    # Final cleanup
+    text = text.strip()
+    text = re.sub(r'\n\n\n+', '\n\n', text)     # normalize paragraph breaks
+    
+    return text
 
 class TextExtractor:
     """Service for extracting text from various document formats"""
@@ -179,6 +227,151 @@ class TextExtractor:
     
     def _extract_pdf_text(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
         """Extract text from PDF files with enhanced text processing. Falls back to OCR if needed."""
+        
+        # Try robust PDF parser first if available
+        if ROBUST_PDF_AVAILABLE:
+            try:
+                result = await self._extract_pdf_text_robust(file_content, filename)
+                if result['success'] and result['text'].strip():
+                    return result
+                logger.info(f"Robust PDF parser returned insufficient text, falling back to PyPDF2")
+            except Exception as e:
+                logger.warning(f"Robust PDF parser failed, falling back to PyPDF2: {e}")
+        
+        # Fallback to PyPDF2
+        return await self._extract_pdf_text_pypdf2(file_content, filename)
+    
+    async def _extract_pdf_text_robust(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
+        """Extract text using PyMuPDF (fitz) with OCR fallback"""
+        try:
+            import fitz
+            
+            # Open PDF from bytes
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            
+            pages = []
+            total_txt = []
+            ocr_used = False
+            total_words = 0
+            
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                page_text = ""
+                method_used = "text"
+                
+                # Try structured text extraction first
+                try:
+                    blocks = page.get_text("blocks")
+                    if blocks:
+                        text_parts = []
+                        for block in blocks:
+                            if len(block) >= 5:  # block[4] contains text
+                                text_parts.append(block[4])
+                        page_text = "\n".join(text_parts).strip()
+                        
+                        if len(page_text) < 25:
+                            page_text = page.get_text("text").strip()
+                            method_used = "text_plain"
+                    else:
+                        page_text = page.get_text("text").strip()
+                        method_used = "text_plain"
+                except Exception as e:
+                    logger.warning(f"Text extraction failed for page {page_num + 1}: {e}")
+                    page_text = page.get_text("text").strip()
+                    method_used = "text_plain"
+                
+                # OCR fallback if needed
+                if len(page_text) < 25 and OCR_AVAILABLE:
+                    try:
+                        # Use PyMuPDF rasterization
+                        zoom = 300 / 72.0  # 300 DPI
+                        mat = fitz.Matrix(zoom, zoom)
+                        pix = page.get_pixmap(matrix=mat, alpha=False)
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        
+                        # OCR with Vietnamese + English support
+                        ocr_text = pytesseract.image_to_string(
+                            img, 
+                            lang="vie+eng", 
+                            config="--psm 6 --oem 3"
+                        )
+                        
+                        if len(ocr_text.strip()) > len(page_text):
+                            page_text = ocr_text.strip()
+                            method_used = "ocr"
+                            ocr_used = True
+                            
+                    except Exception as e:
+                        logger.warning(f"OCR failed for page {page_num + 1}: {e}")
+                
+                # Clean the text
+                cleaned_text = _clean_text_enhanced(page_text)
+                
+                if cleaned_text.strip():
+                    pages.append({
+                        'page_number': page_num + 1,
+                        'word_count': len(cleaned_text.split()),
+                        'character_count': len(cleaned_text),
+                        'has_content': True,
+                        'method': method_used
+                    })
+                    total_txt.append(f"--- Page {page_num + 1} ---\n{cleaned_text}")
+                    total_words += len(cleaned_text.split())
+                else:
+                    pages.append({
+                        'page_number': page_num + 1,
+                        'word_count': 0,
+                        'character_count': 0,
+                        'has_content': False,
+                        'note': 'Page contains no extractable text',
+                        'method': method_used
+                    })
+            
+            # Combine all text
+            full_text = '\n\n'.join(total_txt)
+            
+            # Metadata
+            metadata = {
+                'page_count': len(doc),
+                'pages_with_content': len([p for p in pages if p.get('has_content', False)]),
+                'has_encryption': doc.is_encrypted,
+                'file_size': len(file_content),
+                'page_metadata': pages,
+                'text_quality': self._assess_pdf_text_quality(full_text, pages),
+                'extraction_method': 'PyMuPDF_enhanced',
+                'ocr_used': ocr_used
+            }
+            
+            # Extract PDF metadata if available
+            try:
+                if doc.metadata:
+                    metadata['pdf_metadata'] = {
+                        'title': doc.metadata.get('title', ''),
+                        'author': doc.metadata.get('author', ''),
+                        'subject': doc.metadata.get('subject', ''),
+                        'creator': doc.metadata.get('creator', ''),
+                        'producer': doc.metadata.get('producer', ''),
+                        'creation_date': doc.metadata.get('creationDate', ''),
+                        'modification_date': doc.metadata.get('modDate', '')
+                    }
+            except Exception as e:
+                logger.debug(f"Could not extract PDF metadata: {str(e)}")
+            
+            doc.close()
+            
+            return {
+                'text': full_text,
+                'metadata': metadata,
+                'word_count': total_words,
+                'method': 'PyMuPDF_enhanced'
+            }
+            
+        except Exception as e:
+            logger.error(f"Robust PDF extraction failed: {str(e)}")
+            raise Exception(f"Robust PDF extraction failed: {str(e)}")
+    
+    async def _extract_pdf_text_pypdf2(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
+        """Extract text from PDF files using PyPDF2 with enhanced text processing. Falls back to OCR if needed."""
         try:
             # Create a BytesIO object from the file content
             pdf_stream = io.BytesIO(file_content)
@@ -202,7 +395,7 @@ class TextExtractor:
                     
                     if raw_text and raw_text.strip():
                         # Clean and process the text
-                        cleaned_text = self._clean_pdf_text(raw_text)
+                        cleaned_text = _clean_text_enhanced(raw_text)
                         
                         if cleaned_text.strip():
                             # Add page separator with metadata

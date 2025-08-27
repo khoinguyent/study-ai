@@ -201,19 +201,44 @@ class ApiService {
     return this.handleResponse<Document>(response);
   }
 
-  async uploadDocuments(formData: FormData): Promise<Document[]> {
+  async uploadDocuments(files: File[], subjectId: string, categoryId?: string): Promise<Document[]> {
     const token = authService.getToken();
-    const headers: HeadersInit = {
-      'Authorization': `Bearer ${token}`,
-      // Don't set Content-Type for FormData - let browser set it automatically
-    };
+    const formData = new FormData();
+    
+    // Append each file with the correct field name "files"
+    files.forEach(file => {
+      formData.append('files', file, file.name);
+    });
+    
+    // Use snake_case for field names
+    formData.append('subject_id', subjectId);
+    if (categoryId) {
+      formData.append('category_id', categoryId);
+    }
     
     const response = await fetch(`${API_BASE_URL}/api/documents/upload-multiple`, {
       method: 'POST',
-      headers,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Do not set Content-Type - let browser set multipart boundary automatically
+      },
       body: formData,
     });
+    
+    if (!response.ok) {
+      const error = await this.safeJson(response);
+      throw new Error(error?.detail || error?.message || `Upload failed (${response.status})`);
+    }
+    
     return this.handleResponse<Document[]>(response);
+  }
+
+  private async safeJson(res: Response) {
+    try { 
+      return await res.json(); 
+    } catch { 
+      return null; 
+    }
   }
 
   async deleteDocument(id: string): Promise<void> {
