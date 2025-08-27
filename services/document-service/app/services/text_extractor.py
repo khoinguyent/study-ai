@@ -20,6 +20,16 @@ except ImportError:
     PDF_AVAILABLE = False
     logging.warning("PyPDF2 not available. PDF files cannot be processed.")
 
+# OCR dependencies (optional)
+try:
+    from pdf2image import convert_from_bytes
+    import pytesseract
+    from PIL import Image
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    logging.warning("OCR dependencies not available. OCR fallback disabled.")
+
 try:
     import pandas as pd
     EXCEL_AVAILABLE = True
@@ -168,7 +178,7 @@ class TextExtractor:
             raise Exception(f"DOC text extraction failed: {str(e)}")
     
     def _extract_pdf_text(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
-        """Extract text from PDF files with enhanced text processing"""
+        """Extract text from PDF files with enhanced text processing. Falls back to OCR if needed."""
         try:
             # Create a BytesIO object from the file content
             pdf_stream = io.BytesIO(file_content)
@@ -268,6 +278,21 @@ class TextExtractor:
             except Exception as e:
                 logger.debug(f"Could not extract PDF metadata: {str(e)}")
             
+            # If no text extracted and OCR available, perform OCR fallback
+            if total_words == 0 and OCR_AVAILABLE:
+                ocr_text, ocr_meta = self._extract_pdf_text_with_ocr(file_content)
+                if ocr_text.strip():
+                    metadata['ocr_used'] = True
+                    metadata['ocr'] = ocr_meta
+                    return {
+                        'text': ocr_text,
+                        'metadata': metadata,
+                        'word_count': len(ocr_text.split()),
+                        'method': 'OCR_Tesseract'
+                    }
+                else:
+                    metadata['ocr_used'] = True
+
             return {
                 'text': full_text,
                 'metadata': metadata,
@@ -413,6 +438,40 @@ class TextExtractor:
             'word_count': len(words),
             'page_coverage': pages_with_content / total_pages if total_pages > 0 else 0
         }
+
+    def _extract_pdf_text_with_ocr(self, file_content: bytes) -> tuple[str, dict]:
+        """Perform OCR on each PDF page and return combined text and metadata."""
+        if not OCR_AVAILABLE:
+            return "", {"available": False}
+        try:
+            images = convert_from_bytes(file_content, fmt='png')
+            ocr_texts = []
+            ocr_pages = []
+            total_words = 0
+            for idx, img in enumerate(images, start=1):
+                # Optional: convert to grayscale for better OCR
+                if img.mode != 'L':
+                    img = img.convert('L')
+                text = pytesseract.image_to_string(img)
+                cleaned = self._final_pdf_text_cleanup(text)
+                ocr_texts.append(f"--- OCR Page {idx} ---\n{cleaned}")
+                words = len(cleaned.split())
+                total_words += words
+                ocr_pages.append({
+                    'page_number': idx,
+                    'word_count': words,
+                    'character_count': len(cleaned),
+                    'has_content': bool(cleaned.strip())
+                })
+            combined = '\n\n'.join(ocr_texts)
+            return combined, {
+                'pages': ocr_pages,
+                'total_words': total_words,
+                'engine': 'tesseract'
+            }
+        except Exception as e:
+            logger.error(f"OCR extraction failed: {str(e)}")
+            return "", {'error': str(e), 'engine': 'tesseract'}
     
     def _get_pdf_processing_recommendations(self, quality_assessment: dict) -> list:
         """Get recommendations for improving PDF text extraction"""
@@ -507,6 +566,8 @@ class TextExtractor:
                 extraction_result['metadata']['needs_improvement'] = False
                 extraction_result['metadata']['recommendations'] = []
             
+            # Mark success for unified contract
+            extraction_result['success'] = True
             return extraction_result
             
         except Exception as e:
