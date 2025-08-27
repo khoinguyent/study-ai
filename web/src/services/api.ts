@@ -153,17 +153,17 @@ class ApiService {
 
   // Documents endpoints
   async getDocument(id: string): Promise<Document> {
-    const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${id}`, {
       headers: this.getAuthHeaders(),
     });
     return this.handleResponse<Document>(response);
   }
 
-  async getDocuments(categoryId?: string): Promise<Document[]> {
-    const url = categoryId 
-      ? `${API_BASE_URL}/documents?category_id=${categoryId}`
-      : `${API_BASE_URL}/documents`;
-    
+    async getDocuments(categoryId?: string): Promise<Document[]> {
+    const url = categoryId
+      ? `${API_BASE_URL}/api/documents?category_id=${categoryId}`
+      : `${API_BASE_URL}/api/documents`;
+
     const response = await fetch(url, {
       headers: this.getAuthHeaders(),
     });
@@ -178,7 +178,7 @@ class ApiService {
     has_more: boolean;
   }> {
     const response = await fetch(
-      `${API_BASE_URL}/categories/${categoryId}/documents?page=${page}&page_size=${pageSize}`,
+      `${API_BASE_URL}/api/categories/${categoryId}/documents?page=${page}&page_size=${pageSize}`,
       {
         headers: this.getAuthHeaders(),
       }
@@ -191,7 +191,7 @@ class ApiService {
     formData.append('file', file);
     formData.append('category_id', categoryId);
 
-    const response = await fetch(`${API_BASE_URL}/upload`, {
+    const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authService.getToken()}`, // Use authService to get token
@@ -208,7 +208,7 @@ class ApiService {
       // Don't set Content-Type for FormData - let browser set it automatically
     };
     
-    const response = await fetch(`${API_BASE_URL}/upload-multiple`, {
+    const response = await fetch(`${API_BASE_URL}/api/documents/upload-multiple`, {
       method: 'POST',
       headers,
       body: formData,
@@ -217,7 +217,7 @@ class ApiService {
   }
 
   async deleteDocument(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${id}`, {
       method: 'DELETE',
       headers: this.getAuthHeaders(),
     });
@@ -227,9 +227,8 @@ class ApiService {
   }
 
   async downloadDocument(documentId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/download`, {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, {
       method: 'GET',
-      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {

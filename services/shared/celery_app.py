@@ -72,6 +72,10 @@ celery_app.conf.task_routes = {
     'app.tasks.*': {'queue': 'document_queue'},
     'app.indexing_tasks.*': {'queue': 'indexing_queue'},
     'app.quiz_tasks.*': {'queue': 'quiz_queue'},
+    # More specific routing for indexing tasks
+    'app.tasks.index_document': {'queue': 'indexing_queue'},
+    'app.tasks.reindex_document': {'queue': 'indexing_queue'},
+    'app.tasks.delete_document_index': {'queue': 'indexing_queue'},
 }
 
 # Event publisher for tasks
