@@ -642,51 +642,27 @@ async def upload_multiple_documents_proxy(request: Request):
         if auth_header:
             headers["Authorization"] = auth_header
         
-        # Debug logging
-        logger.info(f"Content-Type: {request.headers.get('content-type')}")
-        logger.info(f"Request headers: {dict(request.headers)}")
+        # Get the raw body and preserve all headers except Host
+        body = await request.body()
+        headers.update({k: v for k, v in request.headers.items() if k.lower() != "host"})
         
-        # Check if content-type is multipart/form-data
-        content_type = request.headers.get("content-type", "")
-        if not content_type.startswith("multipart/form-data"):
-            logger.error(f"Invalid content-type: {content_type}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Invalid content-type. Expected multipart/form-data, got {content_type}"
-            )
-        
-        # Get the form data
-        try:
-            form_data = await request.form()
-            logger.info(f"Received form data with keys: {list(form_data.keys())}")
-        except Exception as form_error:
-            logger.error(f"Error parsing form data: {form_error}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Invalid form data: {str(form_error)}"
-            )
-        
-        # Forward the request with proper content type
-        async with httpx.AsyncClient() as client:
+        # Forward the request with raw body and preserved headers
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{settings.DOCUMENT_SERVICE_URL}/upload-multiple",
-                data=form_data,
+                content=body,
                 headers=headers,
-                timeout=120.0
             )
             
-            if response.status_code == 200:
-                return response.json()
-            else:
-                # Return the actual error from the document service
-                error_detail = response.text
-                return Response(
-                    content=error_detail,
-                    status_code=response.status_code,
-                    media_type="application/json"
-                )
+            # Bubble up status + error details so the UI sees the real cause
+            return Response(
+                content=response.content, 
+                status_code=response.status_code, 
+                headers={"content-type": response.headers.get("content-type", "application/json")}
+            )
                 
     except Exception as e:
+        logger.error(f"Upload multiple proxy error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Document service error: {str(e)}"

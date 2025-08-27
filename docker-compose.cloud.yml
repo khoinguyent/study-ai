@@ -195,6 +195,10 @@ services:
       - INFRASTRUCTURE_PROVIDER=aws
       - MESSAGE_BROKER_TYPE=elasticache
       - TASK_QUEUE_TYPE=sqs
+      # PDF Processing Configuration
+      - PDF_OCR_ENABLED=true
+      - PDF_OCR_LANG=vie+eng
+      - PDF_OCR_DPI=300
     env_file:
       - env.cloud
     depends_on:

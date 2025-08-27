@@ -139,15 +139,12 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
     });
 
     try {
-      const formData = new FormData();
-      selectedFiles.forEach((selectedFile, index) => {
-        formData.append('files', selectedFile.file);
-      });
-      formData.append('subject_id', subject.id);
-      formData.append('category_id', category.id);
-
       // Upload documents using the event-driven system with progress tracking
-      const documents = await apiService.uploadDocuments(formData);
+      const documents = await apiService.uploadDocuments(
+        selectedFiles.map(sf => sf.file),
+        subject.id,
+        category.id
+      );
       
       // Start tracking each uploaded document
       documents.forEach((doc, index) => {
@@ -176,7 +173,20 @@ const UploadDocumentsModal: React.FC<UploadDocumentsModalProps> = ({
       
     } catch (error) {
       console.error('Upload error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
+      let errorMessage = 'Upload failed. Please try again.';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        // Handle error objects with detail property
+        const errorObj = error as any;
+        if (errorObj.detail) {
+          errorMessage = errorObj.detail;
+        } else if (errorObj.message) {
+          errorMessage = errorObj.message;
+        }
+      }
+      
       setErrors([errorMessage]);
       
       // Close all upload notifications and show error notifications
