@@ -287,7 +287,11 @@ services:
       DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
       REDIS_URL: redis://redis:6379
       # Quiz Generation Strategy
-      QUIZ_GENERATION_STRATEGY: huggingface  # Options: "ollama", "huggingface", "auto"
+      QUIZ_GENERATION_STRATEGY: openai  # Options: "ollama", "huggingface", "openai", "auto"
+      # OpenAI configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_MODEL: gpt-3.5-turbo
       # Ollama configuration
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: llama2:7b-chat
@@ -508,7 +512,11 @@ services:
       MESSAGE_BROKER_TYPE: redis
       TASK_QUEUE_TYPE: celery
       # Quiz Generation Strategy
-      QUIZ_GENERATION_STRATEGY: huggingface  # Options: "ollama", "huggingface", "auto"
+      QUIZ_GENERATION_STRATEGY: openai  # Options: "ollama", "huggingface", "auto"
+      # OpenAI configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_MODEL: gpt-3.5-turbo
       # Ollama configuration
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: llama2:7b-chat

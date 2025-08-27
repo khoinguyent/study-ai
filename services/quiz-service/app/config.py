@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "llama2:7b"
     
     # Quiz Generation Strategy
-    QUIZ_GENERATION_STRATEGY: str = "huggingface"  # Options: "ollama", "huggingface", "openai", "auto"
+    QUIZ_GENERATION_STRATEGY: str = "openai"  # Options: "ollama", "huggingface", "openai", "auto"
     
     # HuggingFace Configuration
     HUGGINGFACE_TOKEN: str = ""
