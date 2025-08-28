@@ -91,7 +91,7 @@ async def start_event_consumer_with_retry():
     for attempt in range(max_retries):
         try:
             logger.info(f"Attempting to connect to Redis (attempt {attempt + 1}/{max_retries})")
-            event_consumer = EventConsumer()
+            event_consumer = EventConsumer(redis_url=settings.REDIS_URL)
             await start_event_consumer()
             logger.info("Successfully connected to Redis and started event consumer")
             break

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Boolean, Integer, DateTime, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from .enums import QUESTION_TYPE, DIFFICULTY
-from ..db import Base
+from ..database import Base
 
 class QuestionBank(Base):
     __tablename__ = "question_bank"

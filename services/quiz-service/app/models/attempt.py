@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, DateTime, Numeric
 from sqlalchemy.dialects.postgresql import ARRAY, SMALLINT, JSONB
 from .enums import ATTEMPT_STATUS
-from ..db import Base
+from ..database import Base
 
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"

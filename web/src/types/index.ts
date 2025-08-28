@@ -137,12 +137,10 @@ export interface PublicRouteProps {
 // Question and Budget types
 export type QuestionType = "mcq" | "short" | "truefalse" | "fill_blank";
 
-export type QuestionMix = {
-  mcq: number;
-  short: number;
-  truefalse: number;
-  fill_blank: number;
-};
+// Percentages (0..100) per selected type; sum must be 100 across selected types
+export type QuestionMix = Partial<Record<QuestionType, number>>;
+
+export type Difficulty = "easy" | "medium" | "hard" | "mixed";
 
 export interface QuestionTypeConfig {
   type: QuestionType;
@@ -155,11 +153,27 @@ export interface BudgetEstimate {
   maxQuestions: number;
   perQuestionCost: number;
   totalCost: number;
-  notes: string[];
-  breakdown: {
-    evidence: number;
-    cost: number;
-    policy: number;
-    lengthGuard: number;
+  notes?: string;
+  breakdown?: {
+    evidence?: string;
+    cost?: string;
+    policy?: string;
+    lengthGuard?: string;
   };
+}
+
+// Quiz Generation types
+export type ApiQuestionType = "mcq" | "true_false" | "fill_in_blank" | "short_answer";
+
+export interface GenerateQuizRequest {
+  docIds: string[];
+  numQuestions: number;
+  questionTypes: ApiQuestionType[];
+  difficulty: "easy" | "medium" | "hard";
+  language?: "auto" | string;
+}
+
+export interface GenerateQuizResponse {
+  job_id: string;
+  message?: string;
 } 

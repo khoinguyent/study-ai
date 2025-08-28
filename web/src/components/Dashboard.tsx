@@ -116,6 +116,22 @@ const Dashboard: React.FC = () => {
 
   // Quiz notifications are now handled by QuizNotificationManager
 
+  // Sync local selections with global selection store
+  useEffect(() => {
+    const selectedDocIds = Array.from(selections.documents);
+    const selectedSubjectIds = Array.from(selections.subjects);
+    
+    // Only update if the values have actually changed to prevent infinite loops
+    if (JSON.stringify(selectedDocIds) !== JSON.stringify(sel.docIds)) {
+      sel.setDocs(selectedDocIds);
+    }
+    
+    // Also set the subject ID if any subjects are selected
+    if (selectedSubjectIds.length > 0 && sel.subjectId !== selectedSubjectIds[0]) {
+      sel.setSubject(selectedSubjectIds[0]); // Use the first selected subject
+    }
+  }, [selections.documents, selections.subjects]); // Remove sel from dependencies to prevent infinite loop
+
   // Set toast positioning based on header height
   useEffect(() => {
     const el = document.querySelector("header[data-app-header='true']") as HTMLElement | null;
@@ -868,9 +884,23 @@ const Dashboard: React.FC = () => {
 
               </div>
               <div className="selection-action">
-                <StartStudyLauncher
-                  apiBase="/api"
-                />
+                {(() => {
+                  console.log('🎯 [DASHBOARD] Rendering StartStudyLauncher:', {
+                    timestamp: new Date().toISOString(),
+                    readyDocCount: getReadySelectedDocumentsCount(),
+                    totalSelectedCount: getTotalSelectedDocuments(),
+                    selectedDocIds: Array.from(selections.documents),
+                    selectedDocNames: getSelectedDocumentNames(),
+                    userId: user?.id,
+                    subjectId: sel.subjectId
+                  });
+                  
+                  return (
+                    <StartStudyLauncher
+                      apiBase="/api"
+                    />
+                  );
+                })()}
               </div>
             </div>
           </div>

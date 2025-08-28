@@ -8,6 +8,8 @@ from fastapi import FastAPI, Depends, HTTPException, status, Header, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 import httpx
+import random
+from datetime import datetime
 
 from .database import get_db, create_tables
 from . import models
@@ -102,50 +104,66 @@ async def test_ollama():
 async def test_openai():
     """Test OpenAI connectivity and configuration"""
     try:
+        logger.info("Testing OpenAI configuration...")
+        
+        # Check if OpenAI is configured
         if not settings.OPENAI_API_KEY:
             return {
                 "status": "error",
-                "message": "OpenAI API key not configured"
+                "message": "OpenAI API key not configured",
+                "config": {
+                    "api_key": "NOT_SET",
+                    "base_url": settings.OPENAI_BASE_URL,
+                    "model": settings.OPENAI_MODEL
+                }
             }
         
-        # Test OpenAI client initialization
+        # Try to initialize the OpenAI provider
         try:
-            import openai
-            openai.api_key = settings.OPENAI_API_KEY
-            openai.base_url = settings.OPENAI_BASE_URL
+            from .services.quiz_generator import QuizGenerator
+            quiz_generator = QuizGenerator()
             
-            # Test with a simple API call
-            response = await openai.chat.completions.acreate(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "user", "content": "Hello, this is a test message."}
-                ],
-                max_tokens=10
-            )
-            
-            return {
-                "status": "success",
-                "message": "OpenAI is accessible and working",
-                "model": settings.OPENAI_MODEL,
-                "base_url": settings.OPENAI_BASE_URL,
-                "test_response": response.choices[0].message.content
-            }
-            
-        except ImportError:
-            return {
-                "status": "error",
-                "message": "OpenAI package not available"
-            }
+            if quiz_generator.provider and quiz_generator.provider.name == "openai":
+                return {
+                    "status": "success",
+                    "message": "OpenAI provider initialized successfully",
+                    "config": {
+                        "api_key": f"{settings.OPENAI_API_KEY[:8]}...",
+                        "base_url": settings.OPENAI_BASE_URL,
+                        "model": settings.OPENAI_MODEL,
+                        "strategy": quiz_generator.strategy
+                    }
+                }
+            else:
+                return {
+                    "status": "warning",
+                    "message": "OpenAI provider not available",
+                    "config": {
+                        "api_key": f"{settings.OPENAI_API_KEY[:8]}...",
+                        "base_url": settings.OPENAI_BASE_URL,
+                        "model": settings.OPENAI_MODEL,
+                        "strategy": quiz_generator.strategy,
+                        "provider": quiz_generator.provider.name if quiz_generator.provider else "none"
+                    }
+                }
+                
         except Exception as e:
+            logger.error(f"Failed to test OpenAI provider: {e}")
             return {
                 "status": "error",
-                "message": f"OpenAI API test failed: {str(e)}"
+                "message": f"Failed to initialize OpenAI provider: {str(e)}",
+                "config": {
+                    "api_key": f"{settings.OPENAI_API_KEY[:8]}...",
+                    "base_url": settings.OPENAI_BASE_URL,
+                    "model": settings.OPENAI_MODEL
+                }
             }
             
     except Exception as e:
+        logger.error(f"OpenAI test failed: {e}")
         return {
             "status": "error",
-            "message": f"Failed to test OpenAI: {str(e)}"
+            "message": f"OpenAI test failed: {str(e)}"
         }
 
 # Enhanced Mock Quiz Generation Service
@@ -620,22 +638,51 @@ async def generate_quiz(
     db: Session = Depends(get_db)
 ):
     """Generate a new quiz with minimal requirements"""
+    request_id = f"quiz_gen_{int(time.time())}_{random.randint(1000, 9999)}"
+    
+    logger.info(f"🚀 [BACKEND] Quiz generation request received: {request_id}", extra={
+        "request_id": request_id,
+        "user_id": user_id,
+        "request_data": request,
+        "timestamp": datetime.utcnow().isoformat(),
+        "endpoint": "/quizzes/generate",
+        "method": "POST"
+    })
+    
     try:
-        logger.info(f"Generating quiz: {request}")
-        
         # Extract only the essential fields
         doc_ids = request.get("docIds", [])
         num_questions = request.get("numQuestions", 10)
         difficulty = request.get("difficulty", "medium")
         question_types = request.get("questionTypes", ["MCQ"])
         
+        logger.info(f"📋 [BACKEND] Extracted quiz parameters: {request_id}", extra={
+            "request_id": request_id,
+            "doc_ids": doc_ids,
+            "num_questions": num_questions,
+            "difficulty": difficulty,
+            "question_types": question_types,
+            "user_id": user_id
+        })
+        
         if not doc_ids:
+            logger.error(f"❌ [BACKEND] Missing docIds in request: {request_id}", extra={
+                "request_id": request_id,
+                "user_id": user_id,
+                "request": request
+            })
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="docIds is required"
             )
         
         # Generate mock quiz with the essential fields
+        logger.info(f"🎲 [BACKEND] Generating mock quiz: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "doc_count": len(doc_ids)
+        })
+        
         quiz_data = mock_quiz_generator.generate_mock_quiz(
             subject_id="mock-subject",  # Not required for quiz generation
             doc_ids=doc_ids,
@@ -644,16 +691,45 @@ async def generate_quiz(
             question_count=num_questions
         )
         
-        return {
+        logger.info(f"✅ [BACKEND] Mock quiz generated successfully: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "quiz_id": quiz_data.get("id"),
+            "question_count": len(quiz_data.get("questions", [])),
+            "generation_time": quiz_data.get("generation_time", 0)
+        })
+        
+        response_data = {
             "status": "success",
             "message": "Quiz generated successfully",
+            "job_id": quiz_data.get("id"),  # Add job_id for frontend compatibility
             "quiz": quiz_data
         }
         
+        logger.info(f"📤 [BACKEND] Sending quiz generation response: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "response_status": "success",
+            "response_size": len(str(response_data))
+        })
+        
+        return response_data
+        
     except HTTPException:
+        logger.error(f"❌ [BACKEND] HTTP exception in quiz generation: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "exception_type": "HTTPException"
+        })
         raise
     except Exception as e:
-        logger.error(f"Failed to generate quiz: {str(e)}")
+        logger.error(f"💥 [BACKEND] Unexpected error in quiz generation: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate quiz: {str(e)}"
@@ -697,6 +773,330 @@ async def generate_quiz_simple(request: dict):
             detail=f"Failed to generate quiz: {str(e)}"
         )
 
+@app.post("/quizzes/generate-real")
+async def generate_quiz_real(
+    request: dict,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Generate a real quiz using AI providers (OpenAI, Ollama, HuggingFace)"""
+    request_id = f"quiz_real_{int(time.time())}_{random.randint(1000, 9999)}"
+    
+    logger.info(f"🚀 [BACKEND] Real quiz generation request received: {request_id}", extra={
+        "request_id": request_id,
+        "user_id": user_id,
+        "request_data": request,
+        "timestamp": datetime.utcnow().isoformat(),
+        "endpoint": "/quizzes/generate-real",
+        "method": "POST",
+        "ai_provider": "real"
+    })
+    
+    try:
+        # Extract parameters
+        doc_ids = request.get("docIds", [])
+        num_questions = request.get("numQuestions", 10)
+        difficulty = request.get("difficulty", "medium")
+        question_types = request.get("questionTypes", ["MCQ"])
+        topic = request.get("topic", "General Knowledge")
+        
+        logger.info(f"📋 [BACKEND] Extracted real quiz parameters: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "doc_ids": doc_ids,
+            "num_questions": num_questions,
+            "difficulty": difficulty,
+            "question_types": question_types,
+            "topic": topic
+        })
+        
+        if not doc_ids:
+            logger.error(f"❌ [BACKEND] Missing docIds in real quiz request: {request_id}", extra={
+                "request_id": request_id,
+                "user_id": user_id,
+                "request": request
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="docIds is required"
+            )
+        
+        # Initialize the real quiz generator
+        logger.info(f"🔧 [BACKEND] Initializing QuizGenerator: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id
+        })
+        
+        try:
+            from .services.quiz_generator import QuizGenerator
+            quiz_generator = QuizGenerator()
+            logger.info(f"✅ [BACKEND] QuizGenerator initialized successfully: {request_id}", extra={
+                "request_id": request_id,
+                "user_id": user_id,
+                "strategy": quiz_generator.strategy,
+                "provider": getattr(quiz_generator, 'provider', None),
+                "openai_configured": bool(quiz_generator.openai_api_key),
+                "ollama_configured": bool(quiz_generator.ollama_url),
+                "huggingface_configured": bool(quiz_generator.huggingface_token)
+            })
+        except Exception as e:
+            logger.error(f"❌ [BACKEND] Failed to initialize QuizGenerator: {request_id}", extra={
+                "request_id": request_id,
+                "user_id": user_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            })
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to initialize quiz generator: {str(e)}"
+            )
+        
+        # Fetch real chunks from indexing-service for provided doc IDs
+        context_chunks: list[dict] = []
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                for d_id in doc_ids:
+                    try:
+                        url = f"{settings.INDEXING_SERVICE_URL}/chunks/{d_id}"
+                        resp = await client.get(url)
+                        if resp.status_code == 200:
+                            data = resp.json() or []
+                            for ch in data:
+                                # Normalize to expected shape
+                                context_chunks.append({
+                                    "content": ch.get("content", ""),
+                                    "metadata": {
+                                        "document_id": ch.get("document_id", d_id),
+                                        "chunk_index": ch.get("chunk_index")
+                                    }
+                                })
+                        else:
+                            logger.warning(f"[BACKEND] Failed to fetch chunks for {d_id}: {resp.status_code}")
+                    except Exception as fe:
+                        logger.warning(f"[BACKEND] Error fetching chunks for {d_id}: {fe}")
+        except Exception as fetch_err:
+            logger.warning(f"[BACKEND] Chunk fetch error: {fetch_err}")
+
+        # Fallback if no chunks were found
+        if not context_chunks:
+            context_chunks = [
+                {
+                    "content": "No chunks found for documents. Use general study instructions.",
+                    "metadata": {"source": "fallback", "document_id": doc_ids[0] if doc_ids else "unknown"}
+                }
+            ]
+
+        logger.info(f"📚 [BACKEND] Using context chunks for quiz generation: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "doc_ids": doc_ids,
+            "chunk_count": len(context_chunks),
+            "chunk_preview": (context_chunks[0]["content"][:100] + "...") if context_chunks else "No chunks"
+        })
+        
+        # Generate the quiz using the AI provider
+        logger.info(f"🤖 [BACKEND] Starting AI-powered quiz generation: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "ai_strategy": quiz_generator.strategy,
+            "ai_provider": getattr(quiz_generator, 'provider', None),
+            "topic": topic,
+            "difficulty": difficulty,
+            "num_questions": num_questions
+        })
+        
+        start_time = time.time()
+        # Map optional questionMix to counts_by_type
+        question_mix = request.get("questionMix") or {}
+        try:
+            if isinstance(question_mix, dict) and question_mix:
+                # Convert percent mix to absolute counts that sum to num_questions
+                mix_items = [(k, max(0, int(round(num_questions * (v / 100.0))))) for k, v in question_mix.items()]
+                allocated = sum(c for _, c in mix_items)
+                # Fix rounding drift by adding remainder to MCQ (or first type)
+                if mix_items:
+                    remainder = max(0, num_questions - allocated)
+                    mix_items[0] = (mix_items[0][0], mix_items[0][1] + remainder)
+                counts_by_type = {k: c for k, c in mix_items if c > 0}
+                allowed_types = list(counts_by_type.keys()) or ["MCQ"]
+            else:
+                counts_by_type = {"MCQ": num_questions}
+                allowed_types = ["MCQ"]
+        except Exception:
+            counts_by_type = {"MCQ": num_questions}
+            allowed_types = ["MCQ"]
+
+        quiz_data = await quiz_generator.generate_quiz_from_context(
+            topic=topic,
+            difficulty=difficulty,
+            num_questions=num_questions,
+            context_chunks=context_chunks,
+            source_type="document",
+            source_id=doc_ids[0] if doc_ids else "mock-doc",
+            allowed_types=allowed_types,
+            counts_by_type=counts_by_type
+        )
+        generation_time = time.time() - start_time
+        
+        logger.info(f"✅ [BACKEND] AI quiz generation completed successfully: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "generation_time": f"{generation_time:.2f}s",
+            "question_count": len(quiz_data.get('questions', [])),
+            "quiz_id": quiz_data.get('id'),
+            "ai_strategy": quiz_generator.strategy,
+            "ai_provider": getattr(quiz_generator, 'provider', None)
+        })
+        
+        # Persist quiz to database
+        try:
+            db_quiz_id = str(uuid.uuid4())
+            from .models.quiz import Quiz as QuizModel
+            quiz_record = QuizModel(
+                id=db_quiz_id,
+                title=quiz_data.get("title", "Generated Quiz"),
+                description=quiz_data.get("description", None),
+                questions={"questions": quiz_data.get("questions", [])},
+                user_id=user_id,
+                document_id=doc_ids[0] if doc_ids else None,
+                subject_id=None,
+                category_id=None,
+                status="generated",
+            )
+            db.add(quiz_record)
+            db.commit()
+            logger.info(
+                f"🗄️ [BACKEND] Quiz persisted to DB: {request_id}",
+                extra={
+                    "request_id": request_id,
+                    "user_id": user_id,
+                    "db_quiz_id": db_quiz_id,
+                    "question_count": len(quiz_data.get("questions", [])),
+                },
+            )
+        except Exception as persist_error:
+            logger.error(
+                f"❌ [BACKEND] Failed to persist quiz: {request_id}",
+                extra={
+                    "request_id": request_id,
+                    "user_id": user_id,
+                    "error": str(persist_error),
+                },
+            )
+
+        response_data = {
+            "status": "success",
+            "message": "Quiz generated successfully using AI",
+            "job_id": str(uuid.uuid4()),  # Generate unique job_id for frontend compatibility
+            "quiz": quiz_data,
+            "generation_strategy": quiz_generator.strategy,
+            "provider": quiz_generator.provider.name if quiz_generator.provider else "mock",
+            "generation_time": f"{generation_time:.2f}s"
+        }
+        
+        logger.info(f"📤 [BACKEND] Sending AI quiz generation response: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "response_status": "success",
+            "response_size": len(str(response_data)),
+            "ai_provider": response_data["provider"],
+            "generation_time": response_data["generation_time"]
+        })
+        
+        return response_data
+        
+    except HTTPException:
+        logger.error(f"❌ [BACKEND] HTTP exception in real quiz generation: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "exception_type": "HTTPException"
+        })
+        raise
+    except Exception as e:
+        logger.error(f"💥 [BACKEND] Unexpected error in real quiz generation: {request_id}", extra={
+            "request_id": request_id,
+            "user_id": user_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate quiz: {str(e)}"
+        )
+
+@app.post("/test-quiz-generation")
+async def test_quiz_generation():
+    """Test the complete quiz generation flow"""
+    try:
+        logger.info("Testing complete quiz generation flow...")
+        
+        # Initialize the quiz generator
+        try:
+            from .services.quiz_generator import QuizGenerator
+            quiz_generator = QuizGenerator()
+            logger.info(f"QuizGenerator initialized with strategy: {quiz_generator.strategy}")
+        except Exception as e:
+            logger.error(f"Failed to initialize QuizGenerator: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to initialize quiz generator: {str(e)}"
+            }
+        
+        # Create mock context chunks
+        mock_context_chunks = [
+            {
+                "content": "The Vietnam War was a conflict that occurred in Vietnam, Laos, and Cambodia from 1 November 1955 to the fall of Saigon on 30 April 1975.",
+                "metadata": {"source": "test", "document_id": "test-doc-1"}
+            },
+            {
+                "content": "The war was fought between North Vietnam, supported by the Soviet Union and China, and South Vietnam, supported by the United States and other anti-communist allies.",
+                "metadata": {"source": "test", "document_id": "test-doc-2"}
+            }
+        ]
+        
+        logger.info(f"Testing with {len(mock_context_chunks)} mock context chunks")
+        
+        # Test the generation
+        try:
+            quiz_data = await quiz_generator.generate_quiz_from_context(
+                topic="Vietnam War History",
+                difficulty="medium",
+                num_questions=3,
+                context_chunks=mock_context_chunks,
+                source_type="test",
+                source_id="test-doc"
+            )
+            
+            logger.info(f"Quiz generation test completed successfully")
+            
+            return {
+                "status": "success",
+                "message": "Quiz generation test completed successfully",
+                "quiz": quiz_data,
+                "generation_strategy": quiz_generator.strategy,
+                "provider": quiz_generator.provider.name if quiz_generator.provider else "mock",
+                "questions_count": len(quiz_data.get('questions', [])),
+                "test_context_chunks": len(mock_context_chunks)
+            }
+            
+        except Exception as gen_error:
+            logger.error(f"Quiz generation test failed: {gen_error}")
+            return {
+                "status": "error",
+                "message": f"Quiz generation test failed: {str(gen_error)}",
+                "generation_strategy": quiz_generator.strategy,
+                "provider": quiz_generator.provider.name if quiz_generator.provider else "mock"
+            }
+            
+    except Exception as e:
+        logger.error(f"Quiz generation test failed: {e}")
+        return {
+            "status": "error",
+            "message": f"Quiz generation test failed: {str(e)}"
+        }
+
 @app.get("/quizzes/{quiz_id}")
 async def get_quiz(
     quiz_id: str,
@@ -722,6 +1122,69 @@ async def get_quiz(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get quiz: {str(e)}"
+        )
+
+@app.get("/quizzes/{job_id}/events")
+async def get_quiz_events(
+    job_id: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Get real-time events for a quiz generation job"""
+    try:
+        logger.info(f"Getting quiz events for job_id: {job_id}")
+        
+        # Return mock events for now
+        events = [
+            {
+                "event_id": f"event_{job_id}_1",
+                "event_type": "quiz_generation_started",
+                "user_id": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "job_id": job_id,
+                    "stage": "initializing",
+                    "progress": 0,
+                    "message": "Starting quiz generation..."
+                }
+            },
+            {
+                "event_id": f"event_{job_id}_2", 
+                "event_type": "quiz_generation_progress",
+                "user_id": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "job_id": job_id,
+                    "stage": "generating_questions",
+                    "progress": 50,
+                    "message": "Generating questions using AI..."
+                }
+            },
+            {
+                "event_id": f"event_{job_id}_3",
+                "event_type": "quiz_generation_completed", 
+                "user_id": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "job_id": job_id,
+                    "stage": "completed",
+                    "progress": 100,
+                    "message": "Quiz generation completed successfully!"
+                }
+            }
+        ]
+        
+        return {
+            "status": "success",
+            "events": events,
+            "total_events": len(events)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get quiz events: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get events: {str(e)}"
         )
 
 @app.get("/quizzes")

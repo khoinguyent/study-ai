@@ -1,12 +1,15 @@
 import { fetchJSON } from "./http";
+import { QuestionType, QuestionMix, Difficulty } from "../types";
 
-export type QuestionType = "mcq" | "short" | "truefalse" | "fill_blank";
-
-export type QuestionMix = {
-  mcq: number;
-  short: number;
-  truefalse: number;
-  fill_blank: number;
+export type BudgetRequest = {
+  subjectId: string;
+  totalTokens: number;
+  distinctSpanCount: number;
+  mix: Partial<Record<"mcq"|"short"|"truefalse"|"fill_blank", number>>; // percentages ok
+  difficulty: "easy"|"medium"|"hard"|"mixed";
+  costBudgetUSD: number;
+  modelPricing: { inputPerMTokUSD: number; outputPerMTokUSD: number };
+  batching: { questionsPerCall: number; fileSearchToolCostPer1kCallsUSD: number };
 };
 
 export type BudgetEstimateRequest = {
@@ -14,7 +17,7 @@ export type BudgetEstimateRequest = {
   totalTokens: number;
   distinctSpanCount?: number;
   mix: QuestionMix;
-  difficulty: "easy" | "medium" | "hard" | "mixed";
+  difficulty: Difficulty;
   costBudgetUSD: number;
   modelPricing: {
     inputPerMTokUSD: number;
@@ -57,7 +60,7 @@ export type BudgetEstimateResponse = {
 
 export type SimpleBudgetRequest = {
   docIds: string[];
-  difficulty?: "easy" | "medium" | "hard" | "mixed";
+  difficulty?: Difficulty;
 };
 
 export type SimpleBudgetResponse = {
@@ -77,7 +80,7 @@ export type SimpleBudgetResponse = {
  */
 export async function getBudgetEstimate(
   apiBase: string,
-  request: BudgetEstimateRequest
+  request: BudgetRequest
 ): Promise<BudgetEstimateResponse> {
   return fetchJSON<BudgetEstimateResponse>(`${apiBase}/question-budget/estimate`, {
     method: "POST",

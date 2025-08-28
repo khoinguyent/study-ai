@@ -1,0 +1,650 @@
+# Fixed Docker Compose file for Study AI Platform
+# Addresses document-worker RPC errors
+
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: study-ai-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - DOCUMENT_SERVICE_URL=http://document-service:8002
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - QUIZ_SERVICE_URL=http://quiz-service:8004
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+      - INDEXING_SERVICE_URL=http://indexing-service:8003
+      - CLARIFIER_SERVICE_URL=http://clarifier-svc:8010
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+      indexing-service:
+        condition: service_healthy
+      quiz-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      clarifier-svc:
+        condition: service_healthy
+    networks:
+      - study-ai-network
+
+  # Auth Service Database
+  auth-db:
+    image: postgres:15
+    container_name: study-ai-auth-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-network
+
+  # Document Service Database
+  document-db:
+    image: postgres:15
+    container_name: study-ai-document-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: document_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - document_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-network
+
+  # Indexing Service Database (with pgvector extension)
+  indexing-db:
+    image: pgvector/pgvector:pg15
+    container_name: study-ai-indexing-db
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: indexing_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - indexing_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-network
+
+  # Quiz Service Database
+  quiz-db:
+    image: postgres:15
+    container_name: study-ai-quiz-db
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - quiz_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-network
+
+  # Notification Service Database
+  notification-db:
+    image: postgres:15
+    container_name: study-ai-notification-db
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-network
+
+  # Redis for caching and message queue
+  redis:
+    image: redis:7-alpine
+    container_name: study-ai-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - study-ai-network
+
+  # MinIO for S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: study-ai-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - study-ai-network
+
+  # Ollama for local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: study-ai-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - study-ai-network
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: study-ai-auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@auth-db:5432/auth_db
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: your-secret-key-change-in-production
+    depends_on:
+      auth-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/auth-service:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - study-ai-network
+
+  # Document Service
+  document-service:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-document-service
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_db
+      REDIS_URL: redis://redis:6379
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: study-ai-documents
+      MINIO_SECURE: false
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      document-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    volumes:
+      - ./services/document-service:/app
+      - ./services/shared:/app/shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - study-ai-network
+
+  # Indexing Service
+  indexing-service:
+    build:
+      context: ./services/indexing-service
+      dockerfile: Dockerfile
+    container_name: study-ai-indexing-service
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@indexing-db:5432/indexing_db
+      REDIS_URL: redis://redis:6379
+      DOCUMENT_SERVICE_URL: http://document-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+      # Chunking configuration
+      CHUNK_MODE: DYNAMIC
+      CHUNK_BASE_TOKENS: 320
+      CHUNK_MIN_TOKENS: 180
+      CHUNK_MAX_TOKENS: 480
+      CHUNK_SENT_OVERLAP_RATIO: 0.12
+      LABSE_MAX_TOKENS: 512
+      DENSITY_WEIGHT_SYMBOLS: 0.4
+      DENSITY_WEIGHT_AVGWORD: 0.3
+      DENSITY_WEIGHT_NUMBERS: 0.3
+      DYNAMIC_HIERARCHY_ENABLE: "false"
+      EMBEDDING_MODEL: sentence-transformers/LaBSE
+      # PDF Processing Configuration
+      PDF_OCR_ENABLED: "true"
+      PDF_OCR_LANG: "vie+eng"
+      PDF_OCR_DPI: "300"
+    depends_on:
+      indexing-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ./services/indexing-service:/app
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
+  # Quiz Service
+  quiz-service:
+    build:
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-quiz-service
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      REDIS_URL: redis://redis:6379
+      # Quiz Generation Strategy
+      QUIZ_GENERATION_STRATEGY: openai  # Options: "ollama", "huggingface", "openai", "auto"
+      # OpenAI configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_MODEL: gpt-3.5-turbo
+      # Ollama configuration
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama2:7b-chat
+      # HuggingFace configuration
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN:-}
+      HUGGINGFACE_API_URL: https://api-inference.huggingface.co/models
+      QUESTION_GENERATION_MODEL: google/flan-t5-base
+      DISTRACTOR_GENERATION_MODEL: google/flan-t5-base
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      quiz-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      auth-service:
+        condition: service_healthy
+      indexing-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ./services/quiz-service:/app
+      - ./services/shared:/app/shared
+    networks:
+      - study-ai-network
+
+  # Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./services/notification-service/Dockerfile
+    container_name: study-ai-notification-service
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@notification-db:5432/notification_db
+      REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: http://auth-service:8001
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    volumes:
+      - ./services/notification-service:/app
+      - ./services/shared:/app/shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - study-ai-network
+
+  # Clarifier Service
+  clarifier-svc:
+    build:
+      context: ./services/clarifier-svc
+      dockerfile: Dockerfile
+    container_name: study-ai-clarifier-svc
+    ports:
+      - "8010:8010"
+    environment:
+      - POLICY_URL=http://policy-svc:8006   # if you have one; else omit
+      - BUDGET_URL=http://question-budget-svc:8011
+      - QUIZ_URL=http://quiz-service:8004
+      - NODE_ENV=development
+      - PORT=8010
+      - LOG_LEVEL=info
+    depends_on:
+      question-budget-svc:
+        condition: service_healthy
+      quiz-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - study-ai-network
+
+  # Question Budget Service
+  question-budget-svc:
+    build:
+      context: ./services/question-budget-svc
+      dockerfile: Dockerfile
+    container_name: study-ai-question-budget-svc
+    ports:
+      - "8011:8011"
+    environment:
+      - INDEXING_URL=http://indexing-service:8003
+      - NODE_ENV=development
+      - PORT=8011
+      - LOG_LEVEL=info
+    depends_on:
+      indexing-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - study-ai-network
+
+  # Web frontend service
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: study-ai-web
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8005/ws
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    networks:
+      - study-ai-network
+
+  # Celery Workers for Background Tasks - FIXED VERSION
+  document-worker:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-document-worker
+    command: celery -A app.celery_app worker --loglevel=info --queues=document_queue --concurrency=2
+    environment:
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_db
+      REDIS_URL: redis://redis:6379
+      # Environment and infrastructure configuration
+      ENVIRONMENT: local
+      INFRASTRUCTURE_PROVIDER: local
+      MESSAGE_BROKER_TYPE: redis
+      TASK_QUEUE_TYPE: celery
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: study-ai-documents
+      MINIO_SECURE: false
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+      # Add missing environment variables
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      document-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+    volumes:
+      - ./services/document-service:/app
+      - ./services/shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - study-ai-network
+
+  indexing-worker:
+    build:
+      context: ./services/indexing-service
+      dockerfile: Dockerfile
+    container_name: study-ai-indexing-worker
+    command: celery -A app.celery_app worker --loglevel=info --queues=indexing_queue --concurrency=2
+    environment:
+      DATABASE_URL: postgresql://postgres:password@indexing-db:5432/indexing_db
+      REDIS_URL: redis://redis:6379
+      # Environment and infrastructure configuration
+      ENVIRONMENT: local
+      INFRASTRUCTURE_PROVIDER: local
+      MESSAGE_BROKER_TYPE: redis
+      TASK_QUEUE_TYPE: celery
+      DOCUMENT_SERVICE_URL: http://document-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+      # Vector model settings
+      EMBEDDING_MODEL: sentence-transformers/LaBSE
+      CHUNK_SIZE: 1000
+      CHUNK_OVERLAP: 200
+      # Dynamic chunking
+      CHUNK_MODE: DYNAMIC
+      CHUNK_BASE_TOKENS: 320
+      CHUNK_MIN_TOKENS: 180
+      CHUNK_MAX_TOKENS: 480
+      CHUNK_SENT_OVERLAP_RATIO: 0.12
+      LABSE_MAX_TOKENS: 512
+      DENSITY_WEIGHT_SYMBOLS: 0.4
+      DENSITY_WEIGHT_AVGWORD: 0.3
+      DENSITY_WEIGHT_NUMBERS: 0.3
+      DYNAMIC_HIERARCHY_ENABLE: "false"
+      # HuggingFace Configuration (for embedding model)
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN:-}
+    depends_on:
+      indexing-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+      indexing-service:
+        condition: service_healthy
+    volumes:
+      - ./services/indexing-service:/app
+      - ./services/shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - study-ai-network
+
+  quiz-worker:
+    build:
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
+    container_name: study-ai-quiz-worker
+    command: celery -A app.celery_app worker --loglevel=info --queues=quiz_queue --concurrency=2
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      REDIS_URL: redis://redis:6379
+      # Environment and infrastructure configuration
+      ENVIRONMENT: local
+      INFRASTRUCTURE_PROVIDER: local
+      MESSAGE_BROKER_TYPE: redis
+      TASK_QUEUE_TYPE: celery
+      # Quiz Generation Strategy
+      QUIZ_GENERATION_STRATEGY: openai  # Options: "ollama", "huggingface", "auto"
+      # OpenAI configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_MODEL: gpt-3.5-turbo
+      # Ollama configuration
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama2:7b-chat
+      # HuggingFace configuration
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN:-}
+      HUGGINGFACE_API_URL: https://api-inference.huggingface.co/models
+      QUESTION_GENERATION_MODEL: google/flan-t5-base
+      DISTRACTOR_GENERATION_MODEL: google/flan-t5-base
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INDEXING_SERVICE_URL: http://indexing-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      quiz-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      auth-service:
+        condition: service_healthy
+      indexing-service:
+        condition: service_healthy
+      quiz-service:
+        condition: service_healthy
+    volumes:
+      - ./services/quiz-service:/app
+      - ./services/shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - study-ai-network
+
+  # Dead Letter Queue Monitor Service
+  dlq-monitor:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-dlq-monitor
+    command: python /app/shared/dlq_monitor_service.py
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - study-ai-network
+
+  # Dead Letter Queue Management API
+  dlq-api:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: study-ai-dlq-api
+    command: python /app/shared/dlq_api.py
+    ports:
+      - "8007:8006"
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - study-ai-network
+
+volumes:
+  auth_postgres_data:
+  document_postgres_data:
+  indexing_postgres_data:
+  quiz_postgres_data:
+  minio_data:
+  notification_postgres_data:
+  ollama_data:
+
+networks:
+  study-ai-network:
+    driver: bridge

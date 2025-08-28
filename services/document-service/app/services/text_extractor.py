@@ -231,7 +231,8 @@ class TextExtractor:
         # Try robust PDF parser first if available
         if ROBUST_PDF_AVAILABLE:
             try:
-                result = await self._extract_pdf_text_robust(file_content, filename)
+                # Since we can't use await in a sync method, we'll use the sync version
+                result = self._extract_pdf_text_robust_sync(file_content, filename)
                 if result['success'] and result['text'].strip():
                     return result
                 logger.info(f"Robust PDF parser returned insufficient text, falling back to PyPDF2")
@@ -239,10 +240,10 @@ class TextExtractor:
                 logger.warning(f"Robust PDF parser failed, falling back to PyPDF2: {e}")
         
         # Fallback to PyPDF2
-        return await self._extract_pdf_text_pypdf2(file_content, filename)
+        return self._extract_pdf_text_pypdf2_sync(file_content, filename)
     
-    async def _extract_pdf_text_robust(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
-        """Extract text using PyMuPDF (fitz) with OCR fallback"""
+    def _extract_pdf_text_robust_sync(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
+        """Extract text using PyMuPDF (fitz) with OCR fallback - synchronous version"""
         try:
             import fitz
             
@@ -327,175 +328,100 @@ class TextExtractor:
                         'method': method_used
                     })
             
-            # Combine all text
-            full_text = '\n\n'.join(total_txt)
-            
-            # Metadata
-            metadata = {
-                'page_count': len(doc),
-                'pages_with_content': len([p for p in pages if p.get('has_content', False)]),
-                'has_encryption': doc.is_encrypted,
-                'file_size': len(file_content),
-                'page_metadata': pages,
-                'text_quality': self._assess_pdf_text_quality(full_text, pages),
-                'extraction_method': 'PyMuPDF_enhanced',
-                'ocr_used': ocr_used
-            }
-            
-            # Extract PDF metadata if available
-            try:
-                if doc.metadata:
-                    metadata['pdf_metadata'] = {
-                        'title': doc.metadata.get('title', ''),
-                        'author': doc.metadata.get('author', ''),
-                        'subject': doc.metadata.get('subject', ''),
-                        'creator': doc.metadata.get('creator', ''),
-                        'producer': doc.metadata.get('producer', ''),
-                        'creation_date': doc.metadata.get('creationDate', ''),
-                        'modification_date': doc.metadata.get('modDate', '')
-                    }
-            except Exception as e:
-                logger.debug(f"Could not extract PDF metadata: {str(e)}")
-            
             doc.close()
             
+            # Build result
+            full_text = "\n\n".join(total_txt)
+            
             return {
+                'success': True,
                 'text': full_text,
-                'metadata': metadata,
+                'metadata': {
+                    'extraction_method': 'PyMuPDF (fitz)',
+                    'pages_processed': len(pages),
+                    'total_words': total_words,
+                    'ocr_used': ocr_used,
+                    'page_details': pages,
+                    'text_quality': {
+                        'quality': 'good' if total_words > 100 else 'fair',
+                        'score': min(100, (total_words / 10) + 50),
+                        'word_count': total_words,
+                        'page_count': len(pages)
+                    }
+                },
                 'word_count': total_words,
-                'method': 'PyMuPDF_enhanced'
+                'method': 'fitz-robust'
             }
             
         except Exception as e:
             logger.error(f"Robust PDF extraction failed: {str(e)}")
             raise Exception(f"Robust PDF extraction failed: {str(e)}")
     
-    async def _extract_pdf_text_pypdf2(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
+    def _extract_pdf_text_pypdf2_sync(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
         """Extract text from PDF files using PyPDF2 with enhanced text processing. Falls back to OCR if needed."""
         try:
             # Create a BytesIO object from the file content
             pdf_stream = io.BytesIO(file_content)
             
-            # Create PDF reader
+            # Read PDF
             pdf_reader = PyPDF2.PdfReader(pdf_stream)
             
-            # Check if PDF is encrypted
-            if pdf_reader.is_encrypted:
-                logger.warning(f"PDF {filename} is encrypted - text extraction may be limited")
-            
-            # Extract text from all pages with enhanced processing
-            text_content = []
-            page_metadata = []
+            pages = []
+            total_txt = []
             total_words = 0
             
-            for page_num, page in enumerate(pdf_reader.pages):
-                try:
-                    # Extract raw text from page
-                    raw_text = page.extract_text()
-                    
-                    if raw_text and raw_text.strip():
-                        # Clean and process the text
-                        cleaned_text = _clean_text_enhanced(raw_text)
-                        
-                        if cleaned_text.strip():
-                            # Add page separator with metadata
-                            page_info = f"--- Page {page_num + 1} ---"
-                            text_content.append(page_info)
-                            text_content.append(cleaned_text.strip())
-                            
-                            # Calculate page statistics
-                            page_words = len(cleaned_text.split())
-                            total_words += page_words
-                            
-                            page_metadata.append({
-                                'page_number': page_num + 1,
-                                'word_count': page_words,
-                                'character_count': len(cleaned_text),
-                                'has_content': True
-                            })
-                        else:
-                            page_metadata.append({
-                                'page_number': page_num + 1,
-                                'word_count': 0,
-                                'character_count': 0,
-                                'has_content': False,
-                                'note': 'Page contains no extractable text'
-                            })
-                    else:
-                        # Page has no text content
-                        page_metadata.append({
-                            'page_number': page_num + 1,
-                            'word_count': 0,
-                            'character_count': 0,
-                            'has_content': False,
-                            'note': 'Page is empty or contains no text'
-                        })
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to extract text from page {page_num + 1}: {str(e)}")
-                    page_metadata.append({
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                page_text = page.extract_text()
+                
+                # Clean the text
+                cleaned_text = _clean_text_enhanced(page_text)
+                
+                if cleaned_text.strip():
+                    pages.append({
+                        'page_number': page_num + 1,
+                        'word_count': len(cleaned_text.split()),
+                        'character_count': len(cleaned_text),
+                        'has_content': True,
+                        'method': 'PyPDF2'
+                    })
+                    total_txt.append(f"--- Page {page_num + 1} ---\n{cleaned_text}")
+                    total_words += len(cleaned_text.split())
+                else:
+                    pages.append({
                         'page_number': page_num + 1,
                         'word_count': 0,
                         'character_count': 0,
                         'has_content': False,
-                        'error': str(e)
+                        'note': 'Page contains no extractable text',
+                        'method': 'PyPDF2'
                     })
-                    continue
             
-            # Combine all text with proper spacing
-            full_text = '\n\n'.join(text_content)
+            # Build result
+            full_text = "\n\n".join(total_txt)
             
-            # Enhanced metadata extraction
-            metadata = {
-                'page_count': len(pdf_reader.pages),
-                'pages_with_content': len([p for p in page_metadata if p.get('has_content', False)]),
-                'has_encryption': pdf_reader.is_encrypted,
-                'file_size': len(file_content),
-                'page_metadata': page_metadata,
-                'text_quality': self._assess_pdf_text_quality(full_text, page_metadata),
-                'extraction_method': 'PyPDF2_enhanced'
-            }
-            
-            # Try to extract additional PDF metadata if available
-            try:
-                if hasattr(pdf_reader, 'metadata') and pdf_reader.metadata:
-                    metadata['pdf_metadata'] = {
-                        'title': pdf_reader.metadata.get('/Title', ''),
-                        'author': pdf_reader.metadata.get('/Author', ''),
-                        'subject': pdf_reader.metadata.get('/Subject', ''),
-                        'creator': pdf_reader.metadata.get('/Creator', ''),
-                        'producer': pdf_reader.metadata.get('/Producer', ''),
-                        'creation_date': pdf_reader.metadata.get('/CreationDate', ''),
-                        'modification_date': pdf_reader.metadata.get('/ModDate', '')
-                    }
-            except Exception as e:
-                logger.debug(f"Could not extract PDF metadata: {str(e)}")
-            
-            # If no text extracted and OCR available, perform OCR fallback
-            if total_words == 0 and OCR_AVAILABLE:
-                ocr_text, ocr_meta = self._extract_pdf_text_with_ocr(file_content)
-                if ocr_text.strip():
-                    metadata['ocr_used'] = True
-                    metadata['ocr'] = ocr_meta
-                    return {
-                        'text': ocr_text,
-                        'metadata': metadata,
-                        'word_count': len(ocr_text.split()),
-                        'method': 'OCR_Tesseract'
-                    }
-                else:
-                    metadata['ocr_used'] = True
-
             return {
+                'success': True,
                 'text': full_text,
-                'metadata': metadata,
+                'metadata': {
+                    'extraction_method': 'PyPDF2',
+                    'pages_processed': len(pages),
+                    'total_words': total_words,
+                    'page_details': pages,
+                    'text_quality': {
+                        'quality': 'good' if total_words > 100 else 'fair',
+                        'score': min(100, (total_words / 10) + 50),
+                        'word_count': total_words,
+                        'page_count': len(pages)
+                    }
+                },
                 'word_count': total_words,
-                'method': 'PyPDF2_enhanced'
+                'method': 'pypdf2'
             }
             
         except Exception as e:
-            logger.error(f"Failed to extract text from PDF file {filename}: {str(e)}")
-            raise Exception(f"PDF text extraction failed: {str(e)}")
+            logger.error(f"PyPDF2 extraction failed: {str(e)}")
+            raise Exception(f"PyPDF2 extraction failed: {str(e)}")
     
     def _clean_pdf_text(self, raw_text: str) -> str:
         """Clean and improve PDF extracted text quality"""

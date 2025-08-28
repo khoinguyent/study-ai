@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     NOTIFICATION_SERVICE_URL: Optional[str] = "http://notification-service:8005"
     INDEXING_SERVICE_URL: Optional[str] = "http://indexing-service:8003"
     CLARIFIER_SERVICE_URL: Optional[str] = "http://clarifier-svc:8010"
+    QUESTION_BUDGET_SERVICE_URL: Optional[str] = "http://question-budget-svc:8011"
     
     # Database
     DATABASE_URL: Optional[str] = None

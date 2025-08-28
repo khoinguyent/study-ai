@@ -11,6 +11,9 @@ from ..config import settings
 import logging
 from jinja2 import Environment, FileSystemLoader
 from app.lang.detect import detect_language_distribution
+import time
+import random
+import traceback
 
 try:
     from app.llm.providers.openai_adapter import OpenAIProvider
@@ -127,39 +130,124 @@ class QuizGenerator:
         num_questions: int,
         context_chunks: List[Dict[str, Any]],
         source_type: str,
-        source_id: str
+        source_id: str,
+        allowed_types: Optional[List[str]] = None,
+        counts_by_type: Optional[Dict[str, int]] = None
     ) -> Dict[str, Any]:
         """Generate a quiz from specific context (subject or category)"""
+        generation_id = f"quiz_gen_{int(time.time())}_{random.randint(1000, 9999)}"
+        
+        logger.info(f"🚀 [QUIZ_GEN] Starting quiz generation from context: {generation_id}", extra={
+            "generation_id": generation_id,
+            "topic": topic,
+            "difficulty": difficulty,
+            "num_questions": num_questions,
+            "context_chunks_count": len(context_chunks),
+            "source_type": source_type,
+            "source_id": source_id,
+            "strategy": self.strategy,
+            "provider_available": bool(self.provider)
+        })
+        
         try:
             # Prepare context from chunks
+            logger.info(f"📚 [QUIZ_GEN] Preparing context from chunks: {generation_id}", extra={
+                "generation_id": generation_id,
+                "chunk_count": len(context_chunks),
+                "chunk_preview": [{"id": i, "content_length": len(c.get("content", "")), "metadata": c.get("metadata", {})} for i, c in enumerate(context_chunks[:3])]
+            })
+            
             context = self._prepare_context_from_chunks(context_chunks)
             
             # Language detection from chunks
+            logger.info(f"🌍 [QUIZ_GEN] Detecting language from context: {generation_id}", extra={
+                "generation_id": generation_id,
+                "context_length": len(context),
+                "lang_mode": settings.QUIZ_LANG_MODE,
+                "lang_default": settings.QUIZ_LANG_DEFAULT
+            })
+            
             lang_code, _, _ = decide_output_language(
                 [c.get("content", "") for c in context_chunks],
                 user_override=settings.QUIZ_LANG_MODE if settings.QUIZ_LANG_MODE != "auto" else None,
             )
+            
+            logger.info(f"✅ [QUIZ_GEN] Language detected: {generation_id}", extra={
+                "generation_id": generation_id,
+                "detected_language": lang_code,
+                "final_language": lang_code or settings.QUIZ_LANG_DEFAULT
+            })
 
             # Create prompt for context-based quiz generation
+            # Default type settings if not provided
+            if not allowed_types:
+                allowed_types = ["MCQ"]
+            if not counts_by_type:
+                counts_by_type = {"MCQ": num_questions}
+
+            logger.info(f"📝 [QUIZ_GEN] Building prompts for quiz generation: {generation_id}", extra={
+                "generation_id": generation_id,
+                "output_lang": lang_code or settings.QUIZ_LANG_DEFAULT,
+                "subject_name": topic or source_type,
+                "total_questions": num_questions,
+                "allowed_types": allowed_types,
+                "counts_by_type": counts_by_type,
+                "difficulty_mix": {"easy": 0.34, "medium": 0.33, "hard": 0.33}
+            })
+            
             system_prompt, user_prompt = build_prompts(
                 output_lang_code=lang_code or settings.QUIZ_LANG_DEFAULT,
                 subject_name=topic or source_type,
                 total=num_questions,
-                allowed_types_json=json.dumps(["MCQ"]),
-                counts_by_type_json=json.dumps({"MCQ": num_questions}),
+                allowed_types_json=json.dumps(allowed_types),
+                counts_by_type_json=json.dumps(counts_by_type),
                 diff_mix_json=json.dumps({"easy": 0.34, "medium": 0.33, "hard": 0.33}),
                 schema_json=json.dumps(self._schema_minimal()),
                 context_blocks_json=json.dumps(self._context_blocks(context_chunks)),
                 use_filesearch=False,
             )
             
+            logger.info(f"📋 [QUIZ_GEN] Prompts built successfully: {generation_id}", extra={
+                "generation_id": generation_id,
+                "system_prompt_length": len(system_prompt),
+                "user_prompt_length": len(user_prompt),
+                "system_prompt_preview": system_prompt[:200] + "..." if len(system_prompt) > 200 else system_prompt,
+                "user_prompt_preview": user_prompt[:200] + "..." if len(user_prompt) > 200 else user_prompt
+            })
+            
             # Generate quiz using selected strategy
+            logger.info(f"🤖 [QUIZ_GEN] Starting AI content generation: {generation_id}", extra={
+                "generation_id": generation_id,
+                "strategy": self.strategy,
+                "provider": getattr(self, 'provider', None),
+                "openai_configured": bool(self.openai_api_key),
+                "ollama_configured": bool(self.ollama_url),
+                "huggingface_configured": bool(self.huggingface_token)
+            })
+            
+            start_time = time.time()
             quiz_content = await self._generate_content_json(system_prompt, user_prompt)
+            generation_time = time.time() - start_time
+            
+            logger.info(f"✅ [QUIZ_GEN] AI content generation completed: {generation_id}", extra={
+                "generation_id": generation_id,
+                "generation_time": f"{generation_time:.2f}s",
+                "content_type": type(quiz_content).__name__,
+                "content_length": len(str(quiz_content)) if isinstance(quiz_content, str) else "N/A"
+            })
             
             # Parse the response if it's a string, otherwise use as-is
             if isinstance(quiz_content, str):
+                logger.info(f"🔍 [QUIZ_GEN] Parsing string response: {generation_id}", extra={
+                    "generation_id": generation_id,
+                    "content_preview": quiz_content[:200] + "..." if len(quiz_content) > 200 else quiz_content
+                })
                 quiz_data = self._parse_quiz_response(quiz_content)
             else:
+                logger.info(f"📊 [QUIZ_GEN] Using structured response: {generation_id}", extra={
+                    "generation_id": generation_id,
+                    "response_keys": list(quiz_content.keys()) if isinstance(quiz_content, dict) else "N/A"
+                })
                 quiz_data = quiz_content
 
             # Ensure language fields
@@ -170,15 +258,72 @@ class QuizGenerator:
                         meta = q.get("metadata") or {}
                         meta.setdefault("language", quiz_data["output_language"]) 
                         q["metadata"] = meta
-            
+                
+                logger.info(f"🌍 [QUIZ_GEN] Language fields ensured: {generation_id}", extra={
+                    "generation_id": generation_id,
+                    "output_language": quiz_data.get("output_language"),
+                    "question_count": len(quiz_data.get("questions", [])),
+                    "questions_with_language": sum(1 for q in quiz_data.get("questions", []) if q.get("metadata", {}).get("language"))
+                })
+            # If we did not get questions back, attempt a reinforced retry once
+            try:
+                current_count = len(quiz_data.get("questions", [])) if isinstance(quiz_data, dict) else 0
+            except Exception:
+                current_count = 0
+
+            if current_count == 0 and self.provider:
+                logger.info(f"♻️ [QUIZ_GEN] No questions returned, retrying with reinforced prompt: {generation_id}", extra={
+                    "generation_id": generation_id,
+                    "num_questions": num_questions
+                })
+
+                # Build a stricter repair prompt honoring allowed types and counts
+                try:
+                    # Reuse previous prompt pieces but enforce counts explicitly
+                    repair_instructions = (
+                        "You MUST return a JSON object with a non-empty 'questions' array. "
+                        f"Create exactly {num_questions} questions distributed by type and percentages as previously provided. "
+                        "Do not include any text outside of the JSON object."
+                    )
+                    repair_user = user_prompt + "\n\n" + repair_instructions
+                    data_retry = self.provider.generate_json(system_prompt, repair_user)
+                    if isinstance(data_retry, dict) and len(data_retry.get("questions", []) or []) > 0:
+                        quiz_data = data_retry
+                        logger.info(f"✅ [QUIZ_GEN] Retry succeeded with non-empty questions: {generation_id}")
+                    else:
+                        logger.warning(f"⚠️ [QUIZ_GEN] Retry still returned empty questions: {generation_id}")
+                except Exception as retry_error:
+                    logger.warning(f"⚠️ [QUIZ_GEN] Retry failed: {generation_id}", extra={
+                        "generation_id": generation_id,
+                        "error": str(retry_error)
+                    })
+
             # Add source information
             quiz_data["source_type"] = source_type
             quiz_data["source_id"] = source_id
             
+            logger.info(f"✅ [QUIZ_GEN] Quiz generation completed successfully: {generation_id}", extra={
+                "generation_id": generation_id,
+                "final_quiz_keys": list(quiz_data.keys()) if isinstance(quiz_data, dict) else "N/A",
+                "question_count": len(quiz_data.get("questions", [])) if isinstance(quiz_data, dict) else "N/A",
+                "total_generation_time": f"{generation_time:.2f}s",
+                "source_info": {"type": source_type, "id": source_id}
+            })
+            
             return quiz_data
             
         except Exception as e:
-            logger.error(f"Error generating context-based quiz: {str(e)}")
+            logger.error(f"💥 [QUIZ_GEN] Quiz generation failed: {generation_id}", extra={
+                "generation_id": generation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "topic": topic,
+                "difficulty": difficulty,
+                "num_questions": num_questions,
+                "source_type": source_type,
+                "source_id": source_id,
+                "traceback": traceback.format_exc()
+            })
             raise
 
     def generate_quiz_from_context_sync(
@@ -418,49 +563,200 @@ Generate the quiz based ONLY on the provided context:"""
     def _make_provider(self):
         try:
             provider = settings.QUIZ_PROVIDER
+            logger.info(f"Attempting to initialize provider: {provider}")
         except Exception:
             provider = "openai"
+            logger.warning(f"Failed to get provider from settings, defaulting to: {provider}")
+
+        # Handle mock strategy explicitly
+        if provider == "mock":
+            logger.info("Mock strategy requested, no external provider needed")
+            return None
 
         if provider == "openai" and OpenAIProvider:
+            if not settings.OPENAI_API_KEY:
+                logger.warning("OpenAI provider requested but no API key configured, falling back to mock")
+                return None
+                
             vector_ids = []
             try:
                 if settings.VECTOR_STORE_IDS:
                     vector_ids = [v.strip() for v in settings.VECTOR_STORE_IDS.split(",") if v.strip()]
             except Exception:
                 vector_ids = []
-            return OpenAIProvider(
-                api_key=settings.OPENAI_API_KEY,
-                model=settings.OPENAI_MODEL,
-                temperature=0.2,
-                vector_store_ids=vector_ids,
-            )
+                
+            try:
+                openai_provider = OpenAIProvider(
+                    api_key=settings.OPENAI_API_KEY,
+                    model=settings.OPENAI_MODEL,
+                    temperature=0.2,
+                    base_url=settings.OPENAI_BASE_URL,
+                    vector_store_ids=vector_ids,
+                )
+                logger.info(f"OpenAI provider initialized successfully with model: {settings.OPENAI_MODEL}")
+                return openai_provider
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI provider: {e}")
+                return None
+                
         if provider == "ollama" and OllamaProvider:
-            return OllamaProvider(
-                base_url=settings.OLLAMA_BASE_URL,
-                model=settings.OLLAMA_MODEL,
-            )
+            try:
+                ollama_provider = OllamaProvider(
+                    base_url=settings.OLLAMA_BASE_URL,
+                    model=settings.OLLAMA_MODEL,
+                )
+                logger.info(f"Ollama provider initialized successfully with model: {settings.OLLAMA_MODEL}")
+                return ollama_provider
+            except Exception as e:
+                logger.error(f"Failed to initialize Ollama provider: {e}")
+                return None
+                
         if provider == "huggingface" and HFProvider:
-            return HFProvider(model_id=getattr(settings, "HF_MODEL_ID", ""), api_key=getattr(settings, "HF_API_KEY", ""))
+            if not getattr(settings, "HF_API_KEY", ""):
+                logger.warning("HuggingFace provider requested but no API key configured, falling back to mock")
+                return None
+                
+            try:
+                hf_provider = HFProvider(
+                    model_id=getattr(settings, "HF_MODEL_ID", ""), 
+                    api_key=getattr(settings, "HF_API_KEY", "")
+                )
+                logger.info(f"HuggingFace provider initialized successfully")
+                return hf_provider
+            except Exception as e:
+                logger.error(f"Failed to initialize HuggingFace provider: {e}")
+                return None
+                
+        logger.warning(f"No provider could be initialized for strategy: {provider}, using mock data")
         return None
 
     async def _generate_content_json(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
+        content_gen_id = f"content_gen_{int(time.time())}_{random.randint(1000, 9999)}"
+        
+        logger.info(f"🚀 [CONTENT_GEN] Starting content generation: {content_gen_id}", extra={
+            "content_gen_id": content_gen_id,
+            "provider_available": bool(self.provider),
+            "provider_name": getattr(self.provider, 'name', 'None') if self.provider else 'None',
+            "strategy": self.strategy,
+            "system_prompt_length": len(system_prompt),
+            "user_prompt_length": len(user_prompt)
+        })
+        
         # For current behavior, still use mock unless providers are configured
         if not self.provider:
-            return self._get_mock_quiz_data()
+            logger.info(f"⚠️ [CONTENT_GEN] No provider available, using mock quiz data: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "fallback_reason": "no_provider_configured",
+                "available_providers": {
+                    "openai": bool(self.openai_api_key),
+                    "ollama": bool(self.ollama_url),
+                    "huggingface": bool(self.huggingface_token)
+                }
+            })
+            mock_data = self._get_mock_quiz_data()
+            logger.info(f"✅ [CONTENT_GEN] Mock data generated: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "mock_data_keys": list(mock_data.keys()) if isinstance(mock_data, dict) else "N/A",
+                "mock_question_count": len(mock_data.get("questions", [])) if isinstance(mock_data, dict) else "N/A"
+            })
+            return mock_data
+            
         try:
+            logger.info(f"🤖 [CONTENT_GEN] Using AI provider: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "provider_name": self.provider.name,
+                "provider_type": type(self.provider).__name__,
+                "system_prompt_preview": system_prompt[:200] + "..." if len(system_prompt) > 200 else system_prompt,
+                "user_prompt_preview": user_prompt[:200] + "..." if len(user_prompt) > 200 else user_prompt
+            })
+            
+            start_time = time.time()
             data = self.provider.generate_json(system_prompt, user_prompt)
+            generation_time = time.time() - start_time
+            
+            logger.info(f"✅ [CONTENT_GEN] AI provider generation completed: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "provider_name": self.provider.name,
+                "generation_time": f"{generation_time:.2f}s",
+                "response_type": type(data).__name__,
+                "response_keys": list(data.keys()) if isinstance(data, dict) else "N/A"
+            })
+            
             # Basic language enforcement heuristic
             try:
                 expected = self._decide_lang_code_from_prompts(system_prompt)
+                logger.info(f"🌍 [CONTENT_GEN] Checking language compliance: {content_gen_id}", extra={
+                    "content_gen_id": content_gen_id,
+                    "expected_language": expected,
+                    "current_language": data.get("output_language", "unknown") if isinstance(data, dict) else "unknown"
+                })
+                
                 if not ensure_output_language(data, expected):
+                    logger.info(f"🔄 [CONTENT_GEN] Language mismatch detected, attempting repair: {content_gen_id}", extra={
+                        "content_gen_id": content_gen_id,
+                        "expected_language": expected,
+                        "current_language": data.get("output_language", "unknown") if isinstance(data, dict) else "unknown"
+                    })
+                    
                     repair_user = user_prompt + "\n\nYour previous output used the wrong language. Re-emit the ENTIRE result strictly in the detected source language (ISO code %s). Return JSON only and include \"output_language\":\"%s\"." % (expected, expected)
+                    
+                    logger.info(f"🔧 [CONTENT_GEN] Sending repair request: {content_gen_id}", extra={
+                        "content_gen_id": content_gen_id,
+                        "repair_prompt_length": len(repair_user),
+                        "repair_prompt_preview": repair_user[:200] + "..." if len(repair_user) > 200 else repair_user
+                    })
+                    
+                    repair_start_time = time.time()
                     data = self.provider.generate_json(system_prompt, repair_user)
-            except Exception:
-                pass
+                    repair_time = time.time() - repair_start_time
+                    
+                    logger.info(f"✅ [CONTENT_GEN] Language repair completed: {content_gen_id}", extra={
+                        "content_gen_id": content_gen_id,
+                        "repair_time": f"{repair_time:.2f}s",
+                        "final_language": data.get("output_language", "unknown") if isinstance(data, dict) else "unknown"
+                    })
+                else:
+                    logger.info(f"✅ [CONTENT_GEN] Language compliance verified: {content_gen_id}", extra={
+                        "content_gen_id": content_gen_id,
+                        "language": expected
+                    })
+                    
+            except Exception as repair_error:
+                logger.warning(f"⚠️ [CONTENT_GEN] Language repair failed: {content_gen_id}", extra={
+                    "content_gen_id": content_gen_id,
+                    "repair_error": str(repair_error),
+                    "repair_error_type": type(repair_error).__name__
+                })
+                
+            logger.info(f"✅ [CONTENT_GEN] Content generation completed successfully: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "final_response_keys": list(data.keys()) if isinstance(data, dict) else "N/A",
+                "total_generation_time": f"{generation_time:.2f}s"
+            })
+            
             return data
+            
         except Exception as e:
-            logger.warning(f"Provider failed, using mock. Error: {e}")
-            return self._get_mock_quiz_data()
+            logger.error(f"💥 [CONTENT_GEN] AI provider failed: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "provider_name": getattr(self.provider, 'name', 'Unknown') if self.provider else 'None',
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            })
+            
+            logger.warning(f"🔄 [CONTENT_GEN] Falling back to mock quiz data: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "fallback_reason": "ai_provider_failure"
+            })
+            
+            mock_data = self._get_mock_quiz_data()
+            logger.info(f"✅ [CONTENT_GEN] Mock fallback data generated: {content_gen_id}", extra={
+                "content_gen_id": content_gen_id,
+                "mock_data_keys": list(mock_data.keys()) if isinstance(mock_data, dict) else "N/A"
+            })
+            
+            return mock_data
 
     def _decide_lang_code_from_prompts(self, system_prompt: str) -> str:
         # Extract LANG_CODE from system prompt if present
@@ -586,19 +882,37 @@ Generate the quiz based ONLY on the provided context:"""
     
     async def _call_openai(self, prompt: str) -> str:
         """Call OpenAI API to generate content"""
+        request_id = f"openai_{int(time.time())}_{random.randint(1000, 9999)}"
+        
+        logger.info(f"🤖 [OPENAI] Starting OpenAI API call: {request_id}", extra={
+            "request_id": request_id,
+            "model": self.openai_model,
+            "base_url": self.openai_base_url,
+            "max_tokens": self.openai_max_tokens,
+            "temperature": self.openai_temperature,
+            "prompt_length": len(prompt),
+            "prompt_preview": prompt[:200] + "..." if len(prompt) > 200 else prompt
+        })
+        
         try:
-            logger.info(f"Calling OpenAI API with model {self.openai_model}")
-            
             if not self.openai_client:
+                logger.error(f"❌ [OPENAI] OpenAI client not initialized: {request_id}", extra={
+                    "request_id": request_id,
+                    "client_available": bool(self.openai_client)
+                })
                 raise Exception("OpenAI client not initialized")
             
             if not self.openai_api_key:
+                logger.error(f"❌ [OPENAI] OpenAI API key not configured: {request_id}", extra={
+                    "request_id": request_id,
+                    "api_key_configured": bool(self.openai_api_key)
+                })
                 raise Exception("OpenAI API key not configured")
             
-            # Create chat completion request
-            response = await self.openai_client.chat.completions.acreate(
-                model=self.openai_model,
-                messages=[
+            # Log the actual API request details
+            api_request = {
+                "model": self.openai_model,
+                "messages": [
                     {
                         "role": "system",
                         "content": "You are an expert quiz creator. Generate quizzes in valid JSON format based on the user's request."
@@ -608,25 +922,88 @@ Generate the quiz based ONLY on the provided context:"""
                         "content": prompt
                     }
                 ],
+                "max_tokens": self.openai_max_tokens,
+                "temperature": self.openai_temperature,
+                "response_format": {"type": "json_object"}
+            }
+            
+            logger.info(f"📤 [OPENAI] Sending OpenAI API request: {request_id}", extra={
+                "request_id": request_id,
+                "api_request": api_request,
+                "estimated_cost": self._estimate_openai_cost(prompt, self.openai_max_tokens)
+            })
+            
+            start_time = time.time()
+            
+            # Create chat completion request
+            response = await self.openai_client.chat.completions.acreate(
+                model=self.openai_model,
+                messages=api_request["messages"],
                 max_tokens=self.openai_max_tokens,
                 temperature=self.openai_temperature,
                 response_format={"type": "json_object"}
             )
             
-            logger.info(f"OpenAI response received successfully")
+            api_time = time.time() - start_time
+            
+            logger.info(f"✅ [OPENAI] OpenAI API response received: {request_id}", extra={
+                "request_id": request_id,
+                "response_time": f"{api_time:.2f}s",
+                "model": response.model,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else "unknown",
+                    "completion_tokens": response.usage.completion_tokens if response.usage else "unknown",
+                    "total_tokens": response.usage.total_tokens if response.usage else "unknown"
+                },
+                "finish_reason": response.choices[0].finish_reason if response.choices else "unknown"
+            })
             
             # Extract the response content
             response_text = response.choices[0].message.content
-            logger.info(f"OpenAI response length: {len(response_text)} characters")
+            logger.info(f"📥 [OPENAI] OpenAI response content extracted: {request_id}", extra={
+                "request_id": request_id,
+                "response_length": len(response_text),
+                "response_preview": response_text[:200] + "..." if len(response_text) > 200 else response_text,
+                "is_json": self._is_valid_json(response_text)
+            })
             
             return response_text
             
         except Exception as e:
-            logger.error(f"Error calling OpenAI API: {str(e)}")
-            logger.error(f"OpenAI Model: {self.openai_model}")
-            logger.error(f"OpenAI Base URL: {self.openai_base_url}")
+            logger.error(f"💥 [OPENAI] OpenAI API call failed: {request_id}", extra={
+                "request_id": request_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "model": self.openai_model,
+                "base_url": self.openai_base_url,
+                "traceback": traceback.format_exc()
+            })
             raise
     
+    def _estimate_openai_cost(self, prompt: str, max_tokens: int) -> str:
+        """Estimate the cost of an OpenAI API call"""
+        try:
+            # Rough estimation based on typical token counts
+            # This is a simplified calculation
+            prompt_tokens = len(prompt.split()) * 1.3  # Rough token estimation
+            estimated_total = prompt_tokens + max_tokens
+            
+            # GPT-3.5-turbo pricing (approximate)
+            cost_per_1k_tokens = 0.002  # $0.002 per 1K tokens
+            estimated_cost = (estimated_total / 1000) * cost_per_1k_tokens
+            
+            return f"${estimated_cost:.4f}"
+        except:
+            return "unknown"
+    
+    def _is_valid_json(self, text: str) -> bool:
+        """Check if text is valid JSON"""
+        try:
+            json.loads(text)
+            return True
+        except:
+            return False
+
     def _parse_quiz_response(self, response: str) -> Dict[str, Any]:
         """Parse the quiz response from AI models (OpenAI, Ollama, HuggingFace)"""
         try:

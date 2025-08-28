@@ -8,7 +8,7 @@ import redis
 import threading
 import time
 from typing import Callable, Dict, List, Any
-from shared.events import BaseEvent, EventType, create_event
+from .events import BaseEvent, EventType, create_event
 import logging
 import asyncio
 

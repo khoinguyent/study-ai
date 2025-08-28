@@ -800,7 +800,7 @@ async def start_study_session_proxy(request: Request):
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{settings.QUIZ_SERVICE_URL}/quiz/start-study-session",
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/start",
                 json=body,
                 headers=headers,
                 timeout=30.0
@@ -836,7 +836,7 @@ async def ingest_study_session_proxy(request: Request):
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{settings.QUIZ_SERVICE_URL}/quiz/ingest-study-session",
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/ingest",
                 json=body,
                 headers=headers,
                 timeout=30.0
@@ -872,7 +872,8 @@ async def get_study_session_status_proxy(
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{settings.QUIZ_SERVICE_URL}/quiz/study-session-status/{job_id}",
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/status",
+                params={"job_id": job_id},
                 headers=headers,
                 timeout=30.0
             )
@@ -907,21 +908,13 @@ async def get_study_session_events_proxy(
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{settings.QUIZ_SERVICE_URL}/quiz/study-session-events/{job_id}",
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/events",
+                params={"job_id": job_id},
                 headers=headers,
                 timeout=30.0
             )
             if response.status_code == 200:
-                return StreamingResponse(
-                    response.iter_content(chunk_size=1024),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Headers": "*",
-                    }
-                )
+                return response.json()
             else:
                 # Return the actual error from the quiz service
                 error_detail = response.text
@@ -934,47 +927,6 @@ async def get_study_session_events_proxy(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Quiz service error: {str(e)}"
-        )
-
-# Quiz session notification proxy
-@app.post("/api/quiz/notify-session")
-async def notify_quiz_session_proxy(
-    session_id: str = Body(...),
-    status: str = Body(...),
-    user_id: str = Depends(verify_auth_token)
-):
-    """Proxy quiz session notifications to the notification service"""
-    try:
-        logger.info(f"Quiz session notification proxy: user_id={user_id}, session_id={session_id}, status={status}")
-        
-        # Forward to notification service
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.NOTIFICATION_SERVICE_URL}/notifications",
-                json={
-                    "user_id": user_id,
-                    "title": "Quiz Session Update",
-                    "message": f"Your quiz session {session_id} is now {status}",
-                    "notification_type": "quiz_session",
-                    "metadata": {
-                        "session_id": session_id,
-                        "status": status
-                    }
-                },
-                timeout=10.0
-            )
-            
-            if response.status_code == 200:
-                return {"message": "Notification sent successfully"}
-            else:
-                logger.warning(f"Notification service returned {response.status_code}: {response.text}")
-                return {"message": "Notification service unavailable"}
-                
-    except Exception as e:
-        logger.error(f"Quiz session notification proxy error: {repr(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Quiz session notification proxy error: {str(e)}"
         )
 
 @app.post("/api/quiz/confirm-study-session")
@@ -992,7 +944,188 @@ async def confirm_study_session_proxy(request: Request):
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{settings.QUIZ_SERVICE_URL}/quiz/confirm-study-session",
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/confirm",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+# Direct Study Session Routes (Frontend expects these)
+@app.post("/api/study-sessions/start")
+async def start_study_session_direct_proxy(request: Request):
+    """Proxy study session start directly to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/start",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/study-sessions/status")
+async def get_study_session_status_direct_proxy(
+    request: Request,
+    job_id: str = Query(..., description="Job ID to check status for")
+):
+    """Proxy study session status directly to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/status",
+                params={"job_id": job_id},
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/study-sessions/events")
+async def get_study_session_events_direct_proxy(
+    request: Request,
+    job_id: str = Query(..., description="Job ID to get events for")
+):
+    """Proxy study session events directly to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/events",
+                params={"job_id": job_id},
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.post("/api/study-sessions/ingest")
+async def ingest_study_session_direct_proxy(request: Request):
+    """Proxy study session ingest directly to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/ingest",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.post("/api/study-sessions/confirm")
+async def confirm_study_session_direct_proxy(request: Request):
+    """Proxy study session confirm directly to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/confirm",
                 json=body,
                 headers=headers,
                 timeout=30.0
@@ -1169,7 +1302,7 @@ async def generate_quiz_category_proxy(request: Request):
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{settings.QUIZ_SERVICE_URL}/quizzes/generate",
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/generate-real",
                 json=body,
                 headers=headers,
                 timeout=60.0
@@ -1190,7 +1323,81 @@ async def generate_quiz_category_proxy(request: Request):
             detail=f"Quiz service error: {str(e)}"
         )
 
-@app.get("/api/quiz/{quiz_id}")
+@app.post("/api/quizzes/generate")
+async def generate_quiz_proxy(request: Request):
+    """Proxy quiz generation to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/generate-real",
+                json=body,
+                headers=headers,
+                timeout=60.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+# Question Budget Service Proxy Routes
+@app.post("/api/question-budget/estimate")
+async def question_budget_estimate_proxy(request: Request):
+    """Proxy question budget estimate to question-budget service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to question-budget service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUESTION_BUDGET_SERVICE_URL}/estimate",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the question-budget service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        logger.error(f"Error proxying question budget estimate: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Question budget service error: {str(e)}"
+        )
+
+@app.get("/api/quizzes/{quiz_id}")
 async def get_quiz_proxy(quiz_id: str, request: Request):
     """Proxy get quiz by ID to quiz service"""
     try:
@@ -1221,6 +1428,8 @@ async def get_quiz_proxy(quiz_id: str, request: Request):
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Quiz service error: {str(e)}"
         )
+
+# Removed specific events route - now handled by catch-all proxy
 
 @app.get("/api/quiz")
 async def get_quizzes_proxy(
@@ -1389,6 +1598,12 @@ async def clear_notifications_by_type_proxy(request: Request):
             detail=f"Notification service error: {str(e)}"
         )
 
+# Test route to verify API gateway is working
+@app.get("/api/test")
+async def test_route():
+    """Test route to verify API gateway is working"""
+    return {"message": "API Gateway is working", "timestamp": str(datetime.datetime.now())}
+
 # MUST be last of all /api routes - catch-all proxy for any unmatched API calls
 @app.api_route("/api/{service}/{path:path}",
                methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
@@ -1396,71 +1611,116 @@ async def proxy_catch_all(service: str, path: str, request: Request):
     """Catch-all proxy for any unmatched API routes"""
     logger.info(f"PROXY CATCH-ALL → {request.method} /api/{service}/{path}")
     
-    # Determine target service URL based on service name
-    service_urls = {
-        "auth": settings.AUTH_SERVICE_URL,
-        "documents": settings.DOCUMENT_SERVICE_URL,
-        "indexing": settings.INDEXING_SERVICE_URL,
-        "quiz": settings.QUIZ_SERVICE_URL,
-        "notifications": settings.NOTIFICATION_SERVICE_URL,
-        "clarifier": settings.CLARIFIER_SERVICE_URL,
-        "question-budget": settings.QUESTION_BUDGET_SERVICE_URL,
-    }
-    
-    target_service_url = service_urls.get(service)
-    if not target_service_url:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Unknown service: {service}"
-        )
-    
-    target_url = f"{target_service_url}/api/{path}"
-    logger.info(f"PROXY CATCH-ALL → {target_url}")
-    
-    # Forward headers (excluding host)
-    headers = dict(request.headers)
-    headers.pop("host", None)
-    
-    # Forward the request
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if request.method == "GET":
-                response = await client.get(target_url, headers=headers, params=request.query_params)
-            elif request.method == "POST":
-                body = await request.body()
-                response = await client.post(target_url, headers=headers, content=body)
-            elif request.method == "PUT":
-                body = await request.body()
-                response = await client.put(target_url, headers=headers, content=body)
-            elif request.method == "DELETE":
-                response = await client.delete(target_url, headers=headers)
-            elif request.method == "PATCH":
-                body = await request.body()
-                response = await client.patch(target_url, headers=headers, content=body)
-            elif request.method == "OPTIONS":
-                response = await client.options(target_url, headers=headers)
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-                    detail=f"Method {request.method} not supported"
+    # Handle question-budget service specifically
+    if service == "question-budget":
+        target_service_url = settings.QUESTION_BUDGET_SERVICE_URL
+        target_url = f"{target_service_url}/{path}"
+        logger.info(f"PROXY CATCH-ALL → question-budget: {target_url}")
+        
+        # Forward headers (excluding host)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        
+        # Forward the request
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if request.method == "GET":
+                    response = await client.get(target_url, headers=headers, params=request.query_params)
+                elif request.method == "POST":
+                    body = await request.body()
+                    response = await client.post(target_url, headers=headers, content=body)
+                elif request.method == "PUT":
+                    body = await request.body()
+                    response = await client.put(target_url, headers=headers, content=body)
+                elif request.method == "DELETE":
+                    response = await client.delete(target_url, headers=headers)
+                elif request.method == "PATCH":
+                    body = await request.body()
+                    response = await client.patch(target_url, headers=headers, content=body)
+                elif request.method == "OPTIONS":
+                    response = await client.options(target_url, headers=headers)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                        detail=f"Method {request.method} not supported"
+                    )
+                
+                # Return the response
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get("content-type")
                 )
-            
-            # Return the response
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type=response.headers.get("content-type")
+                
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"Service {service} timeout"
             )
-            
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Service {service} timeout"
-        )
-    except Exception as e:
-        logger.error(f"Proxy catch-all error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Service {service} error: {str(e)}"
-        )
+        except Exception as e:
+            logger.error(f"Proxy catch-all error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Service {service} error: {str(e)}"
+            )
+    
+    # Handle quiz service specifically
+    elif service == "quizzes":
+        target_service_url = settings.QUIZ_SERVICE_URL
+        target_url = f"{target_service_url}/{path}"
+        logger.info(f"PROXY CATCH-ALL → quizzes: {target_url}")
+        
+        # Forward headers (excluding host)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        
+        # Forward the request
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if request.method == "GET":
+                    response = await client.get(target_url, headers=headers, params=request.query_params)
+                elif request.method == "POST":
+                    body = await request.body()
+                    response = await client.post(target_url, headers=headers, content=body)
+                elif request.method == "PUT":
+                    body = await request.body()
+                    response = await client.put(target_url, headers=headers, content=body)
+                elif request.method == "DELETE":
+                    response = await client.delete(target_url, headers=headers)
+                elif request.method == "PATCH":
+                    body = await request.body()
+                    response = await client.patch(target_url, headers=headers, content=body)
+                elif request.method == "OPTIONS":
+                    response = await client.options(target_url, headers=headers)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                        detail=f"Method {request.method} not supported"
+                    )
+                
+                # Return the response
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get("content-type")
+                )
+                
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"Service {service} timeout"
+            )
+        except Exception as e:
+            logger.error(f"Proxy catch-all error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Service {service} error: {str(e)}"
+            )
+    
+    # For other services, return 404
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Service {service} not supported by catch-all proxy"
+    )

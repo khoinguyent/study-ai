@@ -3,17 +3,19 @@ from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
-from ..db import Base
+from ..database import Base
 
 class Quiz(Base):
     __tablename__ = "quizzes"
 
-    quiz_id: Mapped[str] = mapped_column(String, primary_key=True)
-    subject_id: Mapped[str] = mapped_column(String, nullable=False)
-    owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
-
+    id: Mapped[str] = mapped_column(String, primary_key=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
-    settings: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    questions: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    document_id: Mapped[str] = mapped_column(String, nullable=True)
+    subject_id: Mapped[str] = mapped_column(String, nullable=True)
+    category_id: Mapped[str] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
