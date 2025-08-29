@@ -34,7 +34,9 @@ export async function startQuizJob(
     console.log('✅ [FRONTEND] Quiz generation job started successfully:', {
       timestamp: new Date().toISOString(),
       response,
-      jobId: response.job_id
+      jobId: response.job_id,
+      sessionId: response.session_id,
+      quizId: response.quiz_id
     });
     
     return response;

@@ -77,13 +77,26 @@ export default function StartStudyLauncher({
       });
 
       try {
-        const { job_id } = await startQuizJob(apiBase, payload);
+        const { job_id, session_id, quiz_id } = await startQuizJob(apiBase, payload);
         console.log("✅ [QUIZ] Quiz generation job started successfully:", {
           timestamp: new Date().toISOString(),
           jobId: job_id,
+          sessionId: session_id,
+          quizId: quiz_id,
           payload,
           apiBase
         });
+        
+        // If session is already available, navigate directly
+        if (session_id) {
+          console.log("🎯 [QUIZ] Session already available, navigating directly:", {
+            timestamp: new Date().toISOString(),
+            sessionId: session_id,
+            route: `/quiz/session/${session_id}`
+          });
+          navigate(`/quiz/session/${session_id}`);
+          return;
+        }
         
         // Keep user on current screen; show progress via notifications
         setJobId(job_id);

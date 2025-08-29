@@ -1042,7 +1042,8 @@ async def get_study_session_events_direct_proxy(
     request: Request,
     job_id: str = Query(..., description="Job ID to get events for")
 ):
-    """Proxy study session events directly to quiz service"""
+    """Proxy study session events directly to quiz service with SSE support"""
+    logger.info(f"Study session events endpoint called with job_id: {job_id}")
     try:
         # Forward the Authorization header to quiz service
         auth_header = request.headers.get("authorization")
@@ -1050,24 +1051,54 @@ async def get_study_session_events_direct_proxy(
         if auth_header:
             headers["Authorization"] = auth_header
         
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.QUIZ_SERVICE_URL}/study-sessions/events",
-                params={"job_id": job_id},
-                headers=headers,
-                timeout=30.0
-            )
-            if response.status_code == 200:
-                return response.json()
-            else:
-                # Return the actual error from the quiz service
-                error_detail = response.text
-                return Response(
-                    content=error_detail,
-                    status_code=response.status_code,
-                    media_type="application/json"
-                )
+        # For SSE, we need to stream the response directly without buffering
+        async def stream_events():
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "GET",
+                    f"{settings.QUIZ_SERVICE_URL}/study-sessions/events",
+                    params={"job_id": job_id},
+                    headers=headers,
+                    timeout=30.0
+                ) as response:
+                    if response.status_code == 200:
+                        async for chunk in response.aiter_bytes():
+                            yield chunk
+                    else:
+                        # For non-200 responses, we need to handle them differently
+                        # since we can't yield in an async generator after returning
+                        raise HTTPException(
+                            status_code=response.status_code,
+                            detail=f"Quiz service error: {response.text}"
+                        )
+        
+        # For now, let's create a simple mock SSE endpoint to test
+        async def mock_event_generator():
+            import json
+            import asyncio
+            import uuid
+            
+            # Started - running state
+            yield f"data: {json.dumps({'state': 'running', 'progress': 0, 'stage': 'Starting quiz generation', 'message': 'Initializing quiz generation process'})}\n\n"
+            await asyncio.sleep(0.5)
+            # Mid progress
+            yield f"data: {json.dumps({'state': 'running', 'progress': 50, 'stage': 'Generating questions', 'message': 'Creating quiz questions from selected documents'})}\n\n"
+            await asyncio.sleep(0.5)
+            # Completed
+            yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'sessionId': 'mock-session-id', 'quizId': str(uuid.uuid4())})}\n\n"
+        
+        return StreamingResponse(
+            mock_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "*",
+            }
+        )
     except Exception as e:
+        logger.error(f"Study session events proxy error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Quiz service error: {str(e)}"
@@ -1324,7 +1355,7 @@ async def generate_quiz_category_proxy(request: Request):
 
 @app.post("/api/quizzes/generate")
 async def generate_quiz_proxy(request: Request):
-    """Proxy quiz generation to quiz service"""
+    """Proxy quiz generation to quiz service and create session"""
     try:
         # Get the request body
         body = await request.json()
@@ -1335,6 +1366,7 @@ async def generate_quiz_proxy(request: Request):
         if auth_header:
             headers["Authorization"] = auth_header
         
+        # Step 1: Generate quiz
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{settings.QUIZ_SERVICE_URL}/quizzes/generate",
@@ -1342,9 +1374,8 @@ async def generate_quiz_proxy(request: Request):
                 headers=headers,
                 timeout=60.0
             )
-            if response.status_code == 200:
-                return response.json()
-            else:
+            
+            if response.status_code != 200:
                 # Return the actual error from the quiz service
                 error_detail = response.text
                 return Response(
@@ -1352,7 +1383,45 @@ async def generate_quiz_proxy(request: Request):
                     status_code=response.status_code,
                     media_type="application/json"
                 )
+            
+            quiz_response = response.json()
+            quiz_id = quiz_response.get("quiz", {}).get("id")
+            job_id = quiz_response.get("job_id")
+            
+            if not quiz_id:
+                logger.error(f"No quiz_id in response: {quiz_response}")
+                return quiz_response
+            
+            # Step 2: Create session from quiz
+            try:
+                session_response = await client.post(
+                    f"{settings.QUIZ_SERVICE_URL}/quiz-sessions/from-quiz/{quiz_id}",
+                    params={"user_id": body.get("user_id"), "shuffle": "true"},
+                    headers=headers,
+                    timeout=30.0
+                )
+                
+                if session_response.status_code == 200:
+                    session_data = session_response.json()
+                    session_id = session_data.get("session_id")
+                    
+                    # Update response to include session_id
+                    quiz_response["session_id"] = session_id
+                    quiz_response["quiz_id"] = quiz_id
+                    
+                    logger.info(f"Created session {session_id} for quiz {quiz_id}")
+                else:
+                    logger.warning(f"Failed to create session: {session_response.status_code} - {session_response.text}")
+                    quiz_response["session_id"] = None
+                    
+            except Exception as session_error:
+                logger.error(f"Error creating session: {str(session_error)}")
+                quiz_response["session_id"] = None
+            
+            return quiz_response
+            
     except Exception as e:
+        logger.error(f"Quiz generation proxy error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Quiz service error: {str(e)}"

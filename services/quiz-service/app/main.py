@@ -3,8 +3,10 @@ import time
 import traceback
 import logging
 import uuid
+import json
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Query, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -439,14 +441,14 @@ async def get_study_session_events(
         logger.info(f"Getting events for job_id: {job_id}")
 
         async def event_generator():
-            # Started
-            yield f"data: {json.dumps({'state': 'running', 'progress': 0, 'message': 'Quiz generation started', 'jobId': job_id})}\n\n"
+            # Started - running state
+            yield f"data: {json.dumps({'state': 'running', 'progress': 0, 'stage': 'Starting quiz generation', 'message': 'Initializing quiz generation process'})}\n\n"
             await asyncio.sleep(0.5)
             # Mid progress
-            yield f"data: {json.dumps({'state': 'running', 'progress': 50, 'message': 'Generating questions', 'jobId': job_id})}\n\n"
+            yield f"data: {json.dumps({'state': 'running', 'progress': 50, 'stage': 'Generating questions', 'message': 'Creating quiz questions from selected documents'})}\n\n"
             await asyncio.sleep(0.5)
-            # Completed (include mock ids)
-            yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'message': 'Quiz ready', 'quizId': str(uuid.uuid4()), 'sessionId': 'mock-session-id', 'jobId': job_id})}\n\n"
+            # Completed
+            yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'sessionId': 'mock-session-id', 'quizId': str(uuid.uuid4())})}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -1335,6 +1337,94 @@ async def list_quizzes(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list quizzes: {str(e)}"
+        )
+
+@app.post("/quiz-sessions/from-quiz/{quiz_id}")
+async def create_session_from_quiz(
+    quiz_id: str,
+    user_id: str = Depends(verify_auth_token),
+    shuffle: bool = Query(True, description="Whether to shuffle questions"),
+    db: Session = Depends(get_db)
+):
+    """Create a new quiz session from an existing quiz"""
+    try:
+        logger.info(f"Creating session from quiz: {quiz_id}, user: {user_id}, shuffle: {shuffle}")
+        
+        # Check if quiz exists
+        quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
+        if not quiz:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Quiz with ID {quiz_id} not found"
+            )
+        
+        # Create new session
+        session_id = str(uuid.uuid4())
+        new_session = models.QuizSession(
+            id=session_id,
+            quiz_id=quiz_id,
+            user_id=user_id,
+            seed=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(new_session)
+        db.flush()  # Get the session ID without committing
+        
+        # Create session questions from quiz data
+        quiz_questions = quiz.questions.get("questions", [])
+        if shuffle:
+            # Shuffle questions while preserving order
+            import random
+            question_indices = list(range(len(quiz_questions)))
+            random.shuffle(question_indices)
+            quiz_questions = [quiz_questions[i] for i in question_indices]
+        
+        created_questions = []
+        for i, q_data in enumerate(quiz_questions):
+            # Map the question data to the expected format
+            question_text = q_data.get("question", q_data.get("stem", ""))
+            question_type = q_data.get("type", "mcq").lower()
+            
+            session_question = models.QuizSessionQuestion(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                display_index=i,
+                q_type=question_type,
+                stem=question_text,
+                options=q_data.get("options") if question_type == "mcq" else None,
+                blanks=q_data.get("blanks") if question_type == "fill_in_blank" else None,
+                private_payload={
+                    'correct_answer': q_data.get('answer'),
+                    'metadata': q_data.get('metadata', {})
+                },
+                meta_data={
+                    'source_question_id': q_data.get('id', f'q{i+1}'),
+                    'question_type': question_type,
+                    'original_question': q_data
+                },
+                source_index=i
+            )
+            db.add(session_question)
+            created_questions.append(session_question)
+        
+        db.commit()
+        db.refresh(new_session)
+        
+        logger.info(f"Created session {session_id} for quiz {quiz_id} with {len(created_questions)} questions")
+        
+        return {
+            "session_id": session_id,
+            "count": len(created_questions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create session from quiz: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
         )
 
 @app.post("/quizzes/{quiz_id}/create-session")

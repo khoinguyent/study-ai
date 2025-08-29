@@ -10,6 +10,18 @@ export type StudyEvent =
   | { type: "error"; jobId: string; code?: string; message?: string }
   | { type: "ping"; t: number };
 
+// SSE event contract as specified in requirements
+export type SSEEvent = {
+  v: number;
+  jobId: string;
+  quizId?: string;
+  sessionId?: string;
+  progress?: number;
+  stage?: string;
+  message?: string;
+  code?: string;
+};
+
 function parseJSON(s: string) { 
   try { 
     return JSON.parse(s); 
@@ -50,7 +62,7 @@ export function useStudySessionEvents(url: string | null) {
 export function useQuizJobToasts(jobId: string | null) {
   const navigate = useNavigate();
   const { addOrUpdate } = useNotifications();
-  const sseUrl = jobId ? getQuizJobEventsUrl("/api", jobId) : null;
+  const sseUrl = jobId ? `/api/study-sessions/events?job_id=${encodeURIComponent(jobId)}` : null;
   const { events } = useStudySessionEvents(sseUrl);
   const targetSession = React.useRef<string | null>(null);
 
@@ -108,7 +120,7 @@ export function useQuizJobToasts(jobId: string | null) {
       
       const openQuiz = () => {
         if (targetSession.current) {
-          navigate(`/study-session/${targetSession.current}`);
+          navigate(`/quiz/session/${targetSession.current}`);
         }
       };
       
