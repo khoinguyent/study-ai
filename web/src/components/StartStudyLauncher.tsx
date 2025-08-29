@@ -6,7 +6,7 @@ import { startQuizJob } from "../api/quiz";
 import { useJobProgress } from "../hooks/useJobProgress";
 import { useNavigate } from "react-router-dom";
 import { useSelection } from "../stores/selection";
-import { useQuizToasts } from "./quiz/useQuizToasts";
+import { useQuizToasts, useQuizGenerationToasts } from "./quiz/useQuizToasts";
 import { toApiType } from "../lib/typeMap";
 import { QuestionType } from "../types";
 
@@ -24,6 +24,9 @@ export default function StartStudyLauncher({
 
   // Get quiz toast functions
   const quizToasts = useQuizToasts();
+
+  // Use the new enhanced hook for automatic toast management
+  useQuizGenerationToasts(jobId);
 
   const status = useJobProgress(jobId, {
     apiBase,
@@ -82,8 +85,8 @@ export default function StartStudyLauncher({
           apiBase
         });
         
-        // Navigate to quiz progress page
-        navigate(`/quiz/progress/${job_id}`);
+        // Keep user on current screen; show progress via notifications
+        setJobId(job_id);
       } catch (quizError: any) {
         console.error("❌ [QUIZ] Quiz generation failed, falling back to study session:", {
           timestamp: new Date().toISOString(),

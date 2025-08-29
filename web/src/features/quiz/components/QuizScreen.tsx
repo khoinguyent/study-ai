@@ -37,7 +37,7 @@ export default function QuizScreen() {
       try {
         setError(null);
         console.log("🎯 Fetching quiz for session:", sessionId);
-        const payload = await fetchQuiz(sessionId);
+        const payload = await fetchQuiz(sessionId, 'http://localhost:8004');
         console.log("🎯 Quiz payload received:", payload);
         hydrate(payload);
       } catch (error) {
@@ -106,7 +106,7 @@ export default function QuizScreen() {
   const submit = async () => {
     submitLocal();
     try {
-      const res = await submitQuiz(sessionId);
+      const res = await submitQuiz(sessionId, 'http://localhost:8004');
       setSubmitted(res); // graded data can be shown in a result screen if you add one
       // Navigate to results page, or stay and reveal explanations
       // For now, stay and show explanations by leaving status=submitted

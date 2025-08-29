@@ -4,7 +4,8 @@ import traceback
 import logging
 import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, Depends, HTTPException, status, Header, Query
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 import httpx
@@ -20,9 +21,20 @@ from .schemas import (
     CustomDocumentSetResponse, QuizGenerationResponse
 )
 from .config import settings
+from .api_quiz_sessions import router as quiz_sessions_router
+from .api_quiz_sessions_stream import router as quiz_sessions_stream_router
 
 # Initialize FastAPI app
 app = FastAPI(title="Quiz Service", version="1.0.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:8000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +49,10 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Database connection failed during startup: {e}")
         logger.info("Quiz service started without database connection (for testing)")
+
+# Register routers for quiz sessions creation and SSE streaming
+app.include_router(quiz_sessions_router)
+app.include_router(quiz_sessions_stream_router)
 
 async def verify_auth_token(authorization: str = Header(alias="Authorization")):
     """Verify JWT token and extract user ID"""
@@ -418,38 +434,22 @@ async def get_study_session_events(
     user_id: str = Depends(verify_auth_token),
     db: Session = Depends(get_db)
 ):
-    """Get real-time events for a study session job"""
+    """Server-Sent Events stream for study session job progress."""
     try:
         logger.info(f"Getting events for job_id: {job_id}")
-        
-        # Return mock events
-        events = [
-            {
-                "timestamp": time.time(),
-                "type": "quiz_generation_started",
-                "message": "Quiz generation started",
-                "progress": 10
-            },
-            {
-                "timestamp": time.time() + 30,
-                "type": "questions_generated",
-                "message": "Questions generated successfully",
-                "progress": 50
-            },
-            {
-                "timestamp": time.time() + 60,
-                "type": "quiz_generation_completed",
-                "message": "Quiz generation completed successfully",
-                "progress": 100
-            }
-        ]
-        
-        return {
-            "events": events,
-            "job_id": job_id,
-            "total_events": len(events)
-        }
-        
+
+        async def event_generator():
+            # Started
+            yield f"data: {json.dumps({'state': 'running', 'progress': 0, 'message': 'Quiz generation started', 'jobId': job_id})}\n\n"
+            await asyncio.sleep(0.5)
+            # Mid progress
+            yield f"data: {json.dumps({'state': 'running', 'progress': 50, 'message': 'Generating questions', 'jobId': job_id})}\n\n"
+            await asyncio.sleep(0.5)
+            # Completed (include mock ids)
+            yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'message': 'Quiz ready', 'quizId': str(uuid.uuid4()), 'sessionId': 'mock-session-id', 'jobId': job_id})}\n\n"
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
     except Exception as e:
         logger.error(f"Failed to get study session events: {str(e)}")
         raise HTTPException(
@@ -676,6 +676,31 @@ async def generate_quiz(
                 detail="docIds is required"
             )
         
+        # Notify: quiz generation started
+        try:
+            from shared.event_publisher import EventPublisher
+            EventPublisher().publish_user_notification(
+                user_id=user_id,
+                notification_type="quiz_generation",
+                title="Generating quiz…",
+                message="We'll notify you when it's ready.",
+                metadata={
+                    "status": "processing",
+                    "stage": "started"
+                }
+            )
+            EventPublisher().publish_task_status_update(
+                user_id=user_id,
+                task_id=request_id,
+                task_type="quiz_generation",
+                status="started",
+                progress=0,
+                message="Quiz generation started",
+                service_name="quiz-service"
+            )
+        except Exception:
+            pass
+
         # Generate mock quiz with the essential fields
         logger.info(f"🎲 [BACKEND] Generating mock quiz: {request_id}", extra={
             "request_id": request_id,
@@ -712,6 +737,31 @@ async def generate_quiz(
             "response_status": "success",
             "response_size": len(str(response_data))
         })
+
+        # Notify: quiz generated and ready with open button (URL to be finalized)
+        try:
+            from shared.event_publisher import EventPublisher
+            EventPublisher().publish_task_status_update(
+                user_id=user_id,
+                task_id=request_id,
+                task_type="quiz_generation",
+                status="completed",
+                progress=100,
+                message="Quiz generated successfully",
+                service_name="quiz-service"
+            )
+            EventPublisher().publish_user_notification(
+                user_id=user_id,
+                notification_type="quiz_ready",
+                title="Quiz ready",
+                message="Successfully generated — open it when you're ready.",
+                metadata={
+                    "actionText": "Open",
+                    "href": "/study-session/pending-url?quizId=" + str(quiz_data.get("id"))
+                }
+            )
+        except Exception:
+            pass
         
         return response_data
         
@@ -1105,18 +1155,31 @@ async def get_quiz(
 ):
     """Get a specific quiz by ID"""
     try:
-        # For mock purposes, generate a quiz on demand
-        quiz_data = mock_quiz_generator.generate_mock_quiz(
-            subject_id="mock-subject",
-            doc_ids=["mock-doc"],
-            question_types=["MCQ"],
-            difficulty="medium",
-            question_count=10
-        )
-        quiz_data["id"] = quiz_id
+        # Get the actual quiz from the database
+        quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
         
-        return quiz_data
+        if not quiz:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Quiz with ID {quiz_id} not found"
+            )
         
+        # Return the quiz data
+        return {
+            "id": quiz.id,
+            "title": quiz.title,
+            "description": quiz.description,
+            "questions": quiz.questions,
+            "user_id": quiz.user_id,
+            "subject_id": quiz.subject_id,
+            "category_id": quiz.category_id,
+            "status": quiz.status,
+            "created_at": quiz.created_at,
+            "updated_at": quiz.updated_at
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get quiz: {str(e)}")
         raise HTTPException(
@@ -1187,6 +1250,47 @@ async def get_quiz_events(
             detail=f"Failed to get events: {str(e)}"
         )
 
+@app.post("/quizzes")
+async def create_quiz(
+    request: dict,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new quiz"""
+    try:
+        from .models.quiz import Quiz
+        
+        quiz_data = {
+            "id": str(uuid.uuid4()),
+            "title": request.get("title", "Untitled Quiz"),
+            "description": request.get("description"),
+            "questions": request.get("questions", {}),
+            "user_id": user_id,
+            "document_id": request.get("document_id"),
+            "subject_id": request.get("subject_id"),
+            "category_id": request.get("category_id"),
+            "status": request.get("status", "draft")
+        }
+        
+        quiz = Quiz(**quiz_data)
+        db.add(quiz)
+        db.commit()
+        db.refresh(quiz)
+        
+        return {
+            "id": quiz.id,
+            "title": quiz.title,
+            "status": "success",
+            "message": "Quiz created successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to create quiz: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create quiz: {str(e)}"
+        )
+
 @app.get("/quizzes")
 async def list_quizzes(
     user_id: str = Depends(verify_auth_token),
@@ -1196,21 +1300,32 @@ async def list_quizzes(
 ):
     """List quizzes for a user"""
     try:
-        # For mock purposes, return a list of generated quizzes
-        quizzes = []
-        for i in range(limit):
-            quiz_data = mock_quiz_generator.generate_mock_quiz(
-                subject_id=f"subject-{i}",
-                doc_ids=[f"doc-{i}"],
-                question_types=["MCQ"],
-                difficulty="medium",
-                question_count=10
-            )
-            quizzes.append(quiz_data)
+        # Get actual quizzes from database
+        quizzes_query = db.query(models.Quiz).offset(skip).limit(limit)
+        quizzes = quizzes_query.all()
+        
+        # Convert to response format
+        quiz_list = []
+        for quiz in quizzes:
+            quiz_list.append({
+                "id": quiz.id,
+                "title": quiz.title,
+                "description": quiz.description,
+                "questions": quiz.questions,
+                "user_id": quiz.user_id,
+                "subject_id": quiz.subject_id,
+                "category_id": quiz.category_id,
+                "status": quiz.status,
+                "created_at": quiz.created_at,
+                "updated_at": quiz.updated_at
+            })
+        
+        # Get total count
+        total = db.query(models.Quiz).count()
         
         return {
-            "quizzes": quizzes,
-            "total": len(quizzes),
+            "quizzes": quiz_list,
+            "total": total,
             "skip": skip,
             "limit": limit
         }
@@ -1220,6 +1335,209 @@ async def list_quizzes(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list quizzes: {str(e)}"
+        )
+
+@app.post("/quizzes/{quiz_id}/create-session")
+async def create_quiz_session(
+    quiz_id: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new quiz session for an existing quiz"""
+    try:
+        logger.info(f"Creating new session for quiz: {quiz_id}")
+        
+        # Check if quiz exists
+        quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
+        if not quiz:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Quiz with ID {quiz_id} not found"
+            )
+        
+        # Create new session
+        session_id = str(uuid.uuid4())
+        new_session = models.QuizSession(
+            id=session_id,
+            quiz_id=quiz_id,
+            user_id=user_id,
+            seed=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(new_session)
+        db.flush()  # Get the session ID without committing
+        
+        # Create session questions from quiz data
+        quiz_questions = quiz.questions.get("questions", [])
+        for i, q_data in enumerate(quiz_questions):
+            # Map the question data to the expected format
+            question_text = q_data.get("question", q_data.get("stem", ""))
+            question_type = q_data.get("type", "mcq").lower()
+            
+            session_question = models.QuizSessionQuestion(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                display_index=i,
+                q_type=question_type,
+                stem=question_text,
+                options=q_data.get("options") if question_type == "mcq" else None,
+                blanks=q_data.get("blanks") if question_type == "fill_in_blank" else None,
+                private_payload={
+                    'correct_answer': q_data.get('answer'),
+                    'metadata': q_data.get('metadata', {})
+                },
+                meta_data={
+                    'source_question_id': q_data.get('id', f'q{i+1}'),
+                    'question_type': question_type,
+                    'original_question': q_data
+                },
+                source_index=i
+            )
+            db.add(session_question)
+        
+        db.commit()
+        db.refresh(new_session)
+        
+        logger.info(f"Created session {session_id} for quiz {quiz_id}")
+        
+        return {
+            "status": "success",
+            "message": "Quiz session created successfully",
+            "sessionId": session_id,
+            "quizId": quiz_id,
+            "frontendUrl": f"/quiz/session/{session_id}",
+            "studySessionUrl": f"/study-session/session-{session_id}?quizId={quiz_id}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create quiz session: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@app.get("/study-sessions/{session_id}/quiz")
+async def get_quiz_for_session(
+    session_id: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Get quiz data for a session in the format expected by the frontend"""
+    try:
+        # Get the session
+        session = db.query(models.QuizSession).filter(models.QuizSession.id == session_id).first()
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session with ID {session_id} not found"
+            )
+        
+        # Get the quiz
+        quiz = db.query(models.Quiz).filter(models.Quiz.id == session.quiz_id).first()
+        if not quiz:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Quiz not found for session {session_id}"
+            )
+        
+        # Get session questions
+        session_questions = db.query(models.QuizSessionQuestion).filter(
+            models.QuizSessionQuestion.session_id == session_id
+        ).order_by(models.QuizSessionQuestion.display_index).all()
+        
+        # Convert to frontend format
+        questions = []
+        for i, sq in enumerate(session_questions):
+            question = {
+                "session_question_id": sq.id,  # Use the actual session question ID
+                "index": i,  # Add the index
+                "type": sq.q_type,
+                "stem": sq.stem,  # Use 'stem' as expected by frontend
+            }
+            
+            # Add type-specific fields
+            if sq.q_type == "mcq" and sq.options:
+                # Convert options to the format expected by frontend: {id: string, text: string}[]
+                if isinstance(sq.options, list):
+                    question["options"] = [
+                        {"id": f"opt_{i}", "text": option} 
+                        for i, option in enumerate(sq.options)
+                    ]
+                else:
+                    question["options"] = []
+            elif sq.q_type == "fill_in_blank" and sq.blanks:
+                question["blanks"] = sq.blanks
+            elif sq.q_type == "true_false":
+                question["options"] = [
+                    {"id": "true", "text": "True"},
+                    {"id": "false", "text": "False"}
+                ]
+            
+            questions.append(question)
+        
+        return {
+            "session_id": session_id,  # Use snake_case as expected by frontend
+            "quiz_id": quiz.id,        # Use snake_case as expected by frontend
+            "questions": questions
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get quiz for session: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@app.get("/study-sessions/{session_id}/answers")
+async def save_session_answers(
+    session_id: str,
+    request: Request,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Save answers for a quiz session"""
+    try:
+        body = await request.json()
+        answers = body.get("answers", {})
+        
+        # For now, just return success
+        # In a real implementation, you'd save the answers to the database
+        return {"ok": True}
+        
+    except Exception as e:
+        logger.error(f"Failed to save answers: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@app.post("/study-sessions/{session_id}/submit")
+async def submit_session(
+    session_id: str,
+    user_id: str = Depends(verify_auth_token),
+    db: Session = Depends(get_db)
+):
+    """Submit a quiz session for grading"""
+    try:
+        # For now, return mock results
+        # In a real implementation, you'd grade the answers
+        return {
+            "scorePercent": 85,
+            "correctCount": 8,
+            "total": 10,
+            "graded": []
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to submit session: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
         )
 
 if __name__ == "__main__":

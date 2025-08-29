@@ -11,6 +11,8 @@ import QuizScreen from './features/quiz/components/QuizScreen';
 // import AllQuestionsQuizPage from './features/quiz-all/AllQuestionsQuizPage';
 import OnePageQuizScreen from './features/onepage-quiz/OnePageQuizScreen';
 import QuizProgress from './pages/QuizProgress';
+import QuizSession from './pages/QuizSession';
+import CreateQuizSession from './components/CreateQuizSession';
 
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
 import authService from './services/auth';
@@ -158,9 +160,19 @@ const App: React.FC = () => {
           <OnePageQuizScreen />
         </ProtectedRoute>
       } />
+      <Route path="/quiz/session/:sessionId" element={
+        <ProtectedRoute>
+          <QuizSession />
+        </ProtectedRoute>
+      } />
       <Route path="/quiz/progress/:id" element={
         <ProtectedRoute>
           <QuizProgress />
+        </ProtectedRoute>
+      } />
+      <Route path="/create-quiz-session" element={
+        <ProtectedRoute>
+          <CreateQuizSession />
         </ProtectedRoute>
       } />
       {/* <Route path="/quiz/all" element={

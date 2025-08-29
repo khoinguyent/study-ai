@@ -1,5 +1,6 @@
 // src/useQuizToasts.ts
 import { useNotifications } from "../notifications/NotificationContext";
+import { useQuizJobToasts } from "../../hooks/useQuizJobToasts";
 
 /**
  * Hook to surface quiz generation progress and completion.
@@ -16,6 +17,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
     status: "processing",
     progress: 0,
     autoClose: false,
+    notification_type: "quiz_generation"
   });
 
   const onProgress = (jobId: string, progress: number) => addOrUpdate({
@@ -24,6 +26,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
     status: "processing",
     progress,
     autoClose: false,
+    notification_type: "quiz_generation"
   });
 
   const onCompleted = (jobId: string, quizId: string, sessionId: string) => {
@@ -34,6 +37,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
       status: "success",
       progress: 100,
       autoClose: true,
+      notification_type: "quiz_generation"
     });
 
     // Show a separate "ready" toast with link (no duplicates thanks to stable id)
@@ -45,6 +49,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
       actionText: "Open",
       href: `/study-session/session-${sessionId}?quizId=${quizId}`,
       autoClose: false,
+      notification_type: "quiz_generation"
     });
     
     // Notify that quiz generation is complete (can be used to refresh dashboard)
@@ -57,8 +62,19 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
     message,
     status: "error",
     autoClose: false,
+    notification_type: "quiz_generation"
   });
 
   // Return the API so the SSE layer can call these
   return { onQueued, onProgress, onCompleted, onFailed };
+}
+
+/**
+ * Enhanced hook that automatically handles SSE events and shows toasts
+ * Use this in components that start quiz generation
+ */
+export function useQuizGenerationToasts(jobId: string | null) {
+  const { events } = useQuizJobToasts(jobId);
+  
+  return { events };
 }

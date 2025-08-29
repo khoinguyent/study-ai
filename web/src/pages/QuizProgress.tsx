@@ -1,28 +1,21 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useSSE } from "../hooks/useSSE";
+import { useJobProgress } from "../hooks/useJobProgress";
 
 export default function QuizProgress() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [jobStatus, setJobStatus] = useState<any>(null);
-  
-  // Use SSE for real-time updates
-  const events = useSSE(id ? `/api/quizzes/${id}/events` : null);
-  
-  // Get the latest event
-  const latestEvent = events.length > 0 ? events[events.length - 1] : null;
-  
-  useEffect(() => {
-    if (latestEvent) {
-      setJobStatus(latestEvent);
-      
-      // Navigate to quiz when completed
-      if (latestEvent.state === "completed" && latestEvent.quiz_id) {
-        navigate(`/study-session/${latestEvent.session_id}`);
-      }
+
+  const status = useJobProgress(id || null, {
+    apiBase: "/api",
+    onComplete: ({ sessionId, quizId }) => {
+      navigate(`/study-session/session-${sessionId}?quizId=${quizId}`);
+    },
+    onFailed: (_jobId, message) => {
+      alert(message || "Quiz generation failed");
+      navigate("/dashboard");
     }
-  }, [latestEvent, navigate]);
+  });
 
   if (!id) {
     return <div>No job ID provided</div>;
@@ -40,35 +33,35 @@ export default function QuizProgress() {
             This may take a few minutes depending on the number of questions.
           </p>
           
-          {jobStatus && (
+          {status && (
             <div className="space-y-3">
               <div className="bg-gray-100 rounded-lg p-3">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">Status</span>
                   <span className="text-sm text-gray-600 capitalize">
-                    {jobStatus.state}
+                    {status.state}
                   </span>
                 </div>
-                {jobStatus.progress !== undefined && (
+                {status.progress !== undefined && (
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${jobStatus.progress}%` }}
+                      style={{ width: `${status.progress}%` }}
                     ></div>
                   </div>
                 )}
-                {jobStatus.message && (
+                {('message' in status && status.message) && (
                   <p className="text-sm text-gray-600 mt-2">
-                    {jobStatus.message}
+                    {status.message}
                   </p>
                 )}
               </div>
               
-              {jobStatus.stage && (
+              {('stage' in status && status.stage) && (
                 <div className="bg-blue-50 rounded-lg p-3">
                   <span className="text-sm font-medium text-blue-700">Current Stage:</span>
                   <p className="text-sm text-blue-600 mt-1 capitalize">
-                    {jobStatus.stage.replace(/_/g, ' ')}
+                    {status.stage.replace(/_/g, ' ')}
                   </p>
                 </div>
               )}

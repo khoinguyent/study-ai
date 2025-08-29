@@ -13,7 +13,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # Import all models here to ensure they are registered with Base
-from .models import *
+from .models import *  # noqa: E402,F401
 
 # Dependency to get database session
 def get_db():
@@ -25,5 +25,7 @@ def get_db():
 
 # Create all tables
 def create_tables():
-    # All models are already imported above, so just create tables
+    # Drop all tables first to ensure clean schema
+    Base.metadata.drop_all(bind=engine)
+    # Ensure all metadata is created at startup (development convenience)
     Base.metadata.create_all(bind=engine) 

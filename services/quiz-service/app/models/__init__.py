@@ -6,11 +6,13 @@ from .enums import QUESTION_TYPE, DIFFICULTY, ATTEMPT_STATUS
 from .attempt import QuizAttempt, AttemptItem, AttemptAnswer
 from .quiz import Quiz, QuizQuestion
 from .custom_document_set import CustomDocumentSet
+from .quiz_session import QuizSession, QuizSessionQuestion, QuizSessionAnswer
 
 __all__ = [
     "QuestionBank", "QUESTION_TYPE", "DIFFICULTY", "ATTEMPT_STATUS",
     "Quiz", "QuizQuestion", "QuizAttempt", "AttemptItem", "AttemptAnswer",
-    "CustomDocumentSet"
+    "CustomDocumentSet",
+    "QuizSession", "QuizSessionQuestion", "QuizSessionAnswer"
 ]
 
 
