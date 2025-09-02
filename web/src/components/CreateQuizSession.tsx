@@ -67,7 +67,7 @@ export default function CreateQuizSession() {
   };
 
   const goToStudySession = (sessionId: string, quizId: string) => {
-    navigate(`/study-session/session-${sessionId}?quizId=${quizId}`);
+            navigate(`/quiz/session/${sessionId}`);
   };
 
   return (

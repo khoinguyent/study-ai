@@ -8,13 +8,13 @@ export function validate(q: Question, a?: Answer) {
   if (!a) return { status: "incomplete" as const, earned: 0, max, expected: undefined as string | undefined };
 
   switch (q.type) {
-    case "single": {
+    case "single_choice": {
       const correct = q.options.find(o => o.isCorrect)?.id;
       const chosen = a.kind === "single" ? a.choiceId : null;
       const ok = !!correct && chosen === correct;
       return { status: ok ? "correct" : "incorrect", earned: ok ? max : 0, max, expected: correct ?? undefined };
     }
-    case "multiple": {
+    case "multiple_choice": {
       const correct = new Set(q.options.filter(o => o.isCorrect).map(o => o.id));
       const chosen = new Set((a.kind === "multiple" ? a.choiceIds : []) || []);
       if (chosen.size === 0) return { status: "incomplete", earned: 0, max, expected: Array.from(correct).join(", ") };

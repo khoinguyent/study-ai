@@ -48,7 +48,7 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
       message: "Successfully generated — open it when you're ready.",
       status: "success",
       actionText: "Open",
-      href: `/study-session/session-${sessionId}?quizId=${quizId}`,
+      href: `/quiz/session/${sessionId}`,
       autoClose: false,
       notification_type: "quiz_generation"
     });

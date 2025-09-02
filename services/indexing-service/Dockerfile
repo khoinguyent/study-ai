@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including OCR tools
-RUN apt-get update && apt-get install -y \
-    gcc \
+# Environment for smaller image
+ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+# Install runtime system dependencies including OCR tools (no recommends)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-vie \
     tesseract-ocr-eng \
@@ -23,4 +25,4 @@ COPY app/ .
 EXPOSE 8003
 
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003", "--reload"] 
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003"]

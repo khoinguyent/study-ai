@@ -35,10 +35,11 @@ const id = () => Math.random().toString(36).slice(2);
 
 // Question type configurations
 const QUESTION_TYPES: { [key in QuestionType]: { label: string; defaultPercent: number } } = {
-  mcq:        { label: "Multiple Choice", defaultPercent: 60 },
-  short:      { label: "Short Answer",    defaultPercent: 20 },
-  truefalse:  { label: "True/False",      defaultPercent: 10 },
-  fill_blank: { label: "Fill in Blank",   defaultPercent: 10 }
+  single_choice:  { label: "Multiple Choice", defaultPercent: 60 },
+  multiple_choice:{ label: "Multiple Select", defaultPercent: 0 },
+  true_false:     { label: "True/False",      defaultPercent: 10 },
+  fill_blank:     { label: "Fill in Blank",   defaultPercent: 10 },
+  short_answer:   { label: "Short Answer",    defaultPercent: 20 }
 };
 
 // --- helpers: normalize % to sum=100; split counts by % (largest remainder) ---
@@ -233,7 +234,7 @@ export default function LeftClarifierSheet({
     // compute exact counts per type
     const countsByType = Object.keys(activePerc).length
       ? countsByPercent(n, activePerc)
-      : { mcq: n } as Record<QuestionType, number>;
+      : { single_choice: n } as Record<QuestionType, number>;
 
     const result: ClarifierResult = {
       questionCount: n,
@@ -257,8 +258,8 @@ export default function LeftClarifierSheet({
     if (stage === "types") {
       if (/continue/i.test(label)) { 
         if (!types.length) {
-          setTypes(["mcq"]);
-          setTypePerc({ mcq: 100 });
+          setTypes(["single_choice"] as unknown as QuestionType[]);
+          setTypePerc({ single_choice: 100 } as Partial<Record<QuestionType, number>>);
         }
         nextFromTypes(); 
         return;
@@ -279,7 +280,7 @@ export default function LeftClarifierSheet({
 
     if (stage === "mix") {
       push("user", label);
-      const selected = types.length ? types : (["mcq"] as QuestionType[]);
+      const selected = types.length ? types : (["single_choice"] as unknown as QuestionType[]);
       if (/balanced|even/i.test(label)) {
         const eq = Math.floor(100 / selected.length);
         const rem = 100 - eq * selected.length;
@@ -288,11 +289,11 @@ export default function LeftClarifierSheet({
         setTypePerc(m);
       } else if (/mcq heavy/i.test(label)) {
         const m: Partial<Record<QuestionType,number>> = {};
-        selected.forEach(t => m[t] = t === "mcq" ? 70 : Math.floor(30/(selected.length-1 || 1)));
+        selected.forEach(t => m[t] = t === "single_choice" ? 70 : Math.floor(30/(selected.length-1 || 1)));
         setTypePerc(normalizePerc(m));
       } else if (/concept focus/i.test(label)) {
         const m: Partial<Record<QuestionType,number>> = {};
-        selected.forEach(t => m[t] = t === "short" ? 40 : Math.floor(60/(selected.length-1 || 1)));
+        selected.forEach(t => m[t] = t === "short_answer" ? 40 : Math.floor(60/(selected.length-1 || 1)));
         setTypePerc(normalizePerc(m));
       }
       return;
@@ -330,7 +331,7 @@ export default function LeftClarifierSheet({
         setTypePerc(next);
         nextFromTypes();
       } else if (/continue/i.test(text)) {
-        if (!types.length) { setTypes(["mcq"]); setTypePerc({ mcq: 100 }); }
+        if (!types.length) { setTypes(["single_choice"] as unknown as QuestionType[]); setTypePerc({ single_choice: 100 } as Partial<Record<QuestionType, number>>); }
         nextFromTypes();
       } else {
         push("bot", "Please mention at least one: Multiple Choice, Short Answer, True/False, Fill in Blank — or type 'Continue'.");
@@ -339,7 +340,7 @@ export default function LeftClarifierSheet({
     }
 
     if (stage === "mix") {
-      // Accept numeric edits like "mcq 60, short 20, true/false 10, fill 10"
+      // Accept numeric edits like "multiple choice 60, short answer 20, true/false 10, fill 10"
       const m = { ...typePerc };
       (Object.keys(QUESTION_TYPES) as QuestionType[]).forEach(k => {
         const label = QUESTION_TYPES[k].label.replace(/[^\w]/g,"").toLowerCase();
@@ -605,7 +606,7 @@ export default function LeftClarifierSheet({
                     Object.fromEntries(types.map(t => [t, (typePerc as Record<QuestionType, number>)[t] ?? 0])) as any
                   ) as Record<QuestionType, number>;
                   const n = count ?? suggested;
-                  const counts = Object.keys(activePerc).length ? countsByPercent(n, activePerc) : ({ mcq: n } as Record<QuestionType, number>);
+                  const counts = Object.keys(activePerc).length ? countsByPercent(n, activePerc) : ({ single_choice: n } as Record<QuestionType, number>);
                   const result: ClarifierResult = {
                     questionCount: n,
                     questionTypes: types,

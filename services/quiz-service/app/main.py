@@ -1605,7 +1605,7 @@ async def create_quiz_session(
             "sessionId": session_id,
             "quizId": quiz_id,
             "frontendUrl": f"/quiz/session/{session_id}",
-            "studySessionUrl": f"/study-session/session-{session_id}?quizId={quiz_id}"
+            "studySessionUrl": f"/quiz/session/{session_id}"
         }
         
     except HTTPException:

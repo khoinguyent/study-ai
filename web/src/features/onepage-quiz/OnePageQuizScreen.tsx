@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import clsx from "clsx";

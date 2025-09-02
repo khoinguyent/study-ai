@@ -9,7 +9,7 @@ import CreateSubject from './components/CreateSubject';
 import StudySession from './components/StudySession';
 import QuizScreen from './features/quiz/components/QuizScreen';
 // import AllQuestionsQuizPage from './features/quiz-all/AllQuestionsQuizPage';
-import OnePageQuizScreen from './features/onepage-quiz/OnePageQuizScreen';
+import StudySessionRedirect from './components/StudySessionRedirect';
 import QuizProgress from './pages/QuizProgress';
 import QuizSession from './pages/QuizSession';
 import CreateQuizSession from './components/CreateQuizSession';
@@ -157,7 +157,7 @@ const App: React.FC = () => {
       } />
       <Route path="/study-session/:sessionId" element={
         <ProtectedRoute>
-          <OnePageQuizScreen />
+          <StudySessionRedirect />
         </ProtectedRoute>
       } />
       <Route path="/quiz/session/:sessionId" element={

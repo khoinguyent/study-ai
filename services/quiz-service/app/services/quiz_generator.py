@@ -1105,12 +1105,9 @@ Generate the quiz based ONLY on the provided context:"""
         }
 
     def _make_provider(self):
-        try:
-            provider = os.getenv("QUIZ_PROVIDER", "openai")
-            logger.info(f"Attempting to initialize provider: {provider}")
-        except Exception:
-            provider = "openai"
-            logger.warning(f"Failed to get provider from settings, defaulting to: {provider}")
+        # Use strategy as the single source of truth for provider selection
+        provider = (self.strategy or "openai").lower()
+        logger.info(f"Attempting to initialize provider (from strategy): {provider}")
 
         # Handle mock strategy explicitly
         if provider == "mock":

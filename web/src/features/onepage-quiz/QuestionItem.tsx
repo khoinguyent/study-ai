@@ -28,8 +28,8 @@ export default function QuestionItem({ index, q, value, onChange, submitted, ver
           <h3 className="text-base leading-relaxed font-semibold">{q.prompt}</h3>
         </div>
         <p className="text-xs text-gray-600 mt-2">
-          {q.type === "single" && "Select one correct answer"}
-          {q.type === "multiple" && "Select all correct answers"}
+          {q.type === "single_choice" && "Select one correct answer"}
+          {q.type === "multiple_choice" && "Select all correct answers"}
           {q.type === "true_false" && "Select True or False"}
           {q.type === "fill_blank" && "Fill in the blanks"}
           {q.type === "short_answer" && "Write a short answer"}
@@ -37,7 +37,7 @@ export default function QuestionItem({ index, q, value, onChange, submitted, ver
       </div>
 
       <div className="p-6 space-y-3">
-        {q.type === "single" && (
+        {q.type === "single_choice" && (
           <div>
             {q.options.map(opt => (
               <div key={opt.id} className={`flex items-start gap-3 p-3 border rounded-lg ${submitted && opt.isCorrect ? "border-green-300 bg-green-50" : ""}`}>
@@ -57,7 +57,7 @@ export default function QuestionItem({ index, q, value, onChange, submitted, ver
           </div>
         )}
 
-        {q.type === "multiple" && (
+        {q.type === "multiple_choice" && (
           <div className="space-y-3">
             {q.options.map(opt => {
               const chosen = value?.kind === "multiple" ? value.choiceIds.includes(opt.id) : false;

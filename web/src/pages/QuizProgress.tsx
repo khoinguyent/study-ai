@@ -9,7 +9,7 @@ export default function QuizProgress() {
   const status = useJobProgress(id || null, {
     apiBase: "/api",
     onComplete: ({ sessionId, quizId }) => {
-      navigate(`/study-session/session-${sessionId}?quizId=${quizId}`);
+              navigate(`/quiz/session/${sessionId}`);
     },
     onFailed: (_jobId, message) => {
       alert(message || "Quiz generation failed");

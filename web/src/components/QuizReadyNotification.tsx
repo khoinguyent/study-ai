@@ -26,7 +26,7 @@ export default function QuizReadyNotification({ status, onOpenQuiz }: QuizReadyN
         </div>
         <div style={{marginTop:8, display:"flex", gap:8}}>
           <a
-            href={`/study-session/session-${status.session_id}?quizId=${status.quiz_data?.id || status.quiz_id || status.job_id}`}
+            href={`/quiz/session/${status.session_id}`}
             className="inline-flex items-center rounded-md bg-emerald-600 text-white text-sm px-3 py-1.5 hover:bg-emerald-700"
           >
             Open quiz
