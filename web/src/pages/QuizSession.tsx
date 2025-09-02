@@ -53,7 +53,7 @@ export default function QuizSessionPage() {
     (async ()=>{
       try {
         console.log('🎯 [QuizSession] Starting to fetch session:', sessionId);
-        const res = await getSessionView("http://localhost:8004", sessionId!);
+        const res = await getSessionView("/api", sessionId!);
         console.log('🎯 [QuizSession] Session data received:', res);
         if (!alive) return;
         setData(res);
@@ -77,7 +77,7 @@ export default function QuizSessionPage() {
     if (!answers.length) return;
     try {
       setSaving(true);
-      await saveAnswers("http://localhost:8004", sessionId, answers);
+      await saveAnswers("/api", sessionId, answers);
       setLastSavedAt(Date.now());
     } catch (e) {
       console.error(e);
@@ -94,7 +94,7 @@ export default function QuizSessionPage() {
     if (!sessionId) return;
     try {
       setSubmitting(true);
-      const res = await submitSession("http://localhost:8004", sessionId);
+      const res = await submitSession("/api", sessionId);
       setResult(res);
       onSubmit(res.score, res.max_score);
       // Optionally navigate to a "results" page or show inline banner

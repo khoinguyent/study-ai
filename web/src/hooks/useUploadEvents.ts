@@ -1,6 +1,7 @@
 // src/hooks/useUploadEvents.ts
 import { useEffect, useRef } from "react";
 import { useNotifications } from "../components/notifications/NotificationContext";
+import { getEndpointUrl, API_ENDPOINTS } from "../config/endpoints";
 
 /** Event payloads we expect from the backend. Adjust field names if needed. */
 export type UploadEvent =
@@ -11,19 +12,24 @@ export type UploadEvent =
 
 type Options = {
   /** Required userId string (do NOT pass an object). */
-  userId: string;
+  userId: string | undefined;
   /** Called once when any upload completes successfully. Use to refetch dashboard. */
   onAnyComplete?: (docId: string) => void;
   /** Absolute or relative SSE endpoint. Default: /api/uploads/events */
   url?: string;
 };
 
-export function useUploadEvents({ userId, onAnyComplete, url = "/api/uploads/events" }: Options) {
+export function useUploadEvents({ userId, onAnyComplete, url = getEndpointUrl(API_ENDPOINTS.UPLOADS_EVENTS) }: Options) {
   const { addOrUpdate } = useNotifications();
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      console.log('🔍 [UPLOAD EVENTS] Skipping EventSource connection - no userId:', { userId });
+      return;
+    }
+    
+    console.log('🔗 [UPLOAD EVENTS] Creating EventSource connection for userId:', { userId, url });
 
     // Ensure only one ES at a time
     if (sourceRef.current) {

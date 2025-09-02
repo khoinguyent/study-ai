@@ -35,7 +35,6 @@ export async function startQuizJob(
       timestamp: new Date().toISOString(),
       response,
       jobId: response.job_id,
-      sessionId: response.session_id,
       quizId: response.quiz_id
     });
     
@@ -108,37 +107,35 @@ export type SessionView = {
 };
 
 export async function getSessionView(apiBase: string, sessionId: string): Promise<SessionView> {
-  console.log('🔍 [FRONTEND] Fetching session:', { apiBase, sessionId });
+  const url = `${apiBase}/study-sessions/${encodeURIComponent(sessionId)}/quiz`;
+  console.debug('🔎 [FRONTEND] Fetching session:', { apiBase, sessionId, url });
   
-  const r = await fetch(`${apiBase}/study-sessions/${sessionId}/quiz`, {
-    headers: { 'Authorization': 'Bearer test-token' }
-  });
-  console.log('📡 [FRONTEND] Response received:', { 
-    status: r.status, 
-    statusText: r.statusText, 
-    ok: r.ok,
-    headers: Object.fromEntries(r.headers.entries())
+  // Get auth headers with Bearer token
+  const authService = await import('../services/auth').then(m => m.authService);
+  const headers = authService.getAuthHeaders();
+  
+  const r = await fetch(url, { 
+    method: 'GET', 
+    headers,
+    credentials: 'include' 
   });
   
   if (!r.ok) {
-    console.error('❌ [FRONTEND] Response not ok:', { status: r.status, statusText: r.statusText });
+    const text = await r.text().catch(() => '');
+    console.error('🛰️ [FRONTEND] Response received:', { status: r.status, statusText: r.statusText, body: text.slice(0, 300) });
     throw new Error(`Load session failed: ${r.status}`);
   }
-  
-  const data = await r.json();
-  console.log('✅ [FRONTEND] Session data parsed:', { 
-    session_id: data.session_id,
-    quiz_id: data.quiz_id,
-    questions_count: data.questions?.length || 0
-  });
-  
-  return data;
+  return r.json();
 }
 
 export async function saveAnswers(apiBase: string, sessionId: string, answers: any[]) {
+  // Get auth headers with Bearer token
+  const authService = await import('../services/auth').then(m => m.authService);
+  const headers = authService.getAuthHeaders();
+  
   const r = await fetch(`${apiBase}/study-sessions/${sessionId}/answers`, {
     method: "POST",
-    headers: {"Content-Type":"application/json"},
+    headers,
     body: JSON.stringify({ answers, replace: true })
   });
   if (!r.ok) throw new Error(`Save answers failed: ${r.status}`);
@@ -146,7 +143,14 @@ export async function saveAnswers(apiBase: string, sessionId: string, answers: a
 }
 
 export async function submitSession(apiBase: string, sessionId: string) {
-  const r = await fetch(`${apiBase}/study-sessions/${sessionId}/submit`, { method: "POST" });
+  // Get auth headers with Bearer token
+  const authService = await import('../services/auth').then(m => m.authService);
+  const headers = authService.getAuthHeaders();
+  
+  const r = await fetch(`${apiBase}/study-sessions/${sessionId}/submit`, { 
+    method: "POST",
+    headers
+  });
   if (!r.ok) throw new Error(`Submit failed: ${r.status}`);
   return r.json(); // { score, max_score, per_question: [] }
 }

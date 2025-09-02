@@ -208,7 +208,9 @@ class AsyncEventConsumer:
         try:
             data = json.loads(message_data)
             event_type = EventType(data.get('event_type'))
-            return create_event(event_type, **data)
+            # Remove event_type from data to avoid duplicate argument error
+            event_data = {k: v for k, v in data.items() if k != 'event_type'}
+            return create_event(event_type, **event_data)
         except Exception as e:
             logger.error(f"Failed to parse event: {str(e)}")
             raise 

@@ -94,16 +94,28 @@ export interface Quiz {
 
 export interface Question {
   id: string;
-  type: string;
-  question: string;
+  type: QuestionType;           // REQUIRED: Standardized type field
+  prompt: string;               // The question text (renamed from 'question')
   options?: QuestionOption[];
-  answer?: string | boolean;
+  answer?: string | boolean;     // Legacy field for backward compatibility
   explanation?: string;
+  points?: number;              // Points for this question
+  // Additional fields for specific question types
+  correctChoiceId?: string;     // For single choice questions
+  correctChoiceIds?: string[];  // For multiple choice questions
+  correct?: boolean;            // For true/false questions
+  blanks?: number;              // For fill in the blank questions
+  labels?: string[];            // For fill in the blank questions
+  correctValues?: string[];     // For fill in the blank questions
+  minWords?: number;            // For short answer questions
+  rubric?: string;              // For short answer questions
 }
 
 export interface QuestionOption {
-  content: string;
-  isCorrect: boolean;
+  id: string;
+  text: string;                  // Option text (renamed from 'content')
+  content?: string;             // Legacy field for backward compatibility
+  isCorrect?: boolean;
 }
 
 // API Response types
@@ -135,7 +147,15 @@ export interface PublicRouteProps {
 }
 
 // Question and Budget types
-export type QuestionType = "mcq" | "short" | "truefalse" | "fill_blank";
+export type QuestionType = 
+  | "single_choice"    // Multiple choice with one correct answer
+  | "multiple_choice"  // Multiple choice with multiple correct answers
+  | "true_false"       // True/False questions
+  | "fill_blank"       // Fill in the blank questions
+  | "short_answer";    // Short answer questions
+
+// Legacy type for backward compatibility
+export type LegacyQuestionType = "mcq" | "short" | "truefalse" | "fill_blank";
 
 // Percentages (0..100) per selected type; sum must be 100 across selected types
 export type QuestionMix = Partial<Record<QuestionType, number>>;
@@ -175,5 +195,9 @@ export interface GenerateQuizRequest {
 
 export interface GenerateQuizResponse {
   job_id: string;
+  quiz_id: string;
+  session_id?: string;  // Added by API Gateway after session creation
   message?: string;
+  status: string;  // Backend always returns this
+  quiz?: any;
 } 

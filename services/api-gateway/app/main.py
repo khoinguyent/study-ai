@@ -1,11 +1,14 @@
 import logging
 import httpx
+import os
 import json
 import datetime
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Query, Body
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Query, Body, Header, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from strawberry.fastapi import GraphQLRouter
 from .graphql_schema import schema
@@ -46,6 +49,12 @@ def _log_routes():
         logging.info("%03d: %s  methods=%s  name=%s", i, path, methods, name)
     logging.info("=== END ROUTE TABLE ===")
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Log exact 422 cause to aid debugging
+    logger.error("[GATEWAY 422] %s %s %s", request.method, str(request.url), exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -61,6 +70,34 @@ async def root():
         "docs": "/docs"
     }
 
+# Quiz service configuration and helper functions
+QUIZ_SVC = os.getenv("QUIZ_SERVICE_URL", "http://quiz-service:8000")
+
+def _forward_headers(h: dict) -> dict:
+    """Forward only safe headers"""
+    out: dict = {}
+    # forward only safe headers; add auth if present
+    auth = h.get("authorization") or h.get("Authorization")
+    if auth:
+        out["Authorization"] = auth
+    return out
+
+# Quiz Session View Route - MUST BE EARLY to avoid conflicts with other routes
+@app.get("/api/test-quiz-route/{session_id}")
+async def gateway_view_quiz_session_early(session_id: str, request: Request):
+    """Pure GET pass-through to quiz-service session view - moved early to avoid route conflicts"""
+    try:
+        # Use the session_id parameter directly
+        url = f"{QUIZ_SVC}/quiz-sessions/{session_id}/view"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=_forward_headers(dict(request.headers)))
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Quiz service error: {str(e)}")
 
 
 # Mock auth endpoints removed - using proxy endpoints to auth service instead
@@ -73,29 +110,20 @@ async def root():
 async def upload_events_proxy(userId: str = Query(...)):
     """Proxy upload events to notification service"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"{settings.NOTIFICATION_SERVICE_URL}/uploads/events",
-                params={"userId": userId}
-            )
-            if response.status_code == 200:
-                return StreamingResponse(
-                    response.iter_content(chunk_size=1024),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Headers": "*",
-                    }
-                )
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Events proxy error: {response.text}"
-                )
+        logger.info(f"Events proxy: Starting request for userId: {userId}")
+        logger.info(f"Events proxy: Target URL: {settings.NOTIFICATION_SERVICE_URL}/uploads/events")
+        
+        # For now, return a simple response indicating the frontend should connect directly
+        # to the notification service for SSE streams
+        return {
+            "status": "success",
+            "message": "Events endpoint available",
+            "direct_sse_url": f"{settings.NOTIFICATION_SERVICE_URL}/uploads/events?userId={userId}",
+            "note": "For Server-Sent Events, connect directly to the notification service"
+        }
+        
     except Exception as e:
-        logger.error(f"Events proxy error: {str(e)}")
+        logger.error(f"Events proxy error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Events proxy error: {str(e)}"
@@ -785,6 +813,16 @@ async def delete_document_proxy(document_id: str, request: Request):
             detail=f"Document service error: {str(e)}"
         )
 
+QUIZ_SVC = os.getenv("QUIZ_SERVICE_URL", "http://quiz-service:8000")
+
+def _forward_headers(h: dict) -> dict:
+    out: dict = {}
+    # forward only safe headers; add auth if present
+    auth = h.get("authorization") or h.get("Authorization")
+    if auth:
+        out["Authorization"] = auth
+    return out
+
 # Quiz Service Proxy Routes
 
 @app.post("/api/quiz/start-study-session")
@@ -1072,23 +1110,9 @@ async def get_study_session_events_direct_proxy(
                             detail=f"Quiz service error: {response.text}"
                         )
         
-        # For now, let's create a simple mock SSE endpoint to test
-        async def mock_event_generator():
-            import json
-            import asyncio
-            import uuid
-            
-            # Started - running state
-            yield f"data: {json.dumps({'state': 'running', 'progress': 0, 'stage': 'Starting quiz generation', 'message': 'Initializing quiz generation process'})}\n\n"
-            await asyncio.sleep(0.5)
-            # Mid progress
-            yield f"data: {json.dumps({'state': 'running', 'progress': 50, 'stage': 'Generating questions', 'message': 'Creating quiz questions from selected documents'})}\n\n"
-            await asyncio.sleep(0.5)
-            # Completed
-            yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'sessionId': 'mock-session-id', 'quizId': str(uuid.uuid4())})}\n\n"
-        
+        # Proxy SSE directly to quiz service
         return StreamingResponse(
-            mock_event_generator(),
+            stream_events(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -1157,6 +1181,106 @@ async def confirm_study_session_direct_proxy(request: Request):
             response = await client.post(
                 f"{settings.QUIZ_SERVICE_URL}/study-sessions/confirm",
                 json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.get("/api/study-sessions/{session_id}/quiz")
+async def study_sessions_quiz_proxy(session_id: str, request: Request):
+    """Proxy study session quiz to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/{session_id}/quiz",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.post("/api/study-sessions/{session_id}/answers")
+async def study_sessions_answers_proxy(session_id: str, request: Request):
+    """Proxy study session answers to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/{session_id}/answers",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz service error: {str(e)}"
+        )
+
+@app.post("/api/study-sessions/{session_id}/submit")
+async def study_sessions_submit_proxy(session_id: str, request: Request):
+    """Proxy study session submit to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/study-sessions/{session_id}/submit",
                 headers=headers,
                 timeout=30.0
             )
@@ -1385,7 +1509,7 @@ async def generate_quiz_proxy(request: Request):
                 )
             
             quiz_response = response.json()
-            quiz_id = quiz_response.get("quiz", {}).get("id")
+            quiz_id = quiz_response.get("quiz_id")  # quiz_id is at the top level
             job_id = quiz_response.get("job_id")
             
             if not quiz_id:
@@ -1394,9 +1518,16 @@ async def generate_quiz_proxy(request: Request):
             
             # Step 2: Create session from quiz
             try:
+                # Extract user_id from the Authorization header
+                user_id = None
+                if auth_header and auth_header.startswith("Bearer "):
+                    # For now, we'll use a default user_id since the quiz service expects it
+                    # In a real implementation, you'd decode the JWT to get the user_id
+                    user_id = "default-user"
+                
                 session_response = await client.post(
                     f"{settings.QUIZ_SERVICE_URL}/quiz-sessions/from-quiz/{quiz_id}",
-                    params={"user_id": body.get("user_id"), "shuffle": "true"},
+                    params={"shuffle": "true"},
                     headers=headers,
                     timeout=30.0
                 )
@@ -1596,6 +1727,9 @@ async def get_quizzes_proxy(
 
 
 # Notification Service Proxy Routes
+
+# REMOVED: Duplicate route that was overriding the quiz service SSE endpoint
+# The correct endpoint is at line 1077 which routes to quiz service
 
 @app.get("/api/notifications/queue-status")
 async def notification_queue_status_proxy(request: Request):
@@ -1846,6 +1980,63 @@ async def proxy_catch_all(service: str, path: str, request: Request):
         target_service_url = settings.QUIZ_SERVICE_URL
         target_url = f"{target_service_url}/{path}"
         logger.info(f"PROXY CATCH-ALL → quizzes: {target_url}")
+        logger.info(f"Quiz service URL: {target_service_url}")
+        logger.info(f"Path: {path}")
+        logger.info(f"Full target URL: {target_url}")
+        
+        # Forward headers (excluding host)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        
+        # Forward the request
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if request.method == "GET":
+                    response = await client.get(target_url, headers=headers, params=request.query_params)
+                elif request.method == "POST":
+                    body = await request.body()
+                    response = await client.post(target_url, headers=headers, content=body)
+                elif request.method == "PUT":
+                    body = await request.body()
+                    response = await client.put(target_url, headers=headers, content=body)
+                elif request.method == "DELETE":
+                    response = await client.delete(target_url, headers=headers)
+                elif request.method == "PATCH":
+                    body = await request.body()
+                    response = await client.patch(target_url, headers=headers, content=body)
+                elif request.method == "OPTIONS":
+                    response = await client.options(target_url, headers=headers)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                        detail=f"Method {request.method} not supported"
+                    )
+                
+                # Return the response
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get("content-type")
+                )
+                
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"Service {service} timeout"
+            )
+        except Exception as e:
+            logger.error(f"Proxy catch-all error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Service {service} error: {str(e)}"
+            )
+    
+    # Handle study-sessions service specifically
+    elif service == "study-sessions":
+        target_service_url = settings.QUIZ_SERVICE_URL
+        target_url = f"{target_service_url}/{path}"
+        logger.info(f"PROXY CATCH-ALL → study-sessions: {target_url}")
         logger.info(f"Quiz service URL: {target_service_url}")
         logger.info(f"Path: {path}")
         logger.info(f"Full target URL: {target_url}")

@@ -154,8 +154,9 @@ const Dashboard: React.FC = () => {
   const userId = user?.id;
   
   // Handle upload events and refresh dashboard on completion
+  // Only connect to upload events if we have a valid userId
   useUploadEvents({
-    userId: userId || "",
+    userId: userId || undefined,
     onAnyComplete: async (docId: string) => {
       // Targeted refresh: fetch the single document to get latest status and merge it
       try {

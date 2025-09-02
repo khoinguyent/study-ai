@@ -1,0 +1,17 @@
+auth-db
+auth-service
+dlq-api
+dlq-monitor
+document-db
+document-service
+document-worker
+indexing-db
+indexing-service
+indexing-worker
+minio
+notification-db
+notification-service
+ollama
+quiz-db
+quiz-worker
+redis

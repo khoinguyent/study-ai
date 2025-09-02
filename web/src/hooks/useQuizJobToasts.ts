@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "../components/notifications/NotificationContext";
+import { getStudySessionEventsUrl } from "../config/endpoints";
 import { getQuizJobEventsUrl } from "../api/quiz";
 
 export type StudyEvent =
@@ -62,7 +63,7 @@ export function useStudySessionEvents(url: string | null) {
 export function useQuizJobToasts(jobId: string | null) {
   const navigate = useNavigate();
   const { addOrUpdate } = useNotifications();
-  const sseUrl = jobId ? `/api/study-sessions/events?job_id=${encodeURIComponent(jobId)}` : null;
+  const sseUrl = jobId ? getStudySessionEventsUrl(jobId) : null;
   const { events } = useStudySessionEvents(sseUrl);
   const targetSession = React.useRef<string | null>(null);
 

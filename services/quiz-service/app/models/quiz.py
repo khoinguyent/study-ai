@@ -1,14 +1,18 @@
 from __future__ import annotations
 from datetime import datetime
+import uuid
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from ..database import Base
 
+def generate_uuid():
+    return str(uuid.uuid4())
+
 class Quiz(Base):
     __tablename__ = "quizzes"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     questions: Mapped[dict] = mapped_column(JSONB, nullable=False)

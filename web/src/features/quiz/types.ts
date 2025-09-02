@@ -18,7 +18,7 @@ export type QuestionBase = {
 export type SingleChoiceQ = QuestionBase & {
   type: "single_choice";
   options: Choice[];
-  correctChoiceIds?: string[]; // server sends after submit
+  correctChoiceId?: string; // server sends after submit
 };
 
 export type MultipleChoiceQ = QuestionBase & {
@@ -72,7 +72,6 @@ export type AnswerMap = {
 export type SubmitResult = {
   scorePercent: number;
   correctCount: number;
-  total: number;
-  // The graded questions with explanations/correct answers included
-  graded: Question[];
+  totalCount: number;
+  answers: AnswerMap;
 };

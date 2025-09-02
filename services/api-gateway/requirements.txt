@@ -4,6 +4,7 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 python-multipart==0.0.6
 httpx==0.25.2
+aiohttp==3.9.1
 requests==2.31.0
 tenacity==8.2.3
 python-jose[cryptography]==3.3.0

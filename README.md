@@ -2,16 +2,44 @@
 
 A comprehensive AI-powered study platform with document processing, quiz generation, and intelligent clarification flows.
 
-## 🚀 **New: Extensible Clarification Backend**
+## 📚 **Documentation**
 
-The clarifier service now supports multiple flows with a slot-filling engine:
+For complete documentation, see: **[STUDY_AI_COMPREHENSIVE_GUIDE.md](./STUDY_AI_COMPREHENSIVE_GUIDE.md)**
 
-- **quiz_setup** (fully implemented) - Collects question types, difficulty, and count
-- **doc_summary** (scaffold) - Future: summary length, audience, style
-- **doc_highlights** (scaffold) - Future: bullet count, citations
-- **doc_conclusion** (scaffold) - Future: thesis, length
+## 🚀 **Quick Start**
 
-## 🏗️ **Architecture**
+### Prerequisites
+- Docker and Docker Compose
+- Node.js 18+ (for frontend development)
+- Python 3.9+ (for backend development)
+
+### Start the Platform
+```bash
+# Clone the repository
+git clone <repository-url>
+cd study-ai
+
+# Start all services
+docker-compose up -d
+
+# Access the platform
+# Frontend: http://localhost:3001
+# API Gateway: http://localhost:8000
+```
+
+### Development
+```bash
+# Setup development environment
+./scripts/setup-dev.sh
+
+# Run tests
+./test-quiz-generation.sh
+
+# Monitor logs
+docker-compose logs -f
+```
+
+## 🏗️ **Architecture Overview**
 
 ### Core Services
 - **API Gateway** (port 8000) - Main entry point and routing
@@ -20,173 +48,61 @@ The clarifier service now supports multiple flows with a slot-filling engine:
 - **Indexing Service** (port 8003) - Document indexing and search
 - **Quiz Service** (port 8004) - Quiz generation and management
 - **Notification Service** (port 8005) - Real-time notifications
-- **Clarifier Service** (port 8010) - **NEW: Extensible clarification flows**
+- **Clarifier Service** (port 8010) - Extensible clarification flows
 - **Question Budget Service** (port 8011) - Question count calculation
 
-## 🔍 **Indexing Service - Document Processing & Vector Search**
+### Key Features
+- **Document Upload & Processing**: Intelligent chunking and indexing
+- **AI-Powered Quiz Generation**: Multiple question types with real-time generation
+- **Real-time Notifications**: SSE-based progress tracking and completion alerts
+- **Multi-language Support**: LaBSE-based vector search and embedding
+- **Extensible Clarification Flows**: Slot-filling engine for user input collection
 
-The indexing service provides intelligent document chunking and vector-based search capabilities.
+## 🔧 **Recent Updates**
 
-### ✂️ **Chunking Modes**
+### Quiz Toast System Fixes ✅
+- Fixed duplicate toast notifications
+- Resolved SSE MIME type errors
+- Added proper quiz completion event handling
+- Improved real-time progress tracking
 
-#### Dynamic Chunking (LaBSE-aware) ⭐ **ACTIVE**
-- **Mode**: `CHUNK_MODE=DYNAMIC`
-- **Base Tokens**: 320
-- **Min/Max Tokens**: 180-480
-- **Sentence Overlap Ratio**: 0.12
-- **LaBSE Max Tokens**: 512
-- **Density Weights**: Symbols (0.4), Average Words (0.3), Numbers (0.3)
+### Question Data Structure Update ✅
+- Standardized question types with "type" field
+- Updated data structures across frontend and backend
+- Improved type safety and consistency
 
-#### Fixed Chunking (Legacy)
-- **Mode**: `CHUNK_MODE=FIXED`
-- **Chunk Size**: 1000 characters
-- **Overlap**: 200 characters
+### Comprehensive Documentation ✅
+- Merged all documentation into single comprehensive guide
+- Added detailed API reference
+- Included troubleshooting and development workflows
 
-### 🤖 **Vector Model**
-- **Embedding Model**: `sentence-transformers/LaBSE`
-- **Dimensions**: 384
-- **Language Support**: Multi-language (LaBSE)
+## 📖 **Documentation Sections**
 
-### 🔧 **API Endpoints**
-- **Health**: `/health` - Service status
-- **Configuration**: `/debug-config` - Current config values
-- **Indexing**: `/index` - Document processing
-- **Search**: `/search` - Vector similarity search
-- **Category Search**: `/search/category` - Category-based search
-- **Subject Search**: `/search/subject` - Subject-based search
-- **Chunks**: `/chunks/{document_id}` - Retrieve chunks
-- **Statistics**: `/stats/category/{id}`, `/stats/subject/{id}` - Usage stats
+The comprehensive guide includes:
 
-### ⚙️ **Environment Configuration**
-All configuration is loaded from Docker Compose environment variables:
-```yaml
-environment:
-  CHUNK_MODE: DYNAMIC
-  CHUNK_BASE_TOKENS: 320
-  CHUNK_MIN_TOKENS: 180
-  CHUNK_MAX_TOKENS: 480
-  EMBEDDING_MODEL: sentence-transformers/LaBSE
-```
+1. **Platform Overview** - Core features and capabilities
+2. **Architecture** - Service architecture and infrastructure
+3. **Quiz Generation System** - Complete quiz generation workflow
+4. **Quiz Toast System** - Real-time notification system
+5. **Document Processing** - Intelligent document chunking and indexing
+6. **Clarifier Service** - Extensible clarification flows
+7. **Infrastructure & Deployment** - Multi-environment deployment
+8. **Development Workflow** - Development and testing procedures
+9. **Troubleshooting** - Common issues and solutions
+10. **API Reference** - Complete API documentation
 
-### 📊 **Current Status**
-- ✅ **Service**: Fully operational
-- ✅ **Configuration**: All environment variables loaded correctly
-- ✅ **Chunking**: DYNAMIC mode active
-- ✅ **API**: Clean, production-ready endpoints
-- ✅ **Test Functions**: Removed for production use
+## 🤝 **Contributing**
 
-### Background Workers
-- **Document Worker** - Document processing
-- **Indexing Worker** - Document indexing
-- **Quiz Worker** - Quiz generation
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `./test-quiz-generation.sh`
+5. Submit a pull request
 
-### Infrastructure
-- **PostgreSQL** - Primary databases
-- **Redis** - Caching and message brokering
-- **MinIO** - S3-compatible object storage
-- **Ollama** - Local LLM inference
+## 📄 **License**
 
-## 🔧 **Clarifier Service - New Features**
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-### Flow Engine Architecture
+---
 
-The clarifier service now uses a **slot-filling engine** that:
-
-1. **Deterministic Parsing** - Parses user input without LLM calls
-2. **LLM Extraction** - Optional feature-flagged JSON extraction
-3. **Flow Validation** - Ensures data integrity across slots
-4. **Extensible Design** - Easy to add new flows
-
-### Supported Flows
-
-#### 1. Quiz Setup Flow (Fully Implemented)
-**Slots:**
-- `question_types` - Multiple choice, true/false, fill-in-blank, short answer
-- `difficulty` - Easy, medium, hard, mixed
-- `requested_count` - Number of questions (5 to max from budget service)
-
-**Example Flow:**
-```bash
-# Start quiz setup
-curl -X POST http://localhost:8010/clarifier/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sessionId": "session-123",
-    "userId": "user-456",
-    "subjectId": "subject-789",
-    "docIds": ["doc-1", "doc-2"],
-    "flow": "quiz_setup"
-  }'
-
-# Response:
-{
-  "sessionId": "session-123",
-  "flow": "quiz_setup",
-  "nextPrompt": "What types of questions would you like? You can choose multiple: mcq, true_false, fill_blank, short_answer",
-  "ui": {
-    "quick": ["mcq", "true_false", "fill_blank", "short_answer"]
-  }
-}
-
-# Fill question types
-curl -X POST http://localhost:8010/clarifier/ingest \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sessionId": "session-123",
-    "text": "mcq and true_false"
-  }'
-
-# Response:
-{
-  "stage": "next_slot",
-  "filled": {
-    "question_types": ["mcq", "true_false"]
-  },
-  "nextPrompt": "What difficulty level would you prefer? Choose from: easy, medium, hard, mixed",
-  "ui": {
-    "quick": ["easy", "medium", "hard", "mixed"]
-  }
-}
-
-# Fill difficulty
-curl -X POST http://localhost:8010/clarifier/ingest \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sessionId": "session-123",
-    "text": "hard"
-  }'
-
-# Fill count
-curl -X POST http://localhost:8010/clarifier/ingest \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sessionId": "session-123",
-    "text": "15"
-  }'
-
-# Flow completes automatically and calls quiz service
-```
-
-#### 2. Document Summary Flow (Scaffold)
-**Slots:**
-- `summary_length` - Short, medium, long
-- `audience` - K12, university, teacher
-- `style` - Concise, detailed
-
-#### 3. Document Highlights Flow (Scaffold)
-**Slots:**
-- `bullet_count` - Number of highlight points (3-10)
-- `include_citations` - Boolean for citations
-
-#### 4. Document Conclusion Flow (Scaffold)
-**Slots:**
-- `thesis` - Main thesis statement
-- `length` - Short or medium
-
-### Deterministic Parsers
-
-The service includes intelligent parsers that understand:
-
-**Question Types:**
-- "mcq", "multiple choice", "choice" → `mcq`
-- "true/false", "true false", "t/f", "tf" → `true_false`
+**For detailed documentation, architecture diagrams, and complete API reference, see [STUDY_AI_COMPREHENSIVE_GUIDE.md](./STUDY_AI_COMPREHENSIVE_GUIDE.md)**

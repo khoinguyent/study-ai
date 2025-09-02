@@ -61,7 +61,6 @@ class BaseEvent(BaseModel):
 
 class DocumentUploadedEvent(BaseEvent):
     """Event published when a document is uploaded"""
-    event_type: EventType = EventType.DOCUMENT_UPLOADED
     document_id: str
     filename: str
     file_size: int
@@ -69,32 +68,27 @@ class DocumentUploadedEvent(BaseEvent):
 
 class DocumentProcessingEvent(BaseEvent):
     """Event published when document processing starts"""
-    event_type: EventType = EventType.DOCUMENT_PROCESSING
     document_id: str
     progress: int = 0
 
 class DocumentProcessedEvent(BaseEvent):
     """Event published when document processing completes"""
-    event_type: EventType = EventType.DOCUMENT_PROCESSED
     document_id: str
     chunks_count: int
     processing_time: float
 
 class DocumentFailedEvent(BaseEvent):
     """Event published when document processing fails"""
-    event_type: EventType = EventType.DOCUMENT_FAILED
     document_id: str
     error_message: str
 
 class IndexingStartedEvent(BaseEvent):
     """Event published when indexing starts"""
-    event_type: EventType = EventType.INDEXING_STARTED
     document_id: str
     chunks_count: int
 
 class IndexingProgressEvent(BaseEvent):
     """Event published during indexing progress"""
-    event_type: EventType = EventType.INDEXING_PROGRESS
     document_id: str
     progress: int
     processed_chunks: int
@@ -102,20 +96,17 @@ class IndexingProgressEvent(BaseEvent):
 
 class IndexingCompletedEvent(BaseEvent):
     """Event published when indexing completes"""
-    event_type: EventType = EventType.INDEXING_COMPLETED
     document_id: str
     vectors_count: int
     indexing_time: float
 
 class IndexingFailedEvent(BaseEvent):
     """Event published when indexing fails"""
-    event_type: EventType = EventType.INDEXING_FAILED
     document_id: str
     error_message: str
 
 class QuizGenerationStartedEvent(BaseEvent):
     """Event published when quiz generation starts"""
-    event_type: EventType = EventType.QUIZ_GENERATION_STARTED
     quiz_id: str
     topic: str
     difficulty: str
@@ -123,7 +114,6 @@ class QuizGenerationStartedEvent(BaseEvent):
 
 class QuizGenerationProgressEvent(BaseEvent):
     """Event published during quiz generation progress"""
-    event_type: EventType = EventType.QUIZ_GENERATION_PROGRESS
     quiz_id: str
     progress: int
     questions_generated: int
@@ -131,20 +121,17 @@ class QuizGenerationProgressEvent(BaseEvent):
 
 class QuizGeneratedEvent(BaseEvent):
     """Event published when quiz generation completes"""
-    event_type: EventType = EventType.QUIZ_GENERATED
     quiz_id: str
     questions_count: int
     generation_time: float
 
 class QuizGenerationFailedEvent(BaseEvent):
     """Event published when quiz generation fails"""
-    event_type: EventType = EventType.QUIZ_GENERATION_FAILED
     quiz_id: str
     error_message: str
 
 class TaskStatusUpdateEvent(BaseEvent):
     """Event for general task status updates"""
-    event_type: EventType = EventType.TASK_STATUS_UPDATE
     task_id: str
     task_type: str
     status: TaskStatus
@@ -153,7 +140,6 @@ class TaskStatusUpdateEvent(BaseEvent):
 
 class UserNotificationEvent(BaseEvent):
     """Event for user notifications"""
-    event_type: EventType = EventType.USER_NOTIFICATION
     notification_type: str
     title: str
     message: str
@@ -161,7 +147,6 @@ class UserNotificationEvent(BaseEvent):
 
 class DLQMessageEvent(BaseEvent):
     """Event published when a message is moved to dead letter queue"""
-    event_type: EventType = EventType.DLQ_MESSAGE
     task_id: str
     task_name: str
     error_message: str
@@ -172,7 +157,6 @@ class DLQMessageEvent(BaseEvent):
 
 class DLQProcessedEvent(BaseEvent):
     """Event published when a DLQ message is processed"""
-    event_type: EventType = EventType.DLQ_PROCESSED
     task_id: str
     task_name: str
     processing_result: str  # "retried", "discarded", "manual_review"
@@ -203,5 +187,8 @@ def create_event(event_type: EventType, **kwargs) -> BaseEvent:
     event_class = event_classes.get(event_type)
     if not event_class:
         raise ValueError(f"Unknown event type: {event_type}")
+    
+    # Set the event_type in kwargs to ensure it's properly set
+    kwargs['event_type'] = event_type
     
     return event_class(**kwargs) 

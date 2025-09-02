@@ -6,10 +6,18 @@ Handles publishing events to message brokers using infrastructure abstraction
 import json
 import logging
 from typing import Optional, Dict, Any
+from datetime import datetime
 from .events import BaseEvent, EventType, create_event
 from .infrastructure import get_message_broker, is_local_environment
 
 logger = logging.getLogger(__name__)
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime objects"""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 class EventPublisher:
     """Event publisher using infrastructure abstraction"""
@@ -42,7 +50,8 @@ class EventPublisher:
             broker = self._get_message_broker()
             if broker and broker.is_connected():
                 channel = f"{self.channel_prefix}:{event.event_type.value}"
-                message = json.dumps(event.model_dump())
+                # Use custom encoder to handle datetime serialization
+                message = json.dumps(event.model_dump(), cls=DateTimeEncoder)
                 success = broker.publish(channel, message)
                 if success:
                     logger.debug(f"Published event {event.event_type.value} to channel {channel}")

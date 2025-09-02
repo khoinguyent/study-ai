@@ -1,4 +1,5 @@
 // src/useQuizToasts.ts
+import React from "react";
 import { useNotifications } from "../notifications/NotificationContext";
 import { useQuizJobToasts } from "../../hooks/useQuizJobToasts";
 
@@ -74,7 +75,12 @@ export function useQuizToasts(onAnyComplete?: (docId: string) => void) {
  * Use this in components that start quiz generation
  */
 export function useQuizGenerationToasts(jobId: string | null) {
+  const { addOrUpdate } = useNotifications();
   const { events } = useQuizJobToasts(jobId);
   
+  // Remove the automatic initial toast since useJobProgress handles onQueued
+  // This prevents duplicate toasts from being shown
+  
+  // Return the events for debugging/logging purposes
   return { events };
 }

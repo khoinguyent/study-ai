@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSelection } from "../stores/selection";
+import { getWebSocketUrl } from "../config/endpoints";
 
 export interface QuizSessionStatus {
   session_id: string;
@@ -39,7 +40,7 @@ export function useQuizSessionNotifications(options: UseQuizSessionNotifications
     }
 
     // Connect through API Gateway (Docker setup)
-    const wsUrl = `ws://localhost:8000/ws/${sel.userId}`;
+    const wsUrl = getWebSocketUrl(sel.userId);
     console.log(`🔗 Connecting to WebSocket: ${wsUrl}`);
 
     try {

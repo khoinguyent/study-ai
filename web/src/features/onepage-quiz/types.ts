@@ -3,7 +3,7 @@ export type Option = { id: string; text: string; isCorrect?: boolean };
 export type Question =
   | {
       id: string;
-      type: "single";
+      type: "single_choice";
       prompt: string;
       options: Option[];                 // exactly one isCorrect
       explanation?: string;
@@ -11,7 +11,7 @@ export type Question =
     }
   | {
       id: string;
-      type: "multiple";
+      type: "multiple_choice";
       prompt: string;
       options: Option[];                 // >=1 isCorrect
       explanation?: string;
@@ -44,6 +44,8 @@ export type Question =
       expected?: string[];               // optional keywords
       explanation?: string;
       points?: number;
+      minWords?: number;
+      rubric?: string;
     };
 
 export type Answer =

@@ -7,7 +7,7 @@ import asyncio
 import json
 import httpx
 from typing import List, Dict, Any, Optional, Tuple
-from ..config import settings
+import os
 import logging
 from jinja2 import Environment, FileSystemLoader
 from app.lang.detect import detect_language_distribution
@@ -29,19 +29,19 @@ class QuizGenerator:
     """Service for generating quizzes using AI"""
     
     def __init__(self):
-        self.strategy = settings.QUIZ_GENERATION_STRATEGY
-        self.ollama_url = settings.OLLAMA_BASE_URL
-        self.ollama_model = settings.OLLAMA_MODEL
-        self.huggingface_url = settings.HUGGINGFACE_API_URL
-        self.huggingface_token = settings.HUGGINGFACE_TOKEN
-        self.question_model = settings.QUESTION_GENERATION_MODEL
+        self.strategy = os.getenv("QUIZ_GENERATION_STRATEGY", "openai")
+        self.ollama_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama2:7b")
+        self.huggingface_url = os.getenv("HUGGINGFACE_API_URL", "https://api-inference.huggingface.co/models")
+        self.huggingface_token = os.getenv("HUGGINGFACE_TOKEN", "")
+        self.question_model = os.getenv("QUESTION_GENERATION_MODEL", "google/flan-t5-base")
         
         # OpenAI configuration
-        self.openai_api_key = settings.OPENAI_API_KEY
-        self.openai_base_url = settings.OPENAI_BASE_URL
-        self.openai_model = settings.OPENAI_MODEL
-        self.openai_max_tokens = settings.OPENAI_MAX_TOKENS
-        self.openai_temperature = settings.OPENAI_TEMPERATURE
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        self.openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+        self.openai_max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+        self.openai_temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
         
         # Initialize OpenAI client if API key is available
         self.openai_client = None
@@ -83,21 +83,108 @@ class QuizGenerator:
             # Language detection from chunks
             lang_code, _, _ = decide_output_language(
                 [c.get("content", "") for c in context_chunks],
-                user_override=settings.QUIZ_LANG_MODE if settings.QUIZ_LANG_MODE != "auto" else None,
+                user_override=os.getenv("QUIZ_LANG_MODE", "auto") if os.getenv("QUIZ_LANG_MODE", "auto") != "auto" else None,
             )
             
-            # Create prompt for quiz generation
-            system_prompt, user_prompt = build_prompts(
-                output_lang_code=lang_code or settings.QUIZ_LANG_DEFAULT,
-                subject_name=topic,
-                total=num_questions,
-                allowed_types_json=json.dumps(["MCQ"]),
-                counts_by_type_json=json.dumps({"MCQ": num_questions}),
-                diff_mix_json=json.dumps({"easy": 0.34, "medium": 0.33, "hard": 0.33}),
-                schema_json=json.dumps(self._schema_minimal()),
-                context_blocks_json=json.dumps(self._context_blocks(context_chunks)),
-                use_filesearch=False,
-            )
+            # Create prompt for quiz generation with strict structure enforcement for all question types
+            system_prompt = f"""You are an expert quiz creator. You MUST return a JSON object with EXACTLY this structure:
+
+{{
+    "title": "Quiz Title",
+    "description": "Brief description of the quiz",
+    "questions": [
+        # Multiple Choice Question (MCQ)
+        {{
+            "type": "MCQ",
+            "stem": "Question text?",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correct_option": 0,
+            "metadata": {{
+                "language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}",
+                "sources": [
+                    {{
+                        "context_id": "chunk_1",
+                        "quote": "Relevant quote from context"
+                    }}
+                ]
+            }}
+        }},
+        # True/False Question
+        {{
+            "type": "TRUE_FALSE",
+            "stem": "Statement to evaluate",
+            "options": ["True", "False"],
+            "correct_option": 0,
+            "metadata": {{
+                "language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}",
+                "sources": [
+                    {{
+                        "context_id": "chunk_2",
+                        "quote": "Relevant quote from context"
+                    }}
+                ]
+            }}
+        }},
+        # Fill-in-Blank Question
+        {{
+            "type": "FILL_BLANK",
+            "stem": "The answer is _____.",
+            "blanks": 1,
+            "correct_answer": "the answer",
+            "metadata": {{
+                "language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}",
+                "sources": [
+                    {{
+                        "context_id": "chunk_3",
+                        "quote": "Relevant quote from context"
+                    }}
+                ]
+            }}
+        }},
+        # Short Answer Question
+        {{
+            "type": "SHORT_ANSWER",
+            "stem": "Explain the significance of...",
+            "correct_answer": "Detailed explanation based on context",
+            "metadata": {{
+                "language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}",
+                "sources": [
+                    {{
+                        "context_id": "chunk_4",
+                        "quote": "Relevant quote from context"
+                    }}
+                ]
+            }}
+        }}
+    ]
+}}
+
+CRITICAL REQUIREMENTS:
+1. Return ONLY valid JSON - no additional text, explanations, or markdown
+2. Each question MUST have a "type" field with one of: "MCQ", "TRUE_FALSE", "FILL_BLANK", "SHORT_ANSWER"
+3. MCQ questions: exactly 4 options, correct_option 0-3
+4. TRUE_FALSE questions: exactly 2 options, correct_option 0-1
+5. FILL_BLANK questions: include "blanks" count and "correct_answer"
+6. SHORT_ANSWER questions: include "correct_answer" field
+7. Include source quotes from the provided context
+8. Base ALL questions ONLY on the provided context
+9. Ensure the JSON is properly formatted and parseable
+
+MANDATORY QUESTION TYPE DIVERSITY:
+- You MUST create a MIX of different question types
+- DO NOT create only MCQ questions
+- Include at least 2 different question types in your quiz
+- Vary the question types to test different cognitive skills
+
+Your response will be parsed directly as JSON. Any deviation from this structure will cause errors."""
+            
+            user_prompt = f"""Generate {num_questions} {difficulty} difficulty questions based on this context:
+
+{context_text}
+
+Create questions that test understanding of the key concepts in the context. Ensure the questions are clear, relevant, and have one correct answer.
+
+IMPORTANT: Return ONLY the JSON object with the exact structure specified above. Do not include any other text."""
             
             # Generate quiz using selected strategy
             quiz_content = await self._generate_content_json(system_prompt, user_prompt)
@@ -110,7 +197,7 @@ class QuizGenerator:
 
             # Ensure language fields
             if isinstance(quiz_data, dict):
-                quiz_data.setdefault("output_language", lang_code or settings.QUIZ_LANG_DEFAULT)
+                quiz_data.setdefault("output_language", lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en"))
                 if "questions" in quiz_data:
                     for q in quiz_data.get("questions", []) or []:
                         meta = q.get("metadata") or {}
@@ -163,19 +250,19 @@ class QuizGenerator:
             logger.info(f"🌍 [QUIZ_GEN] Detecting language from context: {generation_id}", extra={
                 "generation_id": generation_id,
                 "context_length": len(context),
-                "lang_mode": settings.QUIZ_LANG_MODE,
-                "lang_default": settings.QUIZ_LANG_DEFAULT
+                "lang_mode": os.getenv("QUIZ_LANG_MODE", "auto"),
+                "lang_default": os.getenv("QUIZ_LANG_DEFAULT", "en")
             })
             
             lang_code, _, _ = decide_output_language(
                 [c.get("content", "") for c in context_chunks],
-                user_override=settings.QUIZ_LANG_MODE if settings.QUIZ_LANG_MODE != "auto" else None,
+                user_override=os.getenv("QUIZ_LANG_MODE", "auto") if os.getenv("QUIZ_LANG_MODE", "auto") != "auto" else None,
             )
             
             logger.info(f"✅ [QUIZ_GEN] Language detected: {generation_id}", extra={
                 "generation_id": generation_id,
                 "detected_language": lang_code,
-                "final_language": lang_code or settings.QUIZ_LANG_DEFAULT
+                "final_language": lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")
             })
 
             # Create prompt for context-based quiz generation
@@ -187,7 +274,7 @@ class QuizGenerator:
 
             logger.info(f"📝 [QUIZ_GEN] Building prompts for quiz generation: {generation_id}", extra={
                 "generation_id": generation_id,
-                "output_lang": lang_code or settings.QUIZ_LANG_DEFAULT,
+                "output_lang": lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en"),
                 "subject_name": topic or source_type,
                 "total_questions": num_questions,
                 "allowed_types": allowed_types,
@@ -195,17 +282,70 @@ class QuizGenerator:
                 "difficulty_mix": {"easy": 0.34, "medium": 0.33, "hard": 0.33}
             })
             
-            system_prompt, user_prompt = build_prompts(
-                output_lang_code=lang_code or settings.QUIZ_LANG_DEFAULT,
-                subject_name=topic or source_type,
-                total=num_questions,
-                allowed_types_json=json.dumps(allowed_types),
-                counts_by_type_json=json.dumps(counts_by_type),
-                diff_mix_json=json.dumps({"easy": 0.34, "medium": 0.33, "hard": 0.33}),
-                schema_json=json.dumps(self._schema_minimal()),
-                context_blocks_json=json.dumps(self._context_blocks(context_chunks)),
-                use_filesearch=False,
-            )
+            # Use simpler, more direct prompts instead of complex Jinja2 templates
+            system_prompt = f"""You are a quiz generation assistant. Generate quiz questions based on the provided context.
+
+Output language: {lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}
+Question types: {', '.join(allowed_types)}
+Total questions: {num_questions}
+Difficulty: {difficulty}
+
+Return a JSON object with this structure:
+{{
+    "title": "Quiz title",
+    "description": "Brief description",
+    "questions": [
+        {{
+            "stem": "Question text?",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correct_option": 0,
+            "metadata": {{"language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}"}}
+        }}
+    ]
+}}"""
+
+            # Create a simplified user prompt with context
+            # Use more chunks for better context - limit to 15 chunks or 50,000 characters
+            max_chunks = 15
+            max_chars = 50000
+            
+            # Calculate how many chunks we can use within the character limit
+            used_chunks = []
+            current_chars = 0
+            for i, chunk in enumerate(context_chunks[:max_chunks]):
+                chunk_content = chunk.get('content', '')
+                if current_chars + len(chunk_content) <= max_chars:
+                    used_chunks.append(chunk)
+                    current_chars += len(chunk_content)
+                else:
+                    break
+            
+            context_text = "\n\n".join([f"Context {i+1}: {chunk.get('content', '')}" for i, chunk in enumerate(used_chunks)])
+            
+            logger.info(f"📚 [QUIZ_GEN] Context preparation: {generation_id}", extra={
+                "generation_id": generation_id,
+                "total_chunks_available": len(context_chunks),
+                "chunks_used": len(used_chunks),
+                "context_length": len(context_text),
+                "content_utilization_percent": (len(context_text) / sum(len(chunk.get('content', '')) for chunk in context_chunks) * 100) if context_chunks else 0
+            })
+            
+            user_prompt = f"""Generate {num_questions} {difficulty} difficulty questions based on this context:
+
+{context_text}
+
+CRITICAL INSTRUCTIONS:
+1. Create a DIVERSE mix of question types:
+   - Multiple Choice (MCQ): Test knowledge with 4 options
+   - True/False: Test understanding with clear statements
+   - Fill-in-Blank: Test recall with specific terms/names
+   - Short Answer: Test explanation and analysis skills
+2. DO NOT create only MCQ questions
+3. Vary the question types to assess different cognitive levels
+4. Each question type should test different aspects of the content
+5. Base ALL questions ONLY on the provided context
+
+Create questions that test understanding of the key concepts in the context. Ensure the questions are clear, relevant, and have one correct answer."""
             
             logger.info(f"📋 [QUIZ_GEN] Prompts built successfully: {generation_id}", extra={
                 "generation_id": generation_id,
@@ -236,23 +376,27 @@ class QuizGenerator:
                 "content_length": len(str(quiz_content)) if isinstance(quiz_content, str) else "N/A"
             })
             
-            # Parse the response if it's a string, otherwise use as-is
+            # Parse and validate the response
             if isinstance(quiz_content, str):
                 logger.info(f"🔍 [QUIZ_GEN] Parsing string response: {generation_id}", extra={
                     "generation_id": generation_id,
                     "content_preview": quiz_content[:200] + "..." if len(quiz_content) > 200 else quiz_content
                 })
-                quiz_data = self._parse_quiz_response(quiz_content)
+                quiz_data = self._parse_and_validate_response(quiz_content, generation_id)
             else:
                 logger.info(f"📊 [QUIZ_GEN] Using structured response: {generation_id}", extra={
                     "generation_id": generation_id,
                     "response_keys": list(quiz_content.keys()) if isinstance(quiz_content, dict) else "N/A"
                 })
-                quiz_data = quiz_content
+                quiz_data = self._validate_structured_response(quiz_content, generation_id)
+            
+            # Enforce question type diversity if needed
+            if isinstance(quiz_data, dict):
+                quiz_data = self._enforce_question_type_diversity(quiz_data)
 
             # Ensure language fields
             if isinstance(quiz_data, dict):
-                quiz_data.setdefault("output_language", lang_code or settings.QUIZ_LANG_DEFAULT)
+                quiz_data.setdefault("output_language", lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en"))
                 if "questions" in quiz_data:
                     for q in quiz_data.get("questions", []) or []:
                         meta = q.get("metadata") or {}
@@ -380,6 +524,434 @@ class QuizGenerator:
         
         return "\n\n".join(context_parts)
     
+    def _parse_and_validate_response(self, response_text: str, generation_id: str) -> Dict[str, Any]:
+        """Parse and validate LLM response, with repair attempts if needed"""
+        try:
+            # First attempt: direct JSON parsing
+            quiz_data = self._parse_quiz_response(response_text)
+            if self._is_valid_quiz_structure(quiz_data):
+                return quiz_data
+            
+            # Second attempt: extract JSON from markdown or text
+            extracted_json = self._extract_json_from_text(response_text)
+            if extracted_json:
+                quiz_data = self._parse_quiz_response(extracted_json)
+                if self._is_valid_quiz_structure(quiz_data):
+                    logger.info(f"✅ [QUIZ_GEN] Successfully extracted JSON from text: {generation_id}")
+                    return quiz_data
+            
+            # Third attempt: repair common structural issues
+            repaired_data = self._repair_quiz_structure(response_text)
+            if repaired_data:
+                logger.info(f"🔧 [QUIZ_GEN] Successfully repaired quiz structure: {generation_id}")
+                return repaired_data
+            
+            # Final fallback: create minimal valid structure
+            logger.warning(f"⚠️ [QUIZ_GEN] Failed to parse response, using fallback: {generation_id}")
+            return self._create_fallback_quiz_structure()
+            
+        except Exception as e:
+            logger.error(f"❌ [QUIZ_GEN] Error parsing response: {str(e)}")
+            return self._create_fallback_quiz_structure()
+    
+    def _validate_structured_response(self, response_data: Dict[str, Any], generation_id: str) -> Dict[str, Any]:
+        """Validate structured response from LLM providers"""
+        try:
+            if self._is_valid_quiz_structure(response_data):
+                return response_data
+            
+            # Attempt to repair structured response
+            repaired_data = self._repair_quiz_structure_from_dict(response_data)
+            if repaired_data:
+                logger.info(f"🔧 [QUIZ_GEN] Successfully repaired structured response: {generation_id}")
+                return repaired_data
+            
+            logger.warning(f"⚠️ [QUIZ_GEN] Invalid structured response, using fallback: {generation_id}")
+            return self._create_fallback_quiz_structure()
+            
+        except Exception as e:
+            logger.error(f"❌ [QUIZ_GEN] Error validating structured response: {str(e)}")
+            return self._create_fallback_quiz_structure()
+    
+    def _is_valid_quiz_structure(self, quiz_data: Dict[str, Any]) -> bool:
+        """Check if quiz data has the required structure for all question types"""
+        try:
+            if not isinstance(quiz_data, dict):
+                return False
+            
+            if "questions" not in quiz_data:
+                return False
+            
+            questions = quiz_data.get("questions", [])
+            if not isinstance(questions, list) or len(questions) == 0:
+                return False
+            
+            # Validate each question based on its type
+            for question in questions:
+                if not isinstance(question, dict):
+                    return False
+                
+                # Each question must have a type field
+                if "type" not in question:
+                    return False
+                
+                question_type = question.get("type")
+                if not self._is_valid_question_structure(question, question_type):
+                    return False
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    def _is_valid_question_structure(self, question: Dict[str, Any], question_type: str) -> bool:
+        """Validate question structure based on its type"""
+        try:
+            if question_type == "MCQ":
+                return self._validate_mcq_question(question)
+            elif question_type == "TRUE_FALSE":
+                return self._validate_true_false_question(question)
+            elif question_type == "FILL_BLANK":
+                return self._validate_fill_blank_question(question)
+            elif question_type == "SHORT_ANSWER":
+                return self._validate_short_answer_question(question)
+            else:
+                return False
+        except Exception:
+            return False
+    
+    def _validate_mcq_question(self, question: Dict[str, Any]) -> bool:
+        """Validate MCQ question structure"""
+        required_fields = ["stem", "options", "correct_option"]
+        if not all(field in question for field in required_fields):
+            return False
+        
+        # Check options
+        options = question.get("options", [])
+        if not isinstance(options, list) or len(options) != 4:
+            return False
+        
+        # Check correct_option
+        correct_option = question.get("correct_option")
+        if not isinstance(correct_option, int) or correct_option not in [0, 1, 2, 3]:
+            return False
+        
+        return True
+    
+    def _validate_true_false_question(self, question: Dict[str, Any]) -> bool:
+        """Validate True/False question structure"""
+        required_fields = ["stem", "options", "correct_option"]
+        if not all(field in question for field in required_fields):
+            return False
+        
+        # Check options
+        options = question.get("options", [])
+        if not isinstance(options, list) or len(options) != 2:
+            return False
+        
+        # Check correct_option (0=True, 1=False)
+        correct_option = question.get("correct_option")
+        if not isinstance(correct_option, int) or correct_option not in [0, 1]:
+            return False
+        
+        return True
+    
+    def _validate_fill_blank_question(self, question: Dict[str, Any]) -> bool:
+        """Validate Fill-in-Blank question structure"""
+        required_fields = ["stem", "blanks", "correct_answer"]
+        if not all(field in question for field in required_fields):
+            return False
+        
+        # Check blanks
+        blanks = question.get("blanks")
+        if not isinstance(blanks, int) or blanks < 1:
+            return False
+        
+        # Check correct_answer
+        correct_answer = question.get("correct_answer")
+        if not isinstance(correct_answer, str) or len(correct_answer.strip()) == 0:
+            return False
+        
+        return True
+    
+    def _validate_short_answer_question(self, question: Dict[str, Any]) -> bool:
+        """Validate Short Answer question structure"""
+        required_fields = ["stem", "correct_answer"]
+        if not all(field in question for field in required_fields):
+            return False
+        
+        # Check correct_answer
+        correct_answer = question.get("correct_answer")
+        if not isinstance(correct_answer, str) or len(correct_answer.strip()) == 0:
+            return False
+        
+        return True
+    
+    def _extract_json_from_text(self, text: str) -> str:
+        """Extract JSON from text that might contain markdown or extra text"""
+        import re
+        
+        # Try to find JSON between ```json and ``` markers
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if json_match:
+            return json_match.group(1)
+        
+        # Try to find JSON between { and } with proper nesting
+        brace_count = 0
+        start_idx = -1
+        
+        for i, char in enumerate(text):
+            if char == '{':
+                if brace_count == 0:
+                    start_idx = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_idx != -1:
+                    return text[start_idx:i+1]
+        
+        return ""
+    
+    def _repair_quiz_structure(self, text: str) -> Dict[str, Any]:
+        """Attempt to repair malformed quiz structure"""
+        try:
+            # Extract any JSON-like content
+            json_text = self._extract_json_from_text(text)
+            if json_text:
+                # Try to parse and repair
+                data = json.loads(json_text)
+                return self._repair_quiz_structure_from_dict(data)
+            
+            # If no JSON found, try to extract questions from text
+            return self._extract_questions_from_text(text)
+            
+        except Exception:
+            return None
+    
+    def _repair_quiz_structure_from_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Repair common structural issues in quiz data for all question types"""
+        try:
+            repaired = data.copy()
+            
+            # Ensure questions array exists
+            if "questions" not in repaired:
+                repaired["questions"] = []
+            
+            # Repair each question
+            for i, question in enumerate(repaired.get("questions", [])):
+                if not isinstance(question, dict):
+                    continue
+                
+                # Ensure question type exists (default to MCQ if missing)
+                if "type" not in question:
+                    question["type"] = "MCQ"
+                
+                question_type = question["type"]
+                
+                # Repair based on question type
+                if question_type == "MCQ":
+                    self._repair_mcq_question(question, i)
+                elif question_type == "TRUE_FALSE":
+                    self._repair_true_false_question(question, i)
+                elif question_type == "FILL_BLANK":
+                    self._repair_fill_blank_question(question, i)
+                elif question_type == "SHORT_ANSWER":
+                    self._repair_short_answer_question(question, i)
+                else:
+                    # Unknown type, convert to MCQ
+                    question["type"] = "MCQ"
+                    self._repair_mcq_question(question, i)
+                
+                # Ensure metadata exists for all question types
+                if "metadata" not in question:
+                    question["metadata"] = {}
+                
+                if "language" not in question["metadata"]:
+                    question["metadata"]["language"] = "en"
+            
+            return repaired
+            
+        except Exception:
+            return None
+    
+    def _repair_mcq_question(self, question: Dict[str, Any], index: int):
+        """Repair MCQ question structure"""
+        if "stem" not in question:
+            question["stem"] = f"Question {index + 1}"
+        
+        if "options" not in question or not isinstance(question["options"], list):
+            question["options"] = ["Option A", "Option B", "Option C", "Option D"]
+        
+        # Ensure exactly 4 options
+        while len(question["options"]) < 4:
+            question["options"].append(f"Option {chr(68 + len(question['options']))}")
+        
+        if len(question["options"]) > 4:
+            question["options"] = question["options"][:4]
+        
+        # Ensure correct_option is valid
+        if "correct_option" not in question or question["correct_option"] not in [0, 1, 2, 3]:
+            question["correct_option"] = 0
+    
+    def _repair_true_false_question(self, question: Dict[str, Any], index: int):
+        """Repair True/False question structure"""
+        if "stem" not in question:
+            question["stem"] = f"Statement {index + 1}"
+        
+        if "options" not in question or not isinstance(question["options"], list):
+            question["options"] = ["True", "False"]
+        
+        # Ensure exactly 2 options
+        if len(question["options"]) < 2:
+            question["options"] = ["True", "False"]
+        elif len(question["options"]) > 2:
+            question["options"] = question["options"][:2]
+        
+        # Ensure correct_option is valid (0=True, 1=False)
+        if "correct_option" not in question or question["correct_option"] not in [0, 1]:
+            question["correct_option"] = 0
+    
+    def _repair_fill_blank_question(self, question: Dict[str, Any], index: int):
+        """Repair Fill-in-Blank question structure"""
+        if "stem" not in question:
+            question["stem"] = f"Fill in the blank {index + 1}: _____"
+        
+        if "blanks" not in question or not isinstance(question["blanks"], int) or question["blanks"] < 1:
+            question["blanks"] = 1
+        
+        if "correct_answer" not in question or not isinstance(question["correct_answer"], str):
+            question["correct_answer"] = "answer"
+    
+    def _repair_short_answer_question(self, question: Dict[str, Any], index: int):
+        """Repair Short Answer question structure"""
+        if "stem" not in question:
+            question["stem"] = f"Explain question {index + 1}"
+        
+        if "correct_answer" not in question or not isinstance(question["correct_answer"], str):
+            question["correct_answer"] = "Answer based on the provided context"
+    
+    def _extract_questions_from_text(self, text: str) -> Dict[str, Any]:
+        """Extract questions from plain text as fallback"""
+        try:
+            # Simple extraction - split by lines and look for question patterns
+            lines = text.split('\n')
+            questions = []
+            
+            for line in lines:
+                line = line.strip()
+                if line and ('?' in line or line.startswith('Q') or line.startswith('Question')):
+                    # Create a basic question structure
+                    question = {
+                        "stem": line,
+                        "options": ["Option A", "Option B", "Option C", "Option D"],
+                        "correct_option": 0,
+                        "metadata": {"language": "en"}
+                    }
+                    questions.append(question)
+            
+            return {
+                "title": "Extracted Quiz",
+                "description": "Quiz extracted from text response",
+                "questions": questions[:4]  # Limit to 4 questions
+            }
+            
+        except Exception:
+            return None
+    
+    def _create_fallback_quiz_structure(self) -> Dict[str, Any]:
+        """Create a minimal valid quiz structure as fallback with all question types"""
+        return {
+            "title": "Quiz Generation Failed",
+            "description": "Unable to generate quiz from AI response",
+            "questions": [
+                {
+                    "type": "MCQ",
+                    "stem": "What should be done if no chunks are found for documents?",
+                    "options": ["Use specific study instructions", "Ignore the issue", "Use general study instructions", "Delete the documents"],
+                    "correct_option": 2,
+                    "metadata": {"language": "en"}
+                },
+                {
+                    "type": "TRUE_FALSE",
+                    "stem": "The system can handle multiple question types.",
+                    "options": ["True", "False"],
+                    "correct_option": 0,
+                    "metadata": {"language": "en"}
+                },
+                {
+                    "type": "FILL_BLANK",
+                    "stem": "The quiz system supports _____ question types.",
+                    "blanks": 1,
+                    "correct_answer": "multiple",
+                    "metadata": {"language": "en"}
+                },
+                {
+                    "type": "SHORT_ANSWER",
+                    "stem": "Explain why question type validation is important.",
+                    "correct_answer": "Question type validation ensures data consistency and proper frontend rendering.",
+                    "metadata": {"language": "en"}
+                }
+            ]
+        }
+    
+    def _enforce_question_type_diversity(self, quiz_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Enforce question type diversity by converting some questions to different types"""
+        try:
+            if not isinstance(quiz_data, dict) or "questions" not in quiz_data:
+                return quiz_data
+            
+            questions = quiz_data.get("questions", [])
+            if len(questions) < 2:
+                return quiz_data
+            
+            # Count question types
+            type_counts = {}
+            for question in questions:
+                qtype = question.get('type', 'MCQ')
+                type_counts[qtype] = type_counts.get(qtype, 0) + 1
+            
+            # If we have only MCQ questions, convert some to other types
+            if len(type_counts) == 1 and 'MCQ' in type_counts:
+                print(f"🔄 Enforcing question type diversity: converting some MCQ questions")
+                
+                # Convert questions to different types
+                for i, question in enumerate(questions):
+                    if i == 0:  # Keep first as MCQ
+                        continue
+                    elif i == 1:  # Convert second to True/False
+                        question['type'] = 'TRUE_FALSE'
+                        question['options'] = ['True', 'False']
+                        question['correct_option'] = 0
+                        if 'correct_answer' in question:
+                            del question['correct_answer']
+                        if 'blanks' in question:
+                            del question['blanks']
+                    elif i == 2:  # Convert third to Fill-in-Blank
+                        question['type'] = 'FILL_BLANK'
+                        question['blanks'] = 1
+                        question['correct_answer'] = 'answer'
+                        if 'options' in question:
+                            del question['options']
+                        if 'correct_option' in question:
+                            del question['correct_option']
+                    elif i == 3:  # Convert fourth to Short Answer
+                        question['type'] = 'SHORT_ANSWER'
+                        question['correct_answer'] = 'Answer based on the provided context'
+                        if 'options' in question:
+                            del question['options']
+                        if 'correct_option' in question:
+                            del question['correct_option']
+                        if 'blanks' in question:
+                            del question['blanks']
+                
+                print(f"✅ Converted questions to: {[q.get('type') for q in questions]}")
+            
+            return quiz_data
+            
+        except Exception as e:
+            print(f"❌ Error enforcing question type diversity: {str(e)}")
+            return quiz_data
+    
     def _create_quiz_prompt(
         self, 
         topic: str, 
@@ -463,78 +1035,50 @@ Generate the quiz based ONLY on the provided context:"""
     async def _generate_content(self, prompt: str) -> str:
         """Generate content using the selected strategy"""
         try:
-            # For testing, return mock data instead of making real API calls
-            logger.info("Using mock data for testing instead of real API calls")
-            return self._get_mock_quiz_data()
-            
-            # Uncomment the following code when ready to use real APIs
-            # if self.strategy == "openai" and self.openai_client:
-            #     return await self._call_openai(prompt)
-            # elif self.strategy == "huggingface":
-            #     return await self._call_huggingface(prompt)
-            # elif self.strategy == "ollama":
-            #     return await self._call_ollama(prompt)
-            # elif self.strategy == "auto":
-            #     # Try OpenAI first, then HuggingFace, fallback to Ollama
-            #     try:
-            #         if self.openai_client:
-            #             return await self._call_openai(prompt)
-            #     except Exception as e:
-            #         logger.warning(f"OpenAI failed, trying HuggingFace: {str(e)}")
-            #     
-            #     try:
-            #         return await self._call_huggingface(prompt)
-            #     except Exception as e:
-            #         logger.warning(f"HuggingFace failed, falling back to Ollama: {str(e)}")
-            #         return await self._call_ollama(prompt)
-            # else:
-            #     raise Exception(f"Unknown strategy: {self.strategy}")
+            # Use real AI providers - no mock fallback
+            if self.strategy == "openai" and self.openai_client:
+                return await self._call_openai(prompt)
+            elif self.strategy == "huggingface":
+                return await self._call_huggingface(prompt)
+            elif self.strategy == "ollama":
+                return await self._call_ollama(prompt)
+            elif self.strategy == "auto":
+                # Try OpenAI first, then HuggingFace, fallback to Ollama
+                try:
+                    if self.openai_client:
+                        return await self._call_openai(prompt)
+                except Exception as e:
+                    logger.warning(f"OpenAI failed, trying HuggingFace: {str(e)}")
+                
+                try:
+                    return await self._call_huggingface(prompt)
+                except Exception as e:
+                    logger.warning(f"HuggingFace failed, falling back to Ollama: {str(e)}")
+                    return await self._call_ollama(prompt)
+            else:
+                raise Exception(f"Unknown strategy: {self.strategy}")
         except Exception as e:
             logger.error(f"Error in content generation: {str(e)}")
             raise
 
     def _generate_content_sync(self, prompt: str) -> dict:
-        """Synchronous variant used from Celery tasks (mock only for tests)"""
+        """Synchronous variant used from Celery tasks"""
         try:
-            logger.info("Using mock data for testing instead of real API calls (sync)")
-            return self._get_mock_quiz_data()
+            # Use real AI providers - no mock fallback
+            if self.strategy == "openai" and self.openai_client:
+                # For sync version, we need to handle this differently
+                raise Exception("OpenAI sync generation not implemented - use async version")
+            elif self.strategy == "huggingface":
+                raise Exception("HuggingFace sync generation not implemented - use async version")
+            elif self.strategy == "ollama":
+                raise Exception("Ollama sync generation not implemented - use async version")
+            else:
+                raise Exception(f"Unknown strategy: {self.strategy}")
         except Exception as e:
             logger.error(f"Error in sync content generation: {str(e)}")
             raise
     
-    def _get_mock_quiz_data(self) -> dict:
-        """Return mock quiz data for testing"""
-        mock_data = {
-            "title": "Quiz Title",
-            "description": "Brief description of the quiz",
-            "questions": [
-                {
-                    "id": "q1",
-                    "question": "Question text?",
-                    "options": {
-                        "option_1": {
-                            "content": "Option 1 description",
-                            "isCorrect": False
-                        },
-                        "option_2": {
-                            "content": "Option 2 description",
-                            "isCorrect": True
-                        },
-                        "option_3": {
-                            "content": "Option 3 description",
-                            "isCorrect": False
-                        },
-                        "option_4": {
-                            "content": "Option 4 description",
-                            "isCorrect": True
-                        }
-                    },
-                    "explanation": "Why this answer is correct"
-                }
-            ]
-        }
-        
-        return mock_data
+
 
     def _context_blocks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         blocks = []
@@ -562,7 +1106,7 @@ Generate the quiz based ONLY on the provided context:"""
 
     def _make_provider(self):
         try:
-            provider = settings.QUIZ_PROVIDER
+            provider = os.getenv("QUIZ_PROVIDER", "openai")
             logger.info(f"Attempting to initialize provider: {provider}")
         except Exception:
             provider = "openai"
@@ -574,26 +1118,26 @@ Generate the quiz based ONLY on the provided context:"""
             return None
 
         if provider == "openai" and OpenAIProvider:
-            if not settings.OPENAI_API_KEY:
+            if not os.getenv("OPENAI_API_KEY", ""):
                 logger.warning("OpenAI provider requested but no API key configured, falling back to mock")
                 return None
                 
             vector_ids = []
             try:
-                if settings.VECTOR_STORE_IDS:
-                    vector_ids = [v.strip() for v in settings.VECTOR_STORE_IDS.split(",") if v.strip()]
+                if os.getenv("VECTOR_STORE_IDS", ""):
+                    vector_ids = [v.strip() for v in os.getenv("VECTOR_STORE_IDS", "").split(",") if v.strip()]
             except Exception:
                 vector_ids = []
                 
             try:
                 openai_provider = OpenAIProvider(
-                    api_key=settings.OPENAI_API_KEY,
-                    model=settings.OPENAI_MODEL,
+                    api_key=os.getenv("OPENAI_API_KEY", ""),
+                    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
                     temperature=0.2,
-                    base_url=settings.OPENAI_BASE_URL,
+                    base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                     vector_store_ids=vector_ids,
                 )
-                logger.info(f"OpenAI provider initialized successfully with model: {settings.OPENAI_MODEL}")
+                logger.info(f"OpenAI provider initialized successfully with model: {os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')}")
                 return openai_provider
             except Exception as e:
                 logger.error(f"Failed to initialize OpenAI provider: {e}")
@@ -602,24 +1146,24 @@ Generate the quiz based ONLY on the provided context:"""
         if provider == "ollama" and OllamaProvider:
             try:
                 ollama_provider = OllamaProvider(
-                    base_url=settings.OLLAMA_BASE_URL,
-                    model=settings.OLLAMA_MODEL,
+                    base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
+                    model=os.getenv("OLLAMA_MODEL", "llama2:7b"),
                 )
-                logger.info(f"Ollama provider initialized successfully with model: {settings.OLLAMA_MODEL}")
+                logger.info(f"Ollama provider initialized successfully with model: {os.getenv('OLLAMA_MODEL', 'llama2:7b')}")
                 return ollama_provider
             except Exception as e:
                 logger.error(f"Failed to initialize Ollama provider: {e}")
                 return None
                 
         if provider == "huggingface" and HFProvider:
-            if not getattr(settings, "HF_API_KEY", ""):
+            if not os.getenv("HUGGINGFACE_TOKEN", ""):
                 logger.warning("HuggingFace provider requested but no API key configured, falling back to mock")
                 return None
                 
             try:
                 hf_provider = HFProvider(
-                    model_id=getattr(settings, "HF_MODEL_ID", ""), 
-                    api_key=getattr(settings, "HF_API_KEY", "")
+                    model_id=os.getenv("QUESTION_GENERATION_MODEL", "google/flan-t5-base"), 
+                    api_key=os.getenv("HUGGINGFACE_TOKEN", "")
                 )
                 logger.info(f"HuggingFace provider initialized successfully")
                 return hf_provider
@@ -642,24 +1186,17 @@ Generate the quiz based ONLY on the provided context:"""
             "user_prompt_length": len(user_prompt)
         })
         
-        # For current behavior, still use mock unless providers are configured
+        # No mock fallback - require real AI provider
         if not self.provider:
-            logger.info(f"⚠️ [CONTENT_GEN] No provider available, using mock quiz data: {content_gen_id}", extra={
+            logger.error(f"❌ [CONTENT_GEN] No AI provider available: {content_gen_id}", extra={
                 "content_gen_id": content_gen_id,
-                "fallback_reason": "no_provider_configured",
                 "available_providers": {
                     "openai": bool(self.openai_api_key),
                     "ollama": bool(self.ollama_url),
                     "huggingface": bool(self.huggingface_token)
                 }
             })
-            mock_data = self._get_mock_quiz_data()
-            logger.info(f"✅ [CONTENT_GEN] Mock data generated: {content_gen_id}", extra={
-                "content_gen_id": content_gen_id,
-                "mock_data_keys": list(mock_data.keys()) if isinstance(mock_data, dict) else "N/A",
-                "mock_question_count": len(mock_data.get("questions", [])) if isinstance(mock_data, dict) else "N/A"
-            })
-            return mock_data
+            raise Exception("No AI provider available for quiz generation")
             
         try:
             logger.info(f"🤖 [CONTENT_GEN] Using AI provider: {content_gen_id}", extra={
@@ -670,8 +1207,11 @@ Generate the quiz based ONLY on the provided context:"""
                 "user_prompt_preview": user_prompt[:200] + "..." if len(user_prompt) > 200 else user_prompt
             })
             
+            # Add provider-specific enforcement
+            enforced_system_prompt = self._add_provider_enforcement(system_prompt)
+            
             start_time = time.time()
-            data = self.provider.generate_json(system_prompt, user_prompt)
+            data = self.provider.generate_json(enforced_system_prompt, user_prompt)
             generation_time = time.time() - start_time
             
             logger.info(f"✅ [CONTENT_GEN] AI provider generation completed: {content_gen_id}", extra={
@@ -739,24 +1279,59 @@ Generate the quiz based ONLY on the provided context:"""
         except Exception as e:
             logger.error(f"💥 [CONTENT_GEN] AI provider failed: {content_gen_id}", extra={
                 "content_gen_id": content_gen_id,
-                "provider_name": getattr(self.provider, 'name', 'Unknown') if self.provider else 'None',
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "traceback": traceback.format_exc()
             })
+            raise
+    
+    def _add_provider_enforcement(self, system_prompt: str) -> str:
+        """Add provider-specific enforcement to ensure proper structure"""
+        provider_type = getattr(self.provider, '__class__.__name__', 'Unknown').lower()
+        
+        if 'openai' in provider_type:
+            # OpenAI-specific enforcement
+            openai_enforcement = """
+IMPORTANT FOR OPENAI: You are a JSON generator. You must return ONLY valid JSON.
+- Do not include any explanations, markdown, or additional text
+- Ensure all JSON keys are properly quoted
+- Validate that correct_option values are integers 0-3
+- Return the response in a single JSON object
+"""
+            return system_prompt + openai_enforcement
             
-            logger.warning(f"🔄 [CONTENT_GEN] Falling back to mock quiz data: {content_gen_id}", extra={
-                "content_gen_id": content_gen_id,
-                "fallback_reason": "ai_provider_failure"
-            })
+        elif 'ollama' in provider_type:
+            # Ollama-specific enforcement
+            ollama_enforcement = """
+IMPORTANT FOR OLLAMA: Generate ONLY the JSON response.
+- No markdown formatting
+- No explanatory text before or after
+- Pure JSON output only
+- Ensure proper JSON syntax
+"""
+            return system_prompt + ollama_enforcement
             
-            mock_data = self._get_mock_quiz_data()
-            logger.info(f"✅ [CONTENT_GEN] Mock fallback data generated: {content_gen_id}", extra={
-                "content_gen_id": content_gen_id,
-                "mock_data_keys": list(mock_data.keys()) if isinstance(mock_data, dict) else "N/A"
-            })
+        elif 'huggingface' in provider_type:
+            # HuggingFace-specific enforcement
+            hf_enforcement = """
+IMPORTANT FOR HUGGINGFACE: Output format must be exact JSON.
+- No additional text or formatting
+- Valid JSON structure required
+- All fields must be properly formatted
+"""
+            return system_prompt + hf_enforcement
             
-            return mock_data
+        else:
+            # Generic enforcement for unknown providers
+            generic_enforcement = """
+CRITICAL: Return ONLY valid JSON.
+- No markdown, no explanations, no extra text
+- Pure JSON object with exact structure
+- Validate all required fields are present
+"""
+            return system_prompt + generic_enforcement
+            
+
 
     def _decide_lang_code_from_prompts(self, system_prompt: str) -> str:
         # Extract LANG_CODE from system prompt if present
@@ -765,7 +1340,7 @@ Generate the quiz based ONLY on the provided context:"""
             rest = system_prompt.split(marker, 1)[1]
             code = rest.split(".", 1)[0].strip()
             return code
-        return settings.QUIZ_LANG_DEFAULT
+        return os.getenv("QUIZ_LANG_DEFAULT", "en")
     
     async def _call_huggingface(self, prompt: str) -> str:
         """Call HuggingFace API to generate content"""

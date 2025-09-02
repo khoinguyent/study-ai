@@ -15,8 +15,8 @@ import {
 import authService from './auth'; // Import the new auth service
 
 // Use API Gateway for all endpoints (Docker setup)
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-const AUTH_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+const AUTH_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 class ApiService {
   private getAuthHeaders(): HeadersInit {

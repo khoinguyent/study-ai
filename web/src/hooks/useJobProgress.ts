@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getJobStatus, JobStatus } from "../api/studySession";
+import { getStudySessionEventsUrl } from "../config/endpoints";
 
 type Options = {
   apiBase: string;
@@ -17,13 +18,16 @@ export function useJobProgress(jobId: string | null, opts: Options) {
   const isConnectedRef = useRef(false);
 
   useEffect(() => {
-    if (!jobId || isConnectedRef.current) return;
+    if (!jobId || isConnectedRef.current) {
+      console.log('🔍 [SSE] Skipping SSE connection - no jobId or already connected:', { jobId, isConnected: isConnectedRef.current });
+      return;
+    }
 
     // Notify that job is queued
     opts.onQueued?.(jobId);
 
-    // try SSE first
-    const sseUrl = `${opts.apiBase}/study-sessions/events?job_id=${encodeURIComponent(jobId)}`;
+    // try SSE first - use the correct endpoint for real-time updates
+    const sseUrl = getStudySessionEventsUrl(jobId);
     let usingSSE = false;
     
     console.log(`🔗 Connecting to SSE: ${sseUrl}`);
@@ -70,6 +74,7 @@ export function useJobProgress(jobId: string | null, opts: Options) {
       
       es.onerror = (error) => {
         console.error('❌ SSE connection error:', error);
+        console.log('🔍 [SSE] SSE failed, falling back to polling for jobId:', jobId);
         es.close();
         esRef.current = null;
         isConnectedRef.current = false;

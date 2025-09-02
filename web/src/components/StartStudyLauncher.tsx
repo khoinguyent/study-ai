@@ -77,29 +77,41 @@ export default function StartStudyLauncher({
       });
 
       try {
-        const { job_id, session_id, quiz_id } = await startQuizJob(apiBase, payload);
+        const { job_id, quiz_id, session_id } = await startQuizJob(apiBase, payload);
         console.log("✅ [QUIZ] Quiz generation job started successfully:", {
           timestamp: new Date().toISOString(),
           jobId: job_id,
-          sessionId: session_id,
           quizId: quiz_id,
+          sessionId: session_id,
           payload,
           apiBase
         });
         
-        // If session is already available, navigate directly
+        // Check if we have a session_id (meaning quiz generation is complete)
         if (session_id) {
-          console.log("🎯 [QUIZ] Session already available, navigating directly:", {
+          console.log("🎉 [QUIZ] Quiz generation completed immediately with session:", {
             timestamp: new Date().toISOString(),
-            sessionId: session_id,
-            route: `/quiz/session/${session_id}`
+            jobId: job_id,
+            quizId: quiz_id,
+            sessionId: session_id
           });
-          navigate(`/quiz/session/${session_id}`);
-          return;
+          
+          // Show completion notification immediately
+          quizToasts.onCompleted(job_id, quiz_id, session_id);
+          
+          // Clear jobId since we're done
+          setJobId(null);
+        } else {
+          // Keep user on current screen; show progress via notifications
+          setJobId(job_id);
+          
+          // Show immediate toast notification that quiz generation has started
+          console.log("🎯 [QUIZ] Setting job ID and showing initial toast:", {
+            timestamp: new Date().toISOString(),
+            jobId: job_id,
+            quizId: quiz_id
+          });
         }
-        
-        // Keep user on current screen; show progress via notifications
-        setJobId(job_id);
       } catch (quizError: any) {
         console.error("❌ [QUIZ] Quiz generation failed, falling back to study session:", {
           timestamp: new Date().toISOString(),
