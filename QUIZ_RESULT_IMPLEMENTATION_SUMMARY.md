@@ -13,6 +13,7 @@ Implemented a comprehensive quiz result screen with animated score display, perf
 ### 2. Animated Components
 - **Progress Circle**: Animated SVG circle that fills based on score percentage
 - **Score Display**: Large percentage with fraction (e.g., "57%" with "8/14" below)
+- **Time Display**: Prominent animated time display with clock icon and gradient background
 - **Icon Animation**: Performance-based icons with scale and opacity transitions
 - **Card Animations**: Main result card slides in with scale and fade effects
 - **Stats Animation**: Quick stats section animates in after main content
@@ -52,6 +53,7 @@ interface QuizResultScreenProps {
   result: SubmitResult;
   onTryAgain: () => void;
   onBackToStudy: () => void;
+  timeSpent?: number; // Time spent in seconds
 }
 ```
 
@@ -77,6 +79,7 @@ interface PerformanceLevel {
 
 ### Animated Sub-Components
 - `AnimatedProgressCircle`: SVG-based progress indicator
+- `AnimatedTimeDisplay`: Time display with clock icon and gradient background
 - `AnimatedStats`: Statistics display with delayed animation
 
 ## Integration Points
@@ -96,7 +99,8 @@ interface PerformanceLevel {
 2. **200ms**: Main content starts appearing with scale/fade
 3. **500ms**: Progress circle animation begins
 4. **800ms**: Stats section animates in
-5. **1000ms**: All animations complete
+5. **1000ms**: Time display animates in with rotation and scale
+6. **1500ms**: All animations complete
 
 ## Color Schemes
 
@@ -133,6 +137,7 @@ if (quizResult && status === "submitted") {
           result={quizResult}
           onTryAgain={handleTryAgain}
           onBackToStudy={handleBackToStudy}
+          timeSpent={timeSec}
         />
       </main>
     </div>

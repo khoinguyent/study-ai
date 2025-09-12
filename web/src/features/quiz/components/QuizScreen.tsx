@@ -186,6 +186,7 @@ export default function QuizScreen() {
             result={quizResult}
             onTryAgain={handleTryAgain}
             onBackToStudy={handleBackToStudy}
+            timeSpent={timeSec}
           />
         </main>
       </div>

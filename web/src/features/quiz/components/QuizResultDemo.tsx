@@ -108,7 +108,8 @@ export default function QuizResultDemo() {
         <div className="text-center mb-6">
           <p className="text-gray-600">
             Current Demo: <span className="font-semibold capitalize">{currentDemo}</span> - 
-            {demoScores[currentDemo].scorePercent}% ({demoScores[currentDemo].correctCount}/{demoScores[currentDemo].totalQuestions})
+            {demoScores[currentDemo].scorePercent}% ({demoScores[currentDemo].correctCount}/{demoScores[currentDemo].totalQuestions}) - 
+            Time: {Math.floor((demoScores[currentDemo].timeSpent || 0) / 60)}:{(demoScores[currentDemo].timeSpent || 0) % 60 < 10 ? '0' : ''}{(demoScores[currentDemo].timeSpent || 0) % 60}
           </p>
         </div>
 
@@ -118,6 +119,7 @@ export default function QuizResultDemo() {
             result={demoScores[currentDemo]}
             onTryAgain={handleTryAgain}
             onBackToStudy={handleBackToStudy}
+            timeSpent={demoScores[currentDemo].timeSpent || 0}
           />
         </div>
       </div>

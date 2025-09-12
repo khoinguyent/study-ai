@@ -5,6 +5,7 @@ interface QuizResultScreenProps {
   result: SubmitResult;
   onTryAgain: () => void;
   onBackToStudy: () => void;
+  timeSpent?: number; // Time spent in seconds
 }
 
 interface PerformanceLevel {
@@ -203,7 +204,45 @@ const AnimatedStats: React.FC<{
   );
 };
 
-export default function QuizResultScreen({ result, onTryAgain, onBackToStudy }: QuizResultScreenProps) {
+// Time formatting function (consistent with QuizScreen)
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+};
+
+const AnimatedTimeDisplay: React.FC<{
+  timeSpent: number;
+  colorScheme: PerformanceLevel['colorScheme'];
+}> = ({ timeSpent, colorScheme }) => {
+  const [animateTime, setAnimateTime] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimateTime(true), 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className={`bg-gradient-to-r from-white to-${colorScheme.background} rounded-xl p-5 shadow-lg border-2 border-${colorScheme.primary}-200 transition-all duration-700 ${animateTime ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'}`}>
+      <div className="flex items-center justify-center gap-4">
+        <div className={`p-2 rounded-full bg-${colorScheme.primary}-100 transition-all duration-500 ${animateTime ? 'rotate-12 scale-110' : 'rotate-0 scale-100'}`}>
+          <svg className={`w-7 h-7 text-${colorScheme.accent}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div className="text-center">
+          <div className="text-sm text-gray-600 font-medium mb-1">Time Spent</div>
+          <div className={`text-3xl font-bold text-${colorScheme.accent} transition-all duration-500 ${animateTime ? 'scale-110 drop-shadow-lg' : 'scale-100'}`}>
+            {formatTime(timeSpent)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">minutes:seconds</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default function QuizResultScreen({ result, onTryAgain, onBackToStudy, timeSpent = 0 }: QuizResultScreenProps) {
   const performance = getPerformanceLevel(result.scorePercent);
   const incorrectCount = result.totalQuestions - result.correctCount;
   const [showContent, setShowContent] = useState(false);
@@ -241,6 +280,12 @@ export default function QuizResultScreen({ result, onTryAgain, onBackToStudy }: 
             colorScheme={performance.colorScheme}
             correctCount={result.correctCount}
             totalQuestions={result.totalQuestions}
+          />
+
+          {/* Time Display */}
+          <AnimatedTimeDisplay
+            timeSpent={timeSpent}
+            colorScheme={performance.colorScheme}
           />
 
           {/* Messages */}
