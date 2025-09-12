@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { AnswerMap, Question, QuizPayload, SubmitResult } from "./types";
 import { saveAnswers } from "./api";
+import { transformQuestion } from "../../utils/questionUtils";
 
 type Status = "idle" | "loading" | "ready" | "submitting" | "submitted";
 
@@ -33,7 +34,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
     set({
       sessionId: p.sessionId,
       quizId: p.quizId,
-      questions: p.questions,
+      questions: p.questions.map(transformQuestion),
       answers: {},
       startedAt: Date.now(),
       status: "ready",

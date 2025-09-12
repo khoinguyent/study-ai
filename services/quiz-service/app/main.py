@@ -1928,15 +1928,44 @@ async def submit_session(
 ):
     """Submit a quiz session for grading"""
     try:
-        # For now, return mock results
+        # Get the quiz session from database
+        quiz_session = db.query(models.QuizSession).filter(
+            models.QuizSession.session_id == session_id,
+            models.QuizSession.user_id == user_id
+        ).first()
+        
+        if not quiz_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Quiz session not found"
+            )
+        
+        # For now, return mock results with proper structure
         # In a real implementation, you'd grade the answers
+        total_questions = len(quiz_session.questions) if quiz_session.questions else 5
+        correct_count = random.randint(1, total_questions)  # Random score for demo
+        score_percent = (correct_count / total_questions) * 100
+        
         return {
-            "scorePercent": 85,
-            "correctCount": 8,
-            "total": 10,
-            "graded": []
+            "scorePercent": score_percent,
+            "correctCount": correct_count,
+            "totalQuestions": total_questions,
+            "breakdown": {
+                "byType": {
+                    "single_choice": {
+                        "correct": correct_count,
+                        "total": total_questions,
+                        "percentage": score_percent
+                    }
+                },
+                "byQuestion": []
+            },
+            "timeSpent": 1200,  # Mock time in seconds
+            "submittedAt": datetime.now().isoformat()
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to submit session: {str(e)}")
         raise HTTPException(
