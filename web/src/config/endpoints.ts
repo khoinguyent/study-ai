@@ -5,7 +5,7 @@
 
 export const API_ENDPOINTS = {
   // Base URLs
-  API_BASE: process.env.REACT_APP_API_BASE || 'http://localhost:3001',
+  API_BASE: process.env.REACT_APP_API_BASE || '',
   
   // Quiz Generation
   QUIZ_GENERATE: '/api/quizzes/generate',

@@ -1,4 +1,5 @@
 import type { Question, Answer } from "./types";
+import { transformFillBlankPrompt } from "../../utils/questionUtils";
 
 // helper to pretty-print expected
 function formatExpected(exp: any) {
@@ -19,13 +20,25 @@ type Props = {
 
 export default function QuestionItem({ index, q, value, onChange, submitted, verdict, expected, showExplanation }: Props) {
   const num = index + 1;
+  
+  // Transform the prompt for fill-in-blank questions
+  const displayPrompt = q.type === "fill_blank" ? transformFillBlankPrompt(q.prompt) : q.prompt;
+  
+  // Debug logging to verify transformation
+  if (q.type === "fill_blank") {
+    console.log("Fill-blank question transformation:", {
+      original: q.prompt,
+      transformed: displayPrompt,
+      type: q.type
+    });
+  }
 
   return (
     <div className="mb-5 border rounded-lg shadow-sm">
       <div className="pb-3 p-6 border-b">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-blue-600 text-white grid place-items-center text-sm font-bold">{num}</div>
-          <h3 className="text-base leading-relaxed font-semibold">{q.prompt}</h3>
+          <h3 className="text-base leading-relaxed font-semibold">{displayPrompt}</h3>
         </div>
         <p className="text-xs text-gray-600 mt-2">
           {q.type === "single_choice" && "Select one correct answer"}

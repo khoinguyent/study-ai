@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
+from fastapi import HTTPException, status
 from .config import settings
 import logging
 
@@ -46,31 +47,23 @@ Base = declarative_base()
 
 # Dependency to get database session with retry logic
 def get_db():
-    max_retries = 3
-    retry_count = 0
-    
-    while retry_count < max_retries:
-        try:
-            db = SessionLocal()
-            # Test the connection
-            db.execute(text("SELECT 1"))
-            try:
-                yield db
-            finally:
-                db.close()
-            break  # Success, exit retry loop
-            
-        except Exception as e:
-            retry_count += 1
-            logger.warning(f"Database connection attempt {retry_count} failed: {str(e)}")
-            
-            if retry_count >= max_retries:
-                logger.error(f"Failed to connect to database after {max_retries} attempts")
-                raise e
-            
-            # Wait before retrying (exponential backoff)
-            import time
-            time.sleep(2 ** retry_count)
+    db = None
+    try:
+        db = SessionLocal()
+        # Test the connection
+        db.execute(text("SELECT 1"))
+        yield db
+    except Exception as e:
+        logger.error(f"Database connection failed: {str(e)}")
+        if db:
+            db.close()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connection failed"
+        )
+    finally:
+        if db:
+            db.close()
 
 # Create all tables
 def create_tables():

@@ -266,14 +266,10 @@ export const NotificationPortal: React.FC = () => {
     console.log('Notification positioning updated:', { headerHeight, toastTop });
   }, [headerHeight]);
 
-  // Load queue status on mount - disabled due to 502 errors
+  // Load queue status on mount
   useEffect(() => {
-    // Temporarily disabled due to 502 errors from /api/notifications/queue-status
-    // TODO: Fix the backend endpoint or implement alternative
-    console.log("⚠️ [NOTIFICATIONS] Queue status check disabled due to 502 errors");
-    
-    // Uncomment when the endpoint is fixed:
-    // getQueueStatus().then(setQueueStatus).catch(console.error);
+    console.log("✅ [NOTIFICATIONS] Queue status check enabled");
+    getQueueStatus().then(setQueueStatus).catch(console.error);
   }, [getQueueStatus]);
 
   const [rootEl] = useState(() => {

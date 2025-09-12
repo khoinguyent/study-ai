@@ -66,6 +66,7 @@ export default function StartStudyLauncher({
         questionTypes: allowed_types,
         difficulty: r.difficulty === "mixed" ? "medium" : r.difficulty,
         language: "auto",
+        countsByType: counts_by_type, // Include the computed counts for proper distribution
       };
 
       console.log('📤 [QUIZ] Sending quiz generation payload:', {

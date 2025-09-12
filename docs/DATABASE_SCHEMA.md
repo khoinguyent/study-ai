@@ -185,6 +185,44 @@ LIMIT 10;
 | `created_at` | TIMESTAMP | DEFAULT NOW() | Creation timestamp |
 | `updated_at` | TIMESTAMP | DEFAULT NOW(), ON UPDATE NOW() | Last update timestamp |
 
+### Table: `quiz_sessions`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique session identifier |
+| `quiz_id` | VARCHAR | NOT NULL, FOREIGN KEY | References quizzes.id |
+| `user_id` | VARCHAR | NULL | User taking the quiz |
+| `seed` | VARCHAR | NOT NULL | Randomization seed |
+| `status` | VARCHAR | DEFAULT 'active' | Session status (active\|submitted) |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Creation timestamp |
+
+### Table: `quiz_session_questions`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique question identifier |
+| `session_id` | VARCHAR | NOT NULL, FOREIGN KEY | References quiz_sessions.id |
+| `display_index` | INTEGER | NOT NULL | Question order in session |
+| `q_type` | VARCHAR | NOT NULL | Question type (mcq\|true_false\|fill_in_blank\|short_answer) |
+| `stem` | TEXT | NOT NULL | Question text |
+| `options` | JSON | NULL | Answer options for MCQ |
+| `blanks` | INTEGER | NULL | Number of blanks for fill-in |
+| `private_payload` | JSON | NOT NULL | Correct answers, explanations, scoring |
+| `meta_data` | JSON | NULL | Citations, sources, metadata |
+| `source_index` | INTEGER | NULL | Original index in quiz JSON |
+
+### Table: `quiz_session_answers`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique answer identifier |
+| `session_id` | VARCHAR | NOT NULL, FOREIGN KEY | References quiz_sessions.id |
+| `session_question_id` | VARCHAR | NOT NULL, FOREIGN KEY | References quiz_session_questions.id |
+| `payload` | JSON | NOT NULL | User's answer data |
+| `is_correct` | BOOLEAN | NULL | Whether answer is correct |
+| `score` | FLOAT | NULL | Points earned for this question |
+| `submitted_at` | TIMESTAMP | DEFAULT NOW() | When answer was submitted |
+
 **Status Values:**
 - `draft` - Quiz in creation/editing
 - `published` - Quiz available for use
@@ -206,12 +244,66 @@ LIMIT 10;
 }
 ```
 
+**Answer Payload Structure:**
+```json
+{
+  "mcq": {
+    "selected_option_id": "option_1"
+  },
+  "true_false": {
+    "answer_bool": true
+  },
+  "fill_in_blank": {
+    "blanks": ["answer1", "answer2"]
+  },
+  "short_answer": {
+    "text": "User's written answer"
+  }
+}
+```
+
+**Private Payload Structure (Server Only):**
+```json
+{
+  "mcq": {
+    "correct_option_ids": ["option_1"],
+    "explanation": "This is correct because...",
+    "points": 1.0
+  },
+  "true_false": {
+    "answer_bool": true,
+    "explanation": "This is correct because...",
+    "points": 1.0
+  },
+  "fill_in_blank": {
+    "accepted": [["answer1", "alt1"], ["answer2"]],
+    "explanation": "These are the correct answers...",
+    "points": 2.0
+  },
+  "short_answer": {
+    "key_points": [
+      {"text": "keyword1", "weight": 0.3, "aliases": ["alt1", "alt2"]},
+      {"text": "keyword2", "weight": 0.7}
+    ],
+    "threshold": 0.6,
+    "min_words": 10,
+    "explanation": "Good answer should include...",
+    "points": 3.0
+  }
+}
+```
+
 **Indexes:**
 - `idx_quizzes_user_id` (user_id)
 - `idx_quizzes_document_id` (document_id)
 - `idx_quizzes_subject_id` (subject_id)
 - `idx_quizzes_category_id` (category_id)
 - `idx_quizzes_status` (status)
+- `idx_quiz_sessions_quiz_id` (quiz_id)
+- `idx_quiz_sessions_user_id` (user_id)
+- `idx_quiz_session_questions_session_id` (session_id)
+- `idx_quiz_session_answers_session_id` (session_id)
+- `idx_quiz_session_answers_question_id` (session_question_id)
 
 **Sample Data:**
 ```sql
@@ -219,9 +311,17 @@ LIMIT 10;
 INSERT INTO quizzes (title, questions, user_id, subject_id) VALUES 
 ('Python Basics Quiz', '{"questions": [...]}', 'user123', 1);
 
--- Quiz from a specific category
-INSERT INTO quizzes (title, questions, user_id, category_id) VALUES 
-('Python Functions Quiz', '{"questions": [...]}', 'user123', 1);
+-- Quiz session
+INSERT INTO quiz_sessions (quiz_id, user_id, seed, status) VALUES 
+('quiz_123', 'user456', 'random_seed_123', 'active');
+
+-- Session question
+INSERT INTO quiz_session_questions (session_id, display_index, q_type, stem, private_payload) VALUES 
+('session_123', 1, 'mcq', 'What is Python?', '{"correct_option_ids": ["opt1"], "explanation": "Python is...", "points": 1.0}');
+
+-- Session answer
+INSERT INTO quiz_session_answers (session_id, session_question_id, payload, is_correct, score) VALUES 
+('session_123', 'question_123', '{"selected_option_id": "opt1"}', true, 1.0);
 ```
 
 ## 5. Notification Service Database (`notification_db`)

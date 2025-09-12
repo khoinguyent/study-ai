@@ -5,6 +5,12 @@ AllowedTypes: {{ ALLOWED_TYPES_JSON }}
 CountsByType: {{ COUNTS_BY_TYPE_JSON }}
 DifficultyMix: {{ DIFFICULTY_MIX_JSON }}
 
+DIFFICULTY GUIDANCE
+{{ DIFFICULTY_INSTRUCTIONS }}
+
+CONTENT FILTERING RULES
+{{ CONTENT_FILTERING_RULES }}
+
 CITATIONS
 - For every question include ≥1 source:
   { "context_id": "<id of the retrieved context you used>", "quote": "<=30 words copied verbatim" }
@@ -16,5 +22,8 @@ SCHEMA (return exactly this shape)
 OUTPUT
 - Return the single JSON object as defined by SCHEMA, including "output_language".
 - No prose.
+
+QUALITY VALIDATION (embed in top-level fields if your schema allows)
+- difficulty_validation: {"counts": {"easy": <int>, "medium": <int>, "hard": <int>}}
 
 

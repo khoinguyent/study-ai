@@ -1,4 +1,4 @@
-# requirements: pymupdf (fitz), pytesseract, pdf2image OR fitz rasterization
+# requirements: pymupdf (fitz) - OCR removed for smaller image size
 # open from bytes and from file path; keep page numbers and per-page text
 
 import io
@@ -6,15 +6,9 @@ import os
 import fitz
 import re
 from typing import List, Dict, Union, Optional
-import pytesseract
-from PIL import Image
 import logging
 
 logger = logging.getLogger(__name__)
-
-OCR_ENABLED = os.getenv("PDF_OCR_ENABLED", "true").lower() == "true"
-OCR_LANG = os.getenv("PDF_OCR_LANG", "vie+eng")
-OCR_DPI = int(os.getenv("PDF_OCR_DPI", "300"))
 
 def _clean_text(t: str) -> str:
     """Clean and normalize extracted text"""
@@ -56,8 +50,7 @@ def extract_pdf(content: Union[bytes, str]) -> Dict:
 
         pages = []
         total_txt = []
-        ocr_used = False
-        extraction_method = "PyMuPDF_enhanced"
+        extraction_method = "PyMuPDF_text_only"
 
         for i in range(len(doc)):
             page = doc[i]
@@ -87,30 +80,8 @@ def extract_pdf(content: Union[bytes, str]) -> Dict:
                 page_text = page.get_text("text").strip()
                 method_used = "text_plain"
 
-            # If still too little text and OCR enabled, try OCR
-            if len(page_text) < 25 and OCR_ENABLED:
-                try:
-                    # Use PyMuPDF rasterization to avoid poppler dependency
-                    zoom = OCR_DPI / 72.0
-                    mat = fitz.Matrix(zoom, zoom)
-                    pix = page.get_pixmap(matrix=mat, alpha=False)
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    
-                    # OCR with Vietnamese + English support
-                    ocr_text = pytesseract.image_to_string(
-                        img, 
-                        lang=OCR_LANG, 
-                        config="--psm 6 --oem 3"
-                    )
-                    
-                    if len(ocr_text.strip()) > len(page_text):
-                        page_text = ocr_text.strip()
-                        method_used = "ocr"
-                        ocr_used = True
-                        logger.info(f"OCR used for page {i+1}, extracted {len(page_text)} chars")
-                        
-                except Exception as e:
-                    logger.warning(f"OCR failed for page {i+1}: {e}")
+            # OCR functionality removed for smaller image size
+            # Text extraction relies on PyMuPDF text extraction only
 
             # Clean the extracted text
             cleaned_text = _clean_text(page_text)
@@ -139,7 +110,6 @@ def extract_pdf(content: Union[bytes, str]) -> Dict:
             "full_text": full_text,
             "page_count": len(doc),
             "extraction_method": extraction_method,
-            "ocr_used": ocr_used,
             "success": True,
             "statistics": {
                 "total_characters": total_chars,
@@ -161,8 +131,7 @@ def extract_pdf(content: Union[bytes, str]) -> Dict:
             "pages": [],
             "full_text": "",
             "page_count": 0,
-            "extraction_method": "failed",
-            "ocr_used": False
+            "extraction_method": "failed"
         }
 
 def extract_pdf_from_bytes(content: bytes) -> Dict:

@@ -12,6 +12,19 @@ RULES
 - Fill-in-blank: placeholders {{1}}, {{2}}, … in the stem must match blanks[].
 - Short Answer: rubric with 3–5 key_points; weights sum ~1.0; thresholds; expected_answer.
 
+QUESTION TYPE DISTRIBUTION
+- You MUST follow the exact distribution provided in CountsByType.
+- Generate exactly the number of each question type as specified.
+- Do not deviate from the requested distribution.
+
+DIFFICULTY CONTROL
+- Target distribution and guidance:\n{{ DIFFICULTY_INSTRUCTIONS }}
+- For each question include metadata.difficulty one of ["easy","medium","hard"].
+- Add metadata.difficulty_validation with fields: {"assessed":"<easy|medium|hard>", "matches": true|false}.
+
+CONTENT QUALITY FILTERING
+{{ CONTENT_FILTERING_RULES }}
+
 OUTPUT
 - Return ONE JSON object only (no prose/markdown), matching the SCHEMA provided in the user prompt.
 - If evidence is insufficient to reach the requested total, return fewer items and add a top-level "note".

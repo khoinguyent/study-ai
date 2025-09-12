@@ -25,7 +25,6 @@ def get_db():
 
 # Create all tables
 def create_tables():
-    # Drop all tables first to ensure clean schema
-    Base.metadata.drop_all(bind=engine)
-    # Ensure all metadata is created at startup (development convenience)
-    Base.metadata.create_all(bind=engine) 
+    # Ensure all metadata is created without dropping existing data
+    # In production/dev we should never drop tables on service restart.
+    Base.metadata.create_all(bind=engine)

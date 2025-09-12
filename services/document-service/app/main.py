@@ -111,7 +111,13 @@ app.add_middleware(
 # Create database tables on startup
 @app.on_event("startup")
 async def startup_event():
-    create_tables()
+    try:
+        logger.info("Creating database tables...")
+        create_tables()
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database tables: {str(e)}")
+        raise e
 
 # Simple Pydantic model for subject creation
 class SubjectCreateModel(BaseModel):
@@ -193,12 +199,13 @@ async def verify_auth_token(authorization: str = Header(alias="Authorization")):
             detail="Authorization header required"
         )
     
-    async with httpx.AsyncClient() as client:
-        try:
+    try:
+        async with httpx.AsyncClient() as client:
             logger.info(f"Calling auth service at {settings.AUTH_SERVICE_URL}/verify-header")
             response = await client.post(
                 f"{settings.AUTH_SERVICE_URL}/verify-header",
-                headers={"Authorization": authorization}
+                headers={"Authorization": authorization},
+                timeout=10.0
             )
             logger.info(f"Auth service response: {response.status_code}")
             
@@ -214,12 +221,24 @@ async def verify_auth_token(authorization: str = Header(alias="Authorization")):
             logger.info(f"Token verified for user: {user_id}")
             return user_id
             
-        except Exception as e:
-            logger.error(f"Token verification error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token verification failed"
-            )
+    except httpx.TimeoutException:
+        logger.error("Auth service timeout")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth service timeout"
+        )
+    except httpx.ConnectError:
+        logger.error("Auth service connection error")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth service unavailable"
+        )
+    except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token verification failed"
+        )
 
 @app.get("/health")
 async def health_check():
@@ -245,11 +264,17 @@ async def get_supported_formats():
             "supported_formats": supported_formats,
             "count": len(supported_formats),
             "details": {
-                "application/pdf": "PDF documents (with enhanced text extraction)",
+                "application/pdf": "PDF documents (with enhanced text extraction and OCR)",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX documents (Word)",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheets",
                 "text/plain": "Plain text files",
-                "application/msword": "Legacy DOC documents (Word)"
+                "application/msword": "Legacy DOC documents (Word)",
+                "image/png": "PNG images (with OCR text extraction)",
+                "image/jpeg": "JPEG images (with OCR text extraction)",
+                "image/jpg": "JPG images (with OCR text extraction)",
+                "image/tiff": "TIFF images (with OCR text extraction)",
+                "image/bmp": "BMP images (with OCR text extraction)",
+                "image/gif": "GIF images (with OCR text extraction)"
             }
         }
     except Exception as e:
@@ -301,6 +326,58 @@ async def extract_pdf_text(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"PDF processing failed: {str(e)}"
+        )
+
+@app.post("/extract-image-text")
+async def extract_image_text(
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_auth_token)
+):
+    """Extract text from image files using OCR"""
+    
+    # Validate file type
+    supported_image_types = [
+        "image/png", "image/jpeg", "image/jpg", 
+        "image/tiff", "image/bmp", "image/gif"
+    ]
+    
+    if file.content_type not in supported_image_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported image type: {file.content_type}. Supported types: {', '.join(supported_image_types)}"
+        )
+    
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text using OCR
+        from .services.text_extractor import TextExtractor
+        text_extractor = TextExtractor()
+        
+        extraction_result = await text_extractor.extract_text(
+            file_content=file_content,
+            content_type=file.content_type,
+            filename=file.filename
+        )
+        
+        if not extraction_result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Image text extraction failed: {extraction_result.get('error', 'Unknown error')}"
+            )
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "extraction_result": extraction_result
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Image processing failed: {str(e)}"
         )
 
 @app.post("/test-pydantic")
@@ -739,7 +816,14 @@ async def upload_document(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/plain",
-        "application/msword"  # Legacy .doc files
+        "application/msword",  # Legacy .doc files
+        # Image formats with OCR support
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/tiff",
+        "image/bmp",
+        "image/gif"
     ]
     
     if file.content_type not in allowed_types:

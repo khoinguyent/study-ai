@@ -5,12 +5,8 @@ WORKDIR /app
 # Environment for smaller image
 ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 
-# Install runtime system dependencies including OCR tools (no recommends)
+# Install runtime system dependencies (OCR removed for smaller image)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-vie \
-    tesseract-ocr-eng \
-    libtesseract-dev \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 

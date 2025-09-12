@@ -30,6 +30,17 @@ The Text Extraction Service is a core component of the Document Service that ext
   - PDF metadata extraction (title, author, creation date)
   - Error handling for corrupted pages and encryption
 
+#### Image Files (OCR)
+- **MIME Types**: `image/png`, `image/jpeg`, `image/jpg`, `image/tiff`, `image/bmp`, `image/gif`
+- **Library**: `pytesseract` + `Pillow`
+- **Features**:
+  - OCR text extraction from images
+  - Vietnamese and English language support
+  - High-quality text cleaning and processing
+  - Image metadata extraction (format, size, mode)
+  - Quality assessment and scoring
+  - Grayscale conversion for better OCR accuracy
+
 #### Excel Spreadsheets
 - **MIME Type**: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
 - **Library**: `pandas` + `openpyxl`
@@ -61,7 +72,6 @@ The Text Extraction Service is a core component of the Document Service that ext
 - **Markdown** (`.md`) files
 - **RTF** files
 - **HTML** files
-- **Image files** (PNG, JPG, etc.)
 - **Audio/Video** files
 
 ## Usage
@@ -94,6 +104,7 @@ else:
 ```python
 # Check if a format is supported
 is_supported = extractor.is_format_supported("application/pdf")
+is_image_supported = extractor.is_format_supported("image/png")
 
 # Get list of all supported formats
 supported_formats = extractor.get_supported_formats()
@@ -114,15 +125,27 @@ GET /supported-formats
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "text/plain",
-    "application/msword"
+    "application/msword",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/tiff",
+    "image/bmp",
+    "image/gif"
   ],
-  "count": 5,
+  "count": 11,
   "details": {
-    "application/pdf": "PDF documents",
+    "application/pdf": "PDF documents (with enhanced text extraction and OCR)",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX documents (Word)",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheets",
     "text/plain": "Plain text files",
-    "application/msword": "Legacy DOC documents (Word)"
+    "application/msword": "Legacy DOC documents (Word)",
+    "image/png": "PNG images (with OCR text extraction)",
+    "image/jpeg": "JPEG images (with OCR text extraction)",
+    "image/jpg": "JPG images (with OCR text extraction)",
+    "image/tiff": "TIFF images (with OCR text extraction)",
+    "image/bmp": "BMP images (with OCR text extraction)",
+    "image/gif": "GIF images (with OCR text extraction)"
   }
 }
 ```
@@ -165,6 +188,14 @@ The Text Extraction Service follows a plugin-based architecture:
 - Fallback to UTF-8 with error handling
 - Line count and character analysis
 - Clean text processing
+
+#### Image Text Extraction (`_extract_image_text`)
+- OCR processing using Tesseract
+- Vietnamese and English language support
+- Grayscale conversion for better accuracy
+- High-quality text cleaning and processing
+- Image metadata extraction (format, size, mode)
+- Quality assessment and scoring
 
 ### Enhanced PDF Processing
 

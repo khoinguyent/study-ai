@@ -191,6 +191,7 @@ export interface GenerateQuizRequest {
   questionTypes: ApiQuestionType[];
   difficulty: "easy" | "medium" | "hard";
   language?: "auto" | string;
+  countsByType?: Record<ApiQuestionType, number>;
 }
 
 export interface GenerateQuizResponse {

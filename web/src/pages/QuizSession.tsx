@@ -1,8 +1,9 @@
 import React from "react";
 import { useParams } from "react-router-dom";
-import { getSessionView, saveAnswers, submitSession, SessionQuestion } from "../api/quiz";
+import { getSessionView, saveAnswers, SessionQuestion } from "../api/quiz";
 import { CoachSidebar } from "../components/quiz/CoachSidebar";
 import { useCoach } from "../hooks/useCoach";
+import { useNotifications } from "../components/notifications/NotificationContext";
 import { useDebouncedSaver } from "../hooks/useDebouncedSaver";
 import { MCQBlock, TrueFalseBlock, FillBlankBlock, ShortAnswerBlock } from "../components/quiz/QuestionBlocks";
 import { QuestionNavigator } from "../components/quiz/QuestionNavigator";
@@ -20,6 +21,8 @@ export default function QuizSessionPage() {
   const [submitting, setSubmitting] = React.useState(false);
   const [result, setResult] = React.useState<any|null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = React.useState(0);
+  const startedAtRef = React.useRef<number>(Date.now());
+  const { addOrUpdate } = useNotifications();
 
   const totalQs = data?.questions.length ?? 0;
   const answeredCount = React.useMemo(()=> {
@@ -30,7 +33,7 @@ export default function QuizSessionPage() {
     return new Set(Object.keys(draft).filter(key => draft[key]));
   }, [draft]);
 
-  const { msgs, onProgress, onSubmit } = useCoach(totalQs);
+  const { msgs, onProgress, onSubmit, pushBot } = useCoach(totalQs) as any;
 
   React.useEffect(()=>{ onProgress(answeredCount); }, [answeredCount, onProgress]);
 
@@ -91,16 +94,106 @@ export default function QuizSessionPage() {
   };
 
   const submit = async () => {
-    if (!sessionId) return;
+    if (!sessionId || !data) return;
+
+    // Build AnswerMap expected by backend evaluate endpoint
+    const answers: Record<string, any> = {};
+    for (const q of data.questions) {
+      const resp = draft[q.session_question_id];
+      if (!resp) continue;
+      if (q.type === "mcq") {
+        answers[q.session_question_id] = { kind: "single", choiceId: resp.selected_option_id ?? null };
+      } else if (q.type === "true_false") {
+        const val = typeof resp.answer_bool === "boolean"
+          ? resp.answer_bool
+          : (resp.selected_option_id === "true" ? true : (resp.selected_option_id === "false" ? false : null));
+        answers[q.session_question_id] = { kind: "boolean", value: val };
+      } else if (q.type === "fill_in_blank") {
+        answers[q.session_question_id] = { kind: "blanks", values: Array.isArray(resp.blanks) ? resp.blanks : [] };
+      } else if (q.type === "short_answer") {
+        answers[q.session_question_id] = { kind: "text", value: resp.text ?? "" };
+      }
+    }
+
+    const metadata = {
+      timeSpent: Math.round((Date.now() - startedAtRef.current) / 1000),
+      userAgent: navigator.userAgent,
+      startedAt: new Date(startedAtRef.current).toISOString(),
+      submittedAt: new Date().toISOString(),
+    };
+
+    // Toast: received and started evaluation
+    const toastId = `quiz-eval-${sessionId}`;
+    addOrUpdate({
+      id: toastId,
+      title: "Evaluating answers…",
+      message: "Answers received. Scoring in progress.",
+      status: "processing",
+      progress: 10,
+      autoClose: false,
+      notification_type: "quiz_evaluation"
+    });
+
+    // Simulated progress while awaiting server response
+    let prog = 10;
+    let progTimer: number | undefined;
+    const tick = () => {
+      prog = Math.min(90, prog + 10);
+      addOrUpdate({ id: toastId, title: "Evaluating answers…", message: "Scoring in progress", status: "processing", progress: prog, autoClose: false, notification_type: "quiz_evaluation" });
+      if (prog < 90) progTimer = window.setTimeout(tick, 500);
+    };
+
     try {
       setSubmitting(true);
-      const res = await submitSession("/api", sessionId);
-      setResult(res);
-      onSubmit(res.score, res.max_score);
-      // Optionally navigate to a "results" page or show inline banner
-    } catch (e) {
+      progTimer = window.setTimeout(tick, 600);
+
+      // Send to enhanced evaluation endpoint through gateway
+      const authService = await import('../services/auth').then(m => m.authService);
+      const { getEndpointUrl } = await import('../config/endpoints');
+      const headers = { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' } as any;
+      const r = await fetch(getEndpointUrl(`/api/quiz/sessions/${encodeURIComponent(sessionId)}/evaluate`), {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ answers, metadata })
+      });
+      if (!r.ok) throw new Error(`Evaluation failed: ${r.status}`);
+      const evalRes = await r.json();
+
+      setResult(evalRes);
+      onSubmit(evalRes.totalScore, evalRes.maxScore);
+
+      // Toast: completed with score and Retry action
+      addOrUpdate({
+        id: toastId,
+        title: "Quiz finalized",
+        message: `Score: ${evalRes.totalScore}/${evalRes.maxScore} (${(evalRes.grade?.display)|| (evalRes.scorePercentage + '%')})`,
+        status: "success",
+        progress: 100,
+        autoClose: false,
+        actionText: "Retry",
+        onAction: () => {
+          // Reset draft and encourage retry
+          setDraft({});
+          setResult(null);
+          setCurrentQuestionIndex(0);
+          startedAtRef.current = Date.now();
+          pushBot?.("Want to try again? You got this—let's improve that score! 💪");
+        },
+        notification_type: "quiz_evaluation"
+      });
+    } catch (e: any) {
       console.error(e);
+      addOrUpdate({
+        id: toastId,
+        title: "Evaluation failed",
+        message: e?.message || "Please try again.",
+        status: "error",
+        autoClose: false,
+        notification_type: "quiz_evaluation"
+      });
     } finally {
+      if (progTimer) window.clearTimeout(progTimer);
       setSubmitting(false);
     }
   };

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Question } from "../types";
+import { transformFillBlankPrompt } from "../../../utils/questionUtils";
 
 type Props = {
   q: Question;
@@ -9,12 +10,24 @@ type Props = {
 };
 
 export function QuestionCard({ q, value, onChange, showExplanation }: Props) {
+  // Transform the prompt for fill-in-blank questions
+  const displayPrompt = q.type === "fill_blank" ? transformFillBlankPrompt(q.prompt) : q.prompt;
+  
+  // Debug logging to verify transformation
+  if (q.type === "fill_blank") {
+    console.log("Fill-blank question transformation:", {
+      original: q.prompt,
+      transformed: displayPrompt,
+      type: q.type
+    });
+  }
+  
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
       {/* Header */}
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white leading-relaxed mb-2">
-          {q.prompt}
+          {displayPrompt}
         </h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
           {q.type === "single_choice" && "Select one correct answer"}

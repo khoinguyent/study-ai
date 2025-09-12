@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from jinja2 import Environment, FileSystemLoader
 from app.llm.providers.base import LLMProvider
 from app.generator.context_builder import fetch_chunks_for_docs, curate_blocks
+from app.generator.content_filter import preprocess_contexts, ContentFilter
+from app.generator.difficulty_controller import DifficultyController
 from app.lang.detect import detect_language_distribution
 from app.generator.validators import validate_batch, verify_citations, ValidationError
 
@@ -82,9 +84,19 @@ def generate_from_documents(
         if not difficulty_mix:
             difficulty_mix = {"easy": 0.4, "medium": 0.4, "hard": 0.2}
         
+        # Preprocess contexts for quality
+        filtered_blocks = preprocess_contexts(blocks)
+
+        # Prepare difficulty and content filtering instructions
+        diff_ctrl = DifficultyController()
+        difficulty_instructions = diff_ctrl.enhance_difficulty_prompt(difficulty_mix)
+        content_rules = ContentFilter().generate_content_filtering_prompt()
+
         # Render prompts
         system_prompt = env.get_template("context_quiz_system.j2").render(
-            OUTPUT_LANG_CODE=lang_code
+            OUTPUT_LANG_CODE=lang_code,
+            DIFFICULTY_INSTRUCTIONS=difficulty_instructions,
+            CONTENT_FILTERING_RULES=content_rules,
         )
         
         user_prompt = env.get_template("context_quiz_user_direct.j2").render(
@@ -94,7 +106,9 @@ def generate_from_documents(
             COUNTS_BY_TYPE_JSON=json.dumps(counts_by_type),
             DIFFICULTY_MIX_JSON=json.dumps(difficulty_mix),
             SCHEMA_JSON=schema_json,
-            CONTEXT_BLOCKS_JSON=json.dumps(blocks, ensure_ascii=False)
+            FILTERED_CONTEXT_BLOCKS_JSON=json.dumps(filtered_blocks, ensure_ascii=False),
+            DIFFICULTY_INSTRUCTIONS=difficulty_instructions,
+            CONTENT_FILTERING_RULES=content_rules,
         )
         
         # Generate initial batch
@@ -132,17 +146,25 @@ def generate_from_documents(
             validate_batch(batch, allowed_types)
             verify_citations(batch, ctx_map)
         
-        # Fill per-item language metadata
+        # Fill per-item language metadata and difficulty validation
         for question in batch.get("questions", []):
             question.setdefault("metadata", {}).setdefault("language", batch.get("output_language", lang_code))
+            # lightweight difficulty validation annotation
+            stem = question.get("stem", "")
+            assessed = diff_ctrl._assess_difficulty(stem)
+            target = (question.get("metadata", {}).get("difficulty") or "").lower() or assessed
+            question.setdefault("metadata", {})["difficulty_validation"] = {
+                "assessed": assessed,
+                "matches": (assessed == target),
+            }
         
         # Add generation metadata
         batch["generation_metadata"] = {
             "provider": provider.name,
             "language_detected": lang_code,
             "language_confidence": confidence,
-            "context_blocks_count": len(blocks),
-            "total_characters": sum(len(b["text"]) for b in blocks),
+            "context_blocks_count": len(filtered_blocks),
+            "total_characters": sum(len(b["text"]) for b in filtered_blocks),
             "prompt_hash": hashlib.md5((system_prompt + user_prompt).encode()).hexdigest()[:8]
         }
         

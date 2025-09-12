@@ -97,6 +97,13 @@ class TextExtractor:
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': self._extract_excel_text if EXCEL_AVAILABLE else None,
             'text/plain': self._extract_plain_text,
             'application/msword': self._extract_doc_text,  # Legacy .doc files
+            # Image formats with OCR support
+            'image/png': self._extract_image_text if OCR_AVAILABLE else None,
+            'image/jpeg': self._extract_image_text if OCR_AVAILABLE else None,
+            'image/jpg': self._extract_image_text if OCR_AVAILABLE else None,
+            'image/tiff': self._extract_image_text if OCR_AVAILABLE else None,
+            'image/bmp': self._extract_image_text if OCR_AVAILABLE else None,
+            'image/gif': self._extract_image_text if OCR_AVAILABLE else None,
         }
     
     async def extract_text(self, file_content: bytes, content_type: str, filename: str = None) -> Dict[str, Any]:
@@ -790,6 +797,71 @@ class TextExtractor:
         except Exception as e:
             logger.error(f"Failed to extract text from plain text file {filename}: {str(e)}")
             raise Exception(f"Plain text extraction failed: {str(e)}")
+    
+    def _extract_image_text(self, file_content: bytes, filename: str = None) -> Dict[str, Any]:
+        """Extract text from image files using OCR with Vietnamese and English support."""
+        if not OCR_AVAILABLE:
+            return {
+                'success': False, 
+                'error': 'OCR dependencies not available. Please install pytesseract and tesseract-ocr.', 
+                'text': '', 
+                'metadata': {},
+                'word_count': 0
+            }
+        
+        try:
+            # Convert bytes to a PIL Image object
+            image = Image.open(io.BytesIO(file_content))
+            
+            # Convert to grayscale for better OCR
+            if image.mode != 'L':
+                image = image.convert('L')
+            
+            # Perform OCR with Vietnamese + English support
+            text = pytesseract.image_to_string(
+                image,
+                lang="vie+eng",  # Vietnamese + English
+                config="--psm 6 --oem 3"  # Page segmentation mode 6, OCR Engine mode 3
+            )
+            
+            # Clean up the text
+            cleaned_text = _clean_text_enhanced(text)
+            
+            # Extract metadata
+            metadata = {
+                'extraction_method': 'OCR (Tesseract)',
+                'file_size': len(file_content),
+                'image_format': image.format,
+                'image_mode': image.mode,
+                'image_size': image.size,
+                'ocr_engine': 'tesseract',
+                'ocr_languages': 'vie+eng',
+                'ocr_config': '--psm 6 --oem 3',
+                'text_quality': {
+                    'quality': 'good' if len(cleaned_text.split()) > 10 else 'fair',
+                    'score': min(100, len(cleaned_text.split()) * 2),
+                    'word_count': len(cleaned_text.split()),
+                    'character_count': len(cleaned_text)
+                }
+            }
+            
+            return {
+                'success': True,
+                'text': cleaned_text,
+                'metadata': metadata,
+                'word_count': len(cleaned_text.split()),
+                'method': 'ocr-image'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to extract text from image file {filename}: {str(e)}")
+            return {
+                'success': False, 
+                'error': f'Image OCR failed: {str(e)}', 
+                'text': '', 
+                'metadata': {},
+                'word_count': 0
+            }
     
     def get_supported_formats(self) -> list:
         """Get list of supported content types"""

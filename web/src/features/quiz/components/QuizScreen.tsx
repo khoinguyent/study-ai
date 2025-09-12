@@ -3,8 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { QuestionCard } from "./QuestionCards";
 import { fetchQuiz, submitQuiz } from "../api";
 import { useQuizStore, scheduleAutosave } from "../store";
-import type { Question } from "../types";
+import type { Question, SubmitResult } from "../types";
 import LeftClarifierSheet from "../../../components/LeftClarifierSheet";
+import QuizResultScreen from "./QuizResultScreen";
 
 export default function QuizScreen() {
   const { sessionId = "" } = useParams();
@@ -12,6 +13,7 @@ export default function QuizScreen() {
   const [showNav, setShowNav] = useState(false);
   const [timeSec, setTimeSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [quizResult, setQuizResult] = useState<SubmitResult | null>(null);
 
   console.log("🎯 QuizScreen rendered with sessionId:", sessionId);
 
@@ -107,9 +109,8 @@ export default function QuizScreen() {
     submitLocal();
     try {
       const res = await submitQuiz(sessionId, 'http://localhost:8004');
-      setSubmitted(res); // graded data can be shown in a result screen if you add one
-      // Navigate to results page, or stay and reveal explanations
-      // For now, stay and show explanations by leaving status=submitted
+      setSubmitted(res);
+      setQuizResult(res); // Store the result for display
     } catch (e) {
       // handle error gracefully
       alert("Submit failed. Please try again.");
@@ -117,6 +118,21 @@ export default function QuizScreen() {
   };
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+  const handleTryAgain = () => {
+    setQuizResult(null);
+    setSubmitted(null);
+    // Reset quiz state
+    hydrate({
+      sessionId: sessionId,
+      quizId: questions[0]?.id || '',
+      questions: questions
+    });
+  };
+
+  const handleBackToStudy = () => {
+    nav(-1); // Go back to previous page
+  };
 
   // Show error if quiz failed to load
   if (error) {
@@ -143,6 +159,35 @@ export default function QuizScreen() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-2 text-gray-600">Loading quiz...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Show result screen when quiz is completed
+  if (quizResult && status === "submitted") {
+    return (
+      <div className="h-screen w-full grid grid-cols-12">
+        {/* Left side: chat column - keep visible with encouraging messages */}
+        <aside className="col-span-3 border-r border-gray-200 dark:border-gray-700 min-w-[320px] max-w-[400px] overflow-hidden">
+          <LeftClarifierSheet
+            open={true}
+            onClose={() => {}}
+            launch={{
+              userId: sid || "",
+              subjectId: "",
+              docIds: []
+            }}
+          />
+        </aside>
+
+        {/* Right side: result screen */}
+        <main className="col-span-9 flex items-center justify-center">
+          <QuizResultScreen
+            result={quizResult}
+            onTryAgain={handleTryAgain}
+            onBackToStudy={handleBackToStudy}
+          />
+        </main>
       </div>
     );
   }

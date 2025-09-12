@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Optional, Tuple
 import os
 import logging
 from jinja2 import Environment, FileSystemLoader
+from app.generator.difficulty_controller import DifficultyController
+from app.generator.content_filter import ContentFilter
 from app.lang.detect import detect_language_distribution
 import time
 import random
@@ -203,6 +205,67 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                         meta = q.get("metadata") or {}
                         meta.setdefault("language", quiz_data["output_language"]) 
                         q["metadata"] = meta
+
+            # Enforce exact question count if model under-produces or over-produces
+            try:
+                current_count = len(quiz_data.get("questions", [])) if isinstance(quiz_data, dict) else 0
+                import logging
+                logging.getLogger(__name__).info(
+                    f"[COUNT_ENFORCE] Requested={num_questions}, InitialReturned={current_count}"
+                )
+            except Exception:
+                current_count = 0
+
+            if current_count != num_questions:
+                # First repair attempt: ask model to re-emit EXACT count
+                try:
+                    repair_hint = (
+                        f"\n\nYou MUST return a JSON object with exactly {num_questions} questions in the 'questions' array. "
+                        f"Do not include prose. Ensure the schema and language are preserved."
+                    )
+                    repaired = await self._generate_content_json(system_prompt, user_prompt + repair_hint)
+                    if isinstance(repaired, str):
+                        quiz_data2 = self._parse_and_validate_response(repaired, generation_id)
+                    else:
+                        quiz_data2 = self._validate_structured_response(repaired, generation_id)
+                    if isinstance(quiz_data2, dict):
+                        logging.getLogger(__name__).info(
+                            f"[COUNT_ENFORCE] Repair1 returned={len(quiz_data2.get('questions', []) or [])}"
+                        )
+                    if isinstance(quiz_data2, dict) and len(quiz_data2.get("questions", []) or []) == num_questions:
+                        quiz_data = quiz_data2
+                        current_count = num_questions
+                except Exception:
+                    pass
+
+            if isinstance(quiz_data, dict) and current_count < num_questions:
+                # Second attempt: request only the remaining questions and merge
+                try:
+                    remaining = num_questions - current_count
+                    continuation_hint = (
+                        f"\n\nGenerate exactly {remaining} additional questions based ONLY on the same context. "
+                        "Return the SAME JSON schema with only the 'questions' array filled (no title/description needed)."
+                    )
+                    more = await self._generate_content_json(system_prompt, user_prompt + continuation_hint)
+                    if isinstance(more, str):
+                        more_data = self._parse_and_validate_response(more, generation_id)
+                    else:
+                        more_data = self._validate_structured_response(more, generation_id)
+                    new_questions = list(more_data.get("questions", []) or [])[:remaining]
+                    logging.getLogger(__name__).info(
+                        f"[COUNT_ENFORCE] Continuation requested={remaining}, Returned={len(new_questions)}"
+                    )
+                    quiz_data.setdefault("questions", [])
+                    quiz_data["questions"] = (quiz_data["questions"] + new_questions)[:num_questions]
+                    current_count = len(quiz_data["questions"])
+                except Exception:
+                    pass
+
+            if isinstance(quiz_data, dict) and len(quiz_data.get("questions", []) or []) > num_questions:
+                quiz_data["questions"] = quiz_data["questions"][:num_questions]
+                logging.getLogger(__name__).info(
+                    f"[COUNT_ENFORCE] Trimmed to exact count={num_questions}"
+                )
             
             return quiz_data
             
@@ -221,7 +284,7 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
         allowed_types: Optional[List[str]] = None,
         counts_by_type: Optional[Dict[str, int]] = None
     ) -> Dict[str, Any]:
-        """Generate a quiz from specific context (subject or category)"""
+        """Generate a quiz from specific context (subject or category) using Jinja templates."""
         generation_id = f"quiz_gen_{int(time.time())}_{random.randint(1000, 9999)}"
         
         logger.info(f"🚀 [QUIZ_GEN] Starting quiz generation from context: {generation_id}", extra={
@@ -265,7 +328,6 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                 "final_language": lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")
             })
 
-            # Create prompt for context-based quiz generation
             # Default type settings if not provided
             if not allowed_types:
                 allowed_types = ["MCQ"]
@@ -282,70 +344,20 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                 "difficulty_mix": {"easy": 0.34, "medium": 0.33, "hard": 0.33}
             })
             
-            # Use simpler, more direct prompts instead of complex Jinja2 templates
-            system_prompt = f"""You are a quiz generation assistant. Generate quiz questions based on the provided context.
-
-Output language: {lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}
-Question types: {', '.join(allowed_types)}
-Total questions: {num_questions}
-Difficulty: {difficulty}
-
-Return a JSON object with this structure:
-{{
-    "title": "Quiz title",
-    "description": "Brief description",
-    "questions": [
-        {{
-            "stem": "Question text?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_option": 0,
-            "metadata": {{"language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}"}}
-        }}
-    ]
-}}"""
-
-            # Create a simplified user prompt with context
-            # Use more chunks for better context - limit to 15 chunks or 50,000 characters
-            max_chunks = 15
-            max_chars = 50000
-            
-            # Calculate how many chunks we can use within the character limit
-            used_chunks = []
-            current_chars = 0
-            for i, chunk in enumerate(context_chunks[:max_chunks]):
-                chunk_content = chunk.get('content', '')
-                if current_chars + len(chunk_content) <= max_chars:
-                    used_chunks.append(chunk)
-                    current_chars += len(chunk_content)
-                else:
-                    break
-            
-            context_text = "\n\n".join([f"Context {i+1}: {chunk.get('content', '')}" for i, chunk in enumerate(used_chunks)])
-            
-            logger.info(f"📚 [QUIZ_GEN] Context preparation: {generation_id}", extra={
-                "generation_id": generation_id,
-                "total_chunks_available": len(context_chunks),
-                "chunks_used": len(used_chunks),
-                "context_length": len(context_text),
-                "content_utilization_percent": (len(context_text) / sum(len(chunk.get('content', '')) for chunk in context_chunks) * 100) if context_chunks else 0
-            })
-            
-            user_prompt = f"""Generate {num_questions} {difficulty} difficulty questions based on this context:
-
-{context_text}
-
-CRITICAL INSTRUCTIONS:
-1. Create a DIVERSE mix of question types:
-   - Multiple Choice (MCQ): Test knowledge with 4 options
-   - True/False: Test understanding with clear statements
-   - Fill-in-Blank: Test recall with specific terms/names
-   - Short Answer: Test explanation and analysis skills
-2. DO NOT create only MCQ questions
-3. Vary the question types to assess different cognitive levels
-4. Each question type should test different aspects of the content
-5. Base ALL questions ONLY on the provided context
-
-Create questions that test understanding of the key concepts in the context. Ensure the questions are clear, relevant, and have one correct answer."""
+            # Build Jinja prompts (system + user) using filtered context blocks
+            blocks = self._context_blocks(context_chunks)
+            difficulty_mix = {"easy": 0.34, "medium": 0.33, "hard": 0.33}
+            system_prompt, user_prompt = build_prompts(
+                output_lang_code=lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en"),
+                subject_name=topic or source_type,
+                total=num_questions,
+                allowed_types_json=json.dumps(allowed_types),
+                counts_by_type_json=json.dumps(counts_by_type),
+                diff_mix_json=json.dumps(difficulty_mix),
+                schema_json=json.dumps(self._schema_minimal()),
+                context_blocks_json=json.dumps(blocks, ensure_ascii=False),
+                use_filesearch=False,
+            )
             
             logger.info(f"📋 [QUIZ_GEN] Prompts built successfully: {generation_id}", extra={
                 "generation_id": generation_id,
@@ -1710,8 +1722,34 @@ def build_prompts(
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    system = env.get_template("context_quiz_system.j2").render(OUTPUT_LANG_CODE=output_lang_code)
+    # Build difficulty and content filtering guidance
+    try:
+        diff_ctrl = DifficultyController()
+        try:
+            difficulty_mix = json.loads(diff_mix_json) if diff_mix_json else {}
+        except Exception:
+            difficulty_mix = {}
+        difficulty_instructions = diff_ctrl.enhance_difficulty_prompt(difficulty_mix)
+        content_rules = ContentFilter().generate_content_filtering_prompt()
+    except Exception:
+        difficulty_instructions = ""
+        content_rules = ""
+
+    system = env.get_template("context_quiz_system.j2").render(
+        OUTPUT_LANG_CODE=output_lang_code,
+        DIFFICULTY_INSTRUCTIONS=difficulty_instructions,
+        CONTENT_FILTERING_RULES=content_rules,
+    )
     user_tpl = "context_quiz_user_filesearch.j2" if use_filesearch else "context_quiz_user_direct.j2"
+    # Pre-filter context blocks for the direct template path
+    filtered_context_blocks_json = "[]"
+    if not use_filesearch and context_blocks_json:
+        try:
+            raw_blocks = json.loads(context_blocks_json)
+            filtered_blocks = ContentFilter().filter_context_blocks(raw_blocks if isinstance(raw_blocks, list) else [])
+            filtered_context_blocks_json = json.dumps(filtered_blocks, ensure_ascii=False)
+        except Exception:
+            filtered_context_blocks_json = context_blocks_json or "[]"
     user = env.get_template(user_tpl).render(
         SUBJECT_NAME=subject_name,
         TOTAL_COUNT=total,
@@ -1719,7 +1757,9 @@ def build_prompts(
         COUNTS_BY_TYPE_JSON=counts_by_type_json,
         DIFFICULTY_MIX_JSON=diff_mix_json,
         SCHEMA_JSON=schema_json,
-        CONTEXT_BLOCKS_JSON=context_blocks_json or "[]",
+        FILTERED_CONTEXT_BLOCKS_JSON=filtered_context_blocks_json,
+        DIFFICULTY_INSTRUCTIONS=difficulty_instructions,
+        CONTENT_FILTERING_RULES=content_rules,
     )
     return system, user
 

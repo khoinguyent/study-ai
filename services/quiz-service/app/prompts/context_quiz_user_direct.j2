@@ -5,9 +5,15 @@ REQUEST
 - CountsByType: {{ COUNTS_BY_TYPE_JSON }}
 - DifficultyMix: {{ DIFFICULTY_MIX_JSON }}
 
+DIFFICULTY GUIDANCE
+{{ DIFFICULTY_INSTRUCTIONS }}
+
+CONTENT FILTERING RULES
+{{ CONTENT_FILTERING_RULES }}
+
 CONTEXT (use these ids in metadata.sources[].context_id)
 Each object: {id, doc_id, file_name, chunk_id, section_path, char_range, text}
-{{ CONTEXT_BLOCKS_JSON }}
+{{ FILTERED_CONTEXT_BLOCKS_JSON }}
 
 SCHEMA (return exactly this shape)
 {{ SCHEMA_JSON }}

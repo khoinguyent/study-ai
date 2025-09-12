@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liblcms2-2 \
     libwebp7 \
     libopenjp2-7 \
-    libtiff5 \
+    libtiff6 \
     libzbar0 \
     fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*

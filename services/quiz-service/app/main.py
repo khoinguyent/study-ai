@@ -518,6 +518,7 @@ async def generate_quiz(
         num_questions = request.get("numQuestions", 10)
         difficulty = request.get("difficulty", "medium")
         question_types = request.get("questionTypes", ["MCQ"])
+        counts_by_type = request.get("countsByType", {})
         
         logger.info(f"📋 [BACKEND] Extracted quiz parameters: {request_id}", extra={
             "request_id": request_id,
@@ -525,6 +526,7 @@ async def generate_quiz(
             "num_questions": num_questions,
             "difficulty": difficulty,
             "question_types": question_types,
+            "counts_by_type": counts_by_type,
             "user_id": user_id
         })
         
@@ -679,6 +681,38 @@ async def generate_quiz(
         start_time = time.time()
         if quiz_generator:
             try:
+                # Use provided counts_by_type or fallback to even distribution
+                if counts_by_type:
+                    # Convert frontend API types to backend types
+                    backend_counts = {}
+                    for api_type, count in counts_by_type.items():
+                        # Map frontend API types to backend types
+                        if api_type == "mcq":
+                            backend_counts["MCQ"] = count
+                        elif api_type == "true_false":
+                            backend_counts["TRUE_FALSE"] = count
+                        elif api_type == "fill_in_blank":
+                            backend_counts["FILL_BLANK"] = count
+                        elif api_type == "short_answer":
+                            backend_counts["SHORT_ANSWER"] = count
+                    counts_by_type = backend_counts
+                    
+                    # Verify the counts match the requested question types
+                    # Only include types that are in the question_types list
+                    filtered_counts = {}
+                    for qtype in question_types:
+                        if qtype in counts_by_type:
+                            filtered_counts[qtype] = counts_by_type[qtype]
+                    
+                    # If we have counts but they don't match the types, use even distribution
+                    if not filtered_counts:
+                        counts_by_type = {qtype: num_questions // len(question_types) for qtype in question_types}
+                    else:
+                        counts_by_type = filtered_counts
+                else:
+                    # Fallback to even distribution
+                    counts_by_type = {qtype: num_questions // len(question_types) for qtype in question_types}
+                
                 quiz_data = await quiz_generator.generate_quiz_from_context(
                     topic="Document-based Quiz",
                     difficulty=difficulty,
@@ -687,7 +721,7 @@ async def generate_quiz(
                     source_type="document",
                     source_id=doc_ids[0] if doc_ids else "unknown",
                     allowed_types=question_types,
-                    counts_by_type={qtype: num_questions // len(question_types) for qtype in question_types}
+                    counts_by_type=counts_by_type
                 )
                 generation_time = time.time() - start_time
                 
@@ -1490,22 +1524,135 @@ async def create_session_from_quiz(
         
         created_questions = []
         for i, q_data in enumerate(quiz_questions):
-            # Map the question data to the expected format
+            # Normalize type names from generator to DB expected values
+            raw_type = (q_data.get("type") or "mcq").strip().lower()
+            type_map = {"mcq": "mcq", "tf": "true_false", "true_false": "true_false", "fib": "fill_in_blank", "fill_in_blank": "fill_in_blank", "sa": "short_answer", "short_answer": "short_answer"}
+            question_type = type_map.get(raw_type, "mcq")
+
+            # Stem/question text
             question_text = q_data.get("question", q_data.get("stem", ""))
-            question_type = q_data.get("type", "mcq").lower()
-            
+
+            # Prepare type-specific fields
+            options = q_data.get("options") if question_type == "mcq" else None
+
+            # For fill-in-blank, DB expects an integer count; generator may provide list
+            blanks_field = None
+            private_payload: dict = {
+                'metadata': q_data.get('metadata', {})
+            }
+            if question_type == "fill_in_blank":
+                blanks_list = q_data.get("blanks")
+                if isinstance(blanks_list, list):
+                    blanks_field = len(blanks_list)
+                    # store as list-per-blank for evaluator compatibility
+                    private_payload['accepted'] = [[str(x)] for x in blanks_list]
+                elif isinstance(blanks_list, int):
+                    blanks_field = blanks_list
+                else:
+                    blanks_field = 1
+
+                # Keep explanation if present
+                if 'explanation' in q_data:
+                    private_payload['explanation'] = q_data.get('explanation')
+            elif question_type == "true_false":
+                # Normalize boolean answer if provided
+                if isinstance(q_data.get('correct_answer'), bool):
+                    private_payload['answer_bool'] = q_data.get('correct_answer')
+                private_payload['explanation'] = q_data.get('explanation')
+            elif question_type == "mcq":
+                # Normalize and shuffle options, assign stable ids
+                raw_options = list(q_data.get('options') or [])
+                # Coerce to list of strings
+                normalized_texts = []
+                for opt in raw_options:
+                    if isinstance(opt, dict):
+                        normalized_texts.append(str(opt.get('text', '')))
+                    else:
+                        normalized_texts.append(str(opt))
+                if len(normalized_texts) == 4:
+                    import random
+                    indices = list(range(4))
+                    random.shuffle(indices)
+                    shuffled = [normalized_texts[i] for i in indices]
+                    options = [{"id": f"opt_{i}", "text": text} for i, text in enumerate(shuffled)]
+                    # Determine original correct index and map to new id
+                    correct_idx = q_data.get('correct_option')
+                    if isinstance(correct_idx, int) and 0 <= correct_idx < 4:
+                        new_pos = indices.index(correct_idx)
+                        private_payload['correct_option_ids'] = [f"opt_{new_pos}"]
+                private_payload['explanation'] = q_data.get('explanation')
+            else:
+                # short_answer and others
+                if 'correct_answer' in q_data:
+                    private_payload['expected'] = q_data.get('correct_answer')
+                private_payload['key_points'] = (q_data.get('rubric') or {}).get('key_points') if isinstance(q_data.get('rubric'), dict) else q_data.get('key_points')
+                private_payload['threshold'] = (q_data.get('rubric') or {}).get('threshold') if isinstance(q_data.get('rubric'), dict) else q_data.get('threshold')
+                private_payload['min_words'] = (q_data.get('rubric') or {}).get('min_words') if isinstance(q_data.get('rubric'), dict) else q_data.get('min_words')
+
+            # Ensure FIB placeholders exist in stem
+            if question_type == "fill_in_blank" and blanks_field:
+                try:
+                    import re
+                    from app.services.eval_utils import normalize as _norm
+                    s = question_text or ""
+                    needed = int(blanks_field)
+                    # If we have accepted answers, replace each occurrence with {{i}}
+                    # Ensure private_payload is a dict before accessing it
+                    if isinstance(private_payload, str):
+                        try:
+                            import json
+                            private_payload = json.loads(private_payload)
+                        except:
+                            private_payload = {}
+                    accepted_lists = private_payload.get('accepted') or []
+                    replaced = s
+                    used_spans = []
+                    def _find_span(text: str, needle: str):
+                        if not needle:
+                            return None
+                        tn = _norm(text)
+                        nn = _norm(needle)
+                        start = tn.find(nn)
+                        if start == -1:
+                            return None
+                        # Map normalized index back to original by simple heuristic
+                        # Fallback: use regex with escaped needle (case-insensitive)
+                        m = re.search(re.escape(needle), text, flags=re.IGNORECASE)
+                        if not m:
+                            return None
+                        return (m.start(), m.end())
+                    # Replace answers first
+                    for i in range(needed):
+                        choices = accepted_lists[i] if i < len(accepted_lists) else []
+                        choice = choices[0] if choices else None
+                        span = _find_span(replaced, choice) if choice else None
+                        if span and span not in used_spans:
+                            used_spans.append(span)
+                            a, b = span
+                            replaced = replaced[:a] + f"{{{{{i+1}}}}}" + replaced[b:]
+                        elif f"{{{{{i+1}}}}}" not in replaced:
+                            # If not found, try replacing a run of underscores next
+                            def _repl_unders(m):
+                                return f"{{{{{i+1}}}}}"
+                            before = replaced
+                            replaced = re.sub(r"_{3,}", _repl_unders, replaced, count=1)
+                            if before == replaced:
+                                # Append placeholder as a last resort
+                                sep = " " if replaced and not replaced.endswith(" ") else ""
+                                replaced = replaced + sep + f"{{{{{i+1}}}}}"
+                    question_text = replaced
+                except Exception:
+                    pass
+
             session_question = models.QuizSessionQuestion(
                 id=str(uuid.uuid4()),
                 session_id=session_id,
                 display_index=i,
                 q_type=question_type,
                 stem=question_text,
-                options=q_data.get("options") if question_type == "mcq" else None,
-                blanks=q_data.get("blanks") if question_type == "fill_in_blank" else None,
-                private_payload={
-                    'correct_answer': q_data.get('answer'),
-                    'metadata': q_data.get('metadata', {})
-                },
+                options=options,
+                blanks=blanks_field,
+                private_payload=private_payload,
                 meta_data={
                     'source_question_id': q_data.get('id', f'q{i+1}'),
                     'question_type': question_type,
@@ -1569,22 +1716,52 @@ async def create_quiz_session(
         # Create session questions from quiz data
         quiz_questions = quiz.questions.get("questions", [])
         for i, q_data in enumerate(quiz_questions):
-            # Map the question data to the expected format
+            raw_type = (q_data.get("type") or "mcq").strip().lower()
+            type_map = {"mcq": "mcq", "tf": "true_false", "true_false": "true_false", "fib": "fill_in_blank", "fill_in_blank": "fill_in_blank", "sa": "short_answer", "short_answer": "short_answer"}
+            question_type = type_map.get(raw_type, "mcq")
+
             question_text = q_data.get("question", q_data.get("stem", ""))
-            question_type = q_data.get("type", "mcq").lower()
-            
+            options = q_data.get("options") if question_type == "mcq" else None
+
+            blanks_field = None
+            private_payload: dict = {
+                'metadata': q_data.get('metadata', {})
+            }
+            if question_type == "fill_in_blank":
+                blanks_list = q_data.get("blanks")
+                if isinstance(blanks_list, list):
+                    blanks_field = len(blanks_list)
+                    private_payload['accepted'] = blanks_list
+                elif isinstance(blanks_list, int):
+                    blanks_field = blanks_list
+                else:
+                    blanks_field = 1
+                if 'explanation' in q_data:
+                    private_payload['explanation'] = q_data.get('explanation')
+            elif question_type == "true_false":
+                if isinstance(q_data.get('correct_answer'), bool):
+                    private_payload['answer_bool'] = q_data.get('correct_answer')
+                private_payload['explanation'] = q_data.get('explanation')
+            elif question_type == "mcq":
+                if isinstance(q_data.get('correct_option'), int):
+                    private_payload['correct_option_index'] = q_data.get('correct_option')
+                private_payload['explanation'] = q_data.get('explanation')
+            else:
+                if 'correct_answer' in q_data:
+                    private_payload['expected'] = q_data.get('correct_answer')
+                private_payload['key_points'] = (q_data.get('rubric') or {}).get('key_points') if isinstance(q_data.get('rubric'), dict) else q_data.get('key_points')
+                private_payload['threshold'] = (q_data.get('rubric') or {}).get('threshold') if isinstance(q_data.get('rubric'), dict) else q_data.get('threshold')
+                private_payload['min_words'] = (q_data.get('rubric') or {}).get('min_words') if isinstance(q_data.get('rubric'), dict) else q_data.get('min_words')
+
             session_question = models.QuizSessionQuestion(
                 id=str(uuid.uuid4()),
                 session_id=session_id,
                 display_index=i,
                 q_type=question_type,
                 stem=question_text,
-                options=q_data.get("options") if question_type == "mcq" else None,
-                blanks=q_data.get("blanks") if question_type == "fill_in_blank" else None,
-                private_payload={
-                    'correct_answer': q_data.get('answer'),
-                    'metadata': q_data.get('metadata', {})
-                },
+                options=options,
+                blanks=blanks_field,
+                private_payload=private_payload,
                 meta_data={
                     'source_question_id': q_data.get('id', f'q{i+1}'),
                     'question_type': question_type,
@@ -1657,15 +1834,33 @@ async def get_quiz_for_session(
             }
             
             # Add type-specific fields
-            if sq.q_type == "mcq" and sq.options:
-                # Convert options to the format expected by frontend: {id: string, text: string}[]
-                if isinstance(sq.options, list):
-                    question["options"] = [
-                        {"id": f"opt_{i}", "text": option} 
-                        for i, option in enumerate(sq.options)
-                    ]
+            if sq.q_type == "mcq":
+                # Normalize options to {id,text}[]
+                norm_opts = []
+                raw_opts = sq.options if isinstance(sq.options, list) else []
+                if raw_opts:
+                    for i, opt in enumerate(raw_opts):
+                        if isinstance(opt, dict):
+                            # carry over existing id if present; otherwise synthesize
+                            oid = str(opt.get("id")) if opt.get("id") is not None else f"opt_{i}"
+                            norm_opts.append({"id": oid, "text": str(opt.get("text", ""))})
+                        else:
+                            norm_opts.append({"id": f"opt_{i}", "text": str(opt)})
                 else:
-                    question["options"] = []
+                    # Attempt to recover from meta_data.original_question.options
+                    try:
+                        meta = sq.meta_data or {}
+                        original = (meta or {}).get('original_question') or {}
+                        o2 = list(original.get('options') or [])
+                        for i, opt in enumerate(o2):
+                            if isinstance(opt, dict):
+                                oid = str(opt.get("id")) if opt.get("id") is not None else f"opt_{i}"
+                                norm_opts.append({"id": oid, "text": str(opt.get("text", ""))})
+                            else:
+                                norm_opts.append({"id": f"opt_{i}", "text": str(opt)})
+                    except Exception:
+                        norm_opts = []
+                question["options"] = norm_opts
             elif sq.q_type == "fill_in_blank" and sq.blanks:
                 question["blanks"] = sq.blanks
             elif sq.q_type == "true_false":
@@ -1702,7 +1897,7 @@ async def view_quiz_session(
     """
     return await get_quiz_for_session(str(session_id), user_id, db)
 
-@app.get("/study-sessions/{session_id}/answers")
+@app.post("/study-sessions/{session_id}/answers")
 async def save_session_answers(
     session_id: str,
     request: Request,

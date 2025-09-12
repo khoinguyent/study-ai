@@ -1002,6 +1002,81 @@ async def confirm_study_session_proxy(request: Request):
             detail=f"Quiz service error: {str(e)}"
         )
 
+# Enhanced quiz evaluation endpoints
+@app.post("/api/quiz/sessions/{session_id}/evaluate")
+async def evaluate_quiz_session_proxy(
+    session_id: str,
+    request: Request
+):
+    """Proxy quiz session evaluation to quiz service"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/sessions/{session_id}/evaluate",
+                json=body,
+                headers=headers,
+                timeout=60.0  # Longer timeout for evaluation
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz evaluation error: {str(e)}"
+        )
+
+@app.get("/api/quiz/sessions/{session_id}/results")
+async def get_quiz_results_proxy(
+    session_id: str,
+    request: Request
+):
+    """Proxy quiz results retrieval to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/sessions/{session_id}/results",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz results error: {str(e)}"
+        )
+
 # Direct Study Session Routes (Frontend expects these)
 @app.post("/api/study-sessions/start")
 async def start_study_session_direct_proxy(request: Request):
@@ -1105,9 +1180,10 @@ async def get_study_session_events_direct_proxy(
                     else:
                         # For non-200 responses, we need to handle them differently
                         # since we can't yield in an async generator after returning
+                        error_text = await response.aread()
                         raise HTTPException(
                             status_code=response.status_code,
-                            detail=f"Quiz service error: {response.text}"
+                            detail=f"Quiz service error: {error_text.decode()}"
                         )
         
         # Proxy SSE directly to quiz service
@@ -1743,7 +1819,7 @@ async def notification_queue_status_proxy(request: Request):
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/queue-status",
+                f"{settings.NOTIFICATION_SERVICE_URL}/api/notifications/queue-status",
                 headers=headers,
                 timeout=30.0
             )

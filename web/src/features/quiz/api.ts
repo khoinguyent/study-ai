@@ -1,4 +1,4 @@
-import { QuizPayload, AnswerMap, SubmitResult } from "./types";
+import { QuizPayload, AnswerMap, SubmitResult, AnswerSubmission, QuizEvaluation } from "./types";
 
 const base = (apiBase?: string) => apiBase || "/api";
 
@@ -37,7 +37,7 @@ export async function saveAnswers(
   return response.json();
 }
 
-// POST submit & grade
+// POST submit & grade (legacy endpoint)
 export async function submitQuiz(sessionId: string, apiBase?: string): Promise<SubmitResult> {
   const response = await fetch(`${base(apiBase)}/study-sessions/${sessionId}/submit`, {
     method: "POST",
@@ -49,4 +49,63 @@ export async function submitQuiz(sessionId: string, apiBase?: string): Promise<S
   }
   
   return response.json();
+}
+
+// POST submit & evaluate with detailed results
+export async function evaluateQuiz(
+  sessionId: string, 
+  submission: AnswerSubmission,
+  apiBase?: string
+): Promise<QuizEvaluation> {
+  const response = await fetch(`${base(apiBase)}/quizzes/sessions/${sessionId}/evaluate`, {
+    method: "POST",
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(submission),
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to evaluate quiz: ${response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+// GET evaluation results
+export async function getQuizResults(
+  sessionId: string,
+  apiBase?: string
+): Promise<QuizEvaluation> {
+  const response = await fetch(`${base(apiBase)}/quizzes/sessions/${sessionId}/results`, {
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to get quiz results: ${response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+// Enhanced submit with metadata
+export async function submitQuizWithMetadata(
+  sessionId: string,
+  answers: AnswerMap,
+  metadata?: {
+    timeSpent?: number;
+    userAgent?: string;
+    startedAt?: string;
+    submittedAt?: string;
+  },
+  apiBase?: string
+): Promise<QuizEvaluation> {
+  const submission: AnswerSubmission = {
+    sessionId,
+    answers,
+    metadata
+  };
+  
+  return evaluateQuiz(sessionId, submission, apiBase);
 }
