@@ -10,6 +10,16 @@ type Props = {
 };
 
 export function QuestionCard({ q, value, onChange, showExplanation }: Props) {
+  // Debug logging to see what question data we're getting
+  console.log("🎯 [QuestionCard] Question data:", {
+    id: q.id,
+    type: q.type,
+    prompt: q.prompt,
+    options: q.options,
+    hasOptions: !!q.options,
+    optionsLength: q.options?.length || 0
+  });
+  
   // Transform the prompt for fill-in-blank questions
   const displayPrompt = q.type === "fill_blank" ? transformFillBlankPrompt(q.prompt) : q.prompt;
   

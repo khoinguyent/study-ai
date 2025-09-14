@@ -30,16 +30,20 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   status: "idle",
   currentIdx: 0,
 
-  hydrate: (p) =>
+  hydrate: (p) => {
+    console.log("🔄 [STORE] Raw payload:", p);
+    const transformedQuestions = p.questions.map(transformQuestion);
+    console.log("🔄 [STORE] Transformed questions:", transformedQuestions);
     set({
       sessionId: p.sessionId,
       quizId: p.quizId,
-      questions: p.questions.map(transformQuestion),
+      questions: transformedQuestions,
       answers: {},
       startedAt: Date.now(),
       status: "ready",
       currentIdx: 0,
-    }),
+    });
+  },
 
   setAnswer: (q, value) => {
     const map = { ...get().answers };
