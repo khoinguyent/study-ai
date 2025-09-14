@@ -1,10 +1,21 @@
 import { QuizPayload, AnswerMap, SubmitResult, AnswerSubmission, QuizEvaluation } from "./types";
+import { authService } from "../../services/auth";
 
 const base = (apiBase?: string) => apiBase || "/api";
+
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = authService.getToken();
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+};
 
 // GET quiz for a session
 export async function fetchQuiz(sessionId: string, apiBase?: string): Promise<QuizPayload> {
   const response = await fetch(`${base(apiBase)}/study-sessions/${sessionId}/quiz`, {
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json'
+    },
     credentials: 'include'
   });
   
@@ -24,6 +35,7 @@ export async function saveAnswers(
   const response = await fetch(`${base(apiBase)}/study-sessions/${sessionId}/answers`, {
     method: "POST",
     headers: {
+      ...getAuthHeaders(),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ answers }),
@@ -41,6 +53,10 @@ export async function saveAnswers(
 export async function submitQuiz(sessionId: string, apiBase?: string): Promise<SubmitResult> {
   const response = await fetch(`${base(apiBase)}/study-sessions/${sessionId}/submit`, {
     method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json'
+    },
     credentials: 'include'
   });
   
@@ -60,6 +76,7 @@ export async function evaluateQuiz(
   const response = await fetch(`${base(apiBase)}/quizzes/sessions/${sessionId}/evaluate`, {
     method: "POST",
     headers: {
+      ...getAuthHeaders(),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(submission),
@@ -79,6 +96,10 @@ export async function getQuizResults(
   apiBase?: string
 ): Promise<QuizEvaluation> {
   const response = await fetch(`${base(apiBase)}/quizzes/sessions/${sessionId}/results`, {
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json'
+    },
     credentials: 'include'
   });
   
