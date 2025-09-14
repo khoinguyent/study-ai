@@ -1827,10 +1827,10 @@ async def get_quiz_for_session(
         questions = []
         for i, sq in enumerate(session_questions):
             question = {
-                "id": sq.id,  # Use the actual session question ID
+                "session_question_id": sq.id,  # Use the actual session question ID
+                "index": i,  # Add the index
                 "type": sq.q_type,
-                "prompt": sq.stem,  # Use 'prompt' as expected by frontend
-                "points": 1,
+                "stem": sq.stem,  # Use 'stem' as expected by frontend
             }
             
             # Add type-specific fields
@@ -1872,8 +1872,8 @@ async def get_quiz_for_session(
             questions.append(question)
         
         return {
-            "sessionId": session_id,  # Use camelCase as expected by frontend
-            "quizId": quiz.id,        # Use camelCase as expected by frontend
+            "session_id": session_id,  # Use snake_case as expected by frontend
+            "quiz_id": quiz.id,        # Use snake_case as expected by frontend
             "questions": questions
         }
         
