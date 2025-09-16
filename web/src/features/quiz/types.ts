@@ -97,7 +97,6 @@ export type SubmitResult = {
 
 // Enhanced answer submission structure
 export type AnswerSubmission = {
-  sessionId: string;
   answers: AnswerMap;
   metadata?: {
     timeSpent?: number; // total time in seconds

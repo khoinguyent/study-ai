@@ -91,9 +91,19 @@ def submit_session(session_id: str, db: Session = Depends(get_db)):
 
 # Enhanced submit and evaluate endpoint
 @router.post("/sessions/{session_id}/evaluate")
-def evaluate_session(session_id: str, body: dict, db: Session = Depends(get_db)):
+def evaluate_session(session_id: str, body: dict | str, db: Session = Depends(get_db)):
     """Submit and evaluate a quiz session with detailed results"""
     try:
+        # Accept stringified JSON forwarded by proxies and coerce to dict
+        if isinstance(body, str):
+            try:
+                import json as _json
+                body = _json.loads(body)
+            except Exception:
+                body = {}
+        elif not isinstance(body, dict):
+            body = {}
+        
         # Get user answers from request body (can be dict or array)
         user_answers_raw = body.get("answers", {})
         metadata = body.get("metadata", {})
@@ -135,14 +145,25 @@ def evaluate_session(session_id: str, body: dict, db: Session = Depends(get_db))
                     "_type": item.get("type"),
                 }
         elif isinstance(user_answers_raw, dict):
-            answers_map = user_answers_raw
+            # Some proxies may stringify inner objects; ensure values parsed when they are strings
+            parsed_map = {}
+            for k, v in user_answers_raw.items():
+                if isinstance(v, str):
+                    try:
+                        import json as _json
+                        parsed_map[str(k)] = _json.loads(v)
+                    except Exception:
+                        parsed_map[str(k)] = v
+                else:
+                    parsed_map[str(k)] = v
+            answers_map = parsed_map
         else:
             answers_map = {}
 
         def normalize_value(question_id: str, answer_value):
             """Normalize a primitive/list/dict answer to evaluator input."""
             qtype = qtype_by_id.get(str(question_id))
-
+            
             # If already in expected evaluator shape, pass-through
             if isinstance(answer_value, dict):
                 # If it looks like our already-converted payload, return as-is
@@ -162,6 +183,21 @@ def evaluate_session(session_id: str, body: dict, db: Session = Depends(get_db))
                     return {"blanks": answer_value.get("values", [])}
                 if kind == "text":
                     return {"text": answer_value.get("value", "")}
+                # Kind is missing – infer by keys or question type
+                if "choiceId" in answer_value:
+                    return {"selected_option_id": answer_value.get("choiceId")}
+                if "choiceIds" in answer_value:
+                    return {"selected_option_ids": answer_value.get("choiceIds", [])}
+                if "values" in answer_value:
+                    return {"blanks": answer_value.get("values", [])}
+                if "value" in answer_value:
+                    # Map by question type if possible
+                    if qtype == "true_false":
+                        return {"answer_bool": bool(answer_value.get("value"))}
+                    if qtype in ("short_answer", "text"):
+                        return {"text": str(answer_value.get("value", ""))}
+                    # Default: treat as selected option id
+                    return {"selected_option_id": str(answer_value.get("value"))}
                 # If it contains a raw value under different keys
                 if "_raw" in answer_value:
                     return normalize_value(question_id, answer_value.get("_raw"))

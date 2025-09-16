@@ -1,18 +1,20 @@
 import React from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { getSessionView, saveAnswers, SessionQuestion } from "../api/quiz";
 import { CoachSidebar } from "../components/quiz/CoachSidebar";
 import { useCoach } from "../hooks/useCoach";
-import { useNotifications } from "../components/notifications/NotificationContext";
 import { useDebouncedSaver } from "../hooks/useDebouncedSaver";
 import { MCQBlock, TrueFalseBlock, FillBlankBlock, ShortAnswerBlock } from "../components/quiz/QuestionBlocks";
 import { QuestionNavigator } from "../components/quiz/QuestionNavigator";
+import { useNotifications } from "../components/notifications/NotificationContext";
 import "./QuizSession.css";
 
 type DraftMap = Record<string, any>; // { [session_question_id]: response }
 
 export default function QuizSessionPage() {
   const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const { remove, clearByType } = useNotifications();
   const [data, setData] = React.useState<{session_id:string; quiz_id:string; questions: SessionQuestion[]} | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [draft, setDraft] = React.useState<DraftMap>({});
@@ -22,7 +24,6 @@ export default function QuizSessionPage() {
   const [result, setResult] = React.useState<any|null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = React.useState(0);
   const startedAtRef = React.useRef<number>(Date.now());
-  const { addOrUpdate } = useNotifications();
 
   const totalQs = data?.questions.length ?? 0;
   const answeredCount = React.useMemo(()=> {
@@ -34,6 +35,20 @@ export default function QuizSessionPage() {
   }, [draft]);
 
   const { msgs, onProgress, onSubmit, pushBot } = useCoach(totalQs) as any;
+
+  // Clear any existing quiz evaluation notifications when component mounts and unmounts
+  React.useEffect(() => {
+    // Clear any quiz evaluation notifications that might be persisting
+    clearByType("quiz_evaluation");
+    // Also remove specific notification IDs that might be related to quiz evaluation
+    remove(`quiz-eval-${sessionId}`);
+    
+    // Cleanup on unmount
+    return () => {
+      clearByType("quiz_evaluation");
+      remove(`quiz-eval-${sessionId}`);
+    };
+  }, [sessionId, clearByType, remove]);
 
   React.useEffect(()=>{ onProgress(answeredCount); }, [answeredCount, onProgress]);
 
@@ -122,30 +137,10 @@ export default function QuizSessionPage() {
       submittedAt: new Date().toISOString(),
     };
 
-    // Toast: received and started evaluation
-    const toastId = `quiz-eval-${sessionId}`;
-    addOrUpdate({
-      id: toastId,
-      title: "Evaluating answers…",
-      message: "Answers received. Scoring in progress.",
-      status: "processing",
-      progress: 10,
-      autoClose: false,
-      notification_type: "quiz_evaluation"
-    });
-
-    // Simulated progress while awaiting server response
-    let prog = 10;
-    let progTimer: number | undefined;
-    const tick = () => {
-      prog = Math.min(90, prog + 10);
-      addOrUpdate({ id: toastId, title: "Evaluating answers…", message: "Scoring in progress", status: "processing", progress: prog, autoClose: false, notification_type: "quiz_evaluation" });
-      if (prog < 90) progTimer = window.setTimeout(tick, 500);
-    };
+    // No toast notification - just show loading state in UI
 
     try {
       setSubmitting(true);
-      progTimer = window.setTimeout(tick, 600);
 
       // Send to enhanced evaluation endpoint through gateway
       const authService = await import('../services/auth').then(m => m.authService);
@@ -160,40 +155,31 @@ export default function QuizSessionPage() {
       if (!r.ok) throw new Error(`Evaluation failed: ${r.status}`);
       const evalRes = await r.json();
 
-      setResult(evalRes);
-      onSubmit(evalRes.totalScore, evalRes.maxScore);
-
-      // Toast: completed with score and Retry action
-      addOrUpdate({
-        id: toastId,
-        title: "Quiz finalized",
-        message: `Score: ${evalRes.totalScore}/${evalRes.maxScore} (${(evalRes.grade?.display)|| (evalRes.scorePercentage + '%')})`,
-        status: "success",
-        progress: 100,
-        autoClose: false,
-        actionText: "Retry",
-        onAction: () => {
-          // Reset draft and encourage retry
-          setDraft({});
-          setResult(null);
-          setCurrentQuestionIndex(0);
-          startedAtRef.current = Date.now();
-          pushBot?.("Want to try again? You got this—let's improve that score! 💪");
-        },
-        notification_type: "quiz_evaluation"
-      });
+      // Calculate score percentage for result page
+      const scorePercent = evalRes.maxScore > 0 ? (evalRes.totalScore / evalRes.maxScore) * 100 : 0;
+      
+      // Create SubmitResult object for the result page
+      const quizResult = {
+        scorePercent,
+        correctCount: evalRes.totalScore,
+        totalQuestions: evalRes.maxScore,
+        breakdown: {
+          byType: {}
+        }
+      };
+      
+      // Store result and time in session storage
+      const timeSpent = Math.round((Date.now() - startedAtRef.current) / 1000);
+      sessionStorage.setItem(`quiz-result-${sessionId}`, JSON.stringify(quizResult));
+      sessionStorage.setItem(`quiz-time-${sessionId}`, timeSpent.toString());
+      
+      // Navigate to result page
+      navigate(`/quiz/result/${sessionId}`);
     } catch (e: any) {
       console.error(e);
-      addOrUpdate({
-        id: toastId,
-        title: "Evaluation failed",
-        message: e?.message || "Please try again.",
-        status: "error",
-        autoClose: false,
-        notification_type: "quiz_evaluation"
-      });
+      // Show error in UI instead of toast
+      alert(`Evaluation failed: ${e?.message || "Please try again."}`);
     } finally {
-      if (progTimer) window.clearTimeout(progTimer);
       setSubmitting(false);
     }
   };
@@ -290,11 +276,6 @@ export default function QuizSessionPage() {
           </button>
         </div>
 
-        {result && (
-          <div className="quiz-result">
-            <strong>Submitted!</strong> Score: {result.score}/{result.max_score}
-          </div>
-        )}
       </main>
     </div>
   );

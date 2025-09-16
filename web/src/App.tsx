@@ -12,6 +12,7 @@ import QuizScreen from './features/quiz/components/QuizScreen';
 import StudySessionRedirect from './components/StudySessionRedirect';
 import QuizProgress from './pages/QuizProgress';
 import QuizSession from './pages/QuizSession';
+import QuizResultPage from './pages/QuizResultPage';
 import CreateQuizSession from './components/CreateQuizSession';
 
 import { ProtectedRouteProps, PublicRouteProps, User } from './types';
@@ -163,6 +164,11 @@ const App: React.FC = () => {
       <Route path="/quiz/session/:sessionId" element={
         <ProtectedRoute>
           <QuizSession />
+        </ProtectedRoute>
+      } />
+      <Route path="/quiz/result/:sessionId" element={
+        <ProtectedRoute>
+          <QuizResultPage />
         </ProtectedRoute>
       } />
       <Route path="/quiz/progress/:id" element={

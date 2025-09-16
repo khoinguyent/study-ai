@@ -108,104 +108,12 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "quiz-service"}
 
-@app.get("/test-ollama")
-async def test_ollama():
-    """Test Ollama connectivity"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{os.getenv('OLLAMA_BASE_URL', 'http://ollama:11434')}/api/tags")
-            if response.status_code == 200:
-                return {
-                    "status": "success",
-                    "message": "Ollama is accessible",
-                    "models": response.json()
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"Ollama returned status {response.status_code}"
-                }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to connect to Ollama: {str(e)}"
-        }
 
-@app.get("/test-openai")
-async def test_openai():
-    """Test OpenAI connectivity and configuration"""
-    try:
-        logger.info("Testing OpenAI configuration...")
-        
-        # Check if OpenAI is configured
-        if not os.getenv('OPENAI_API_KEY'):
-            return {
-                "status": "error",
-                "message": "OpenAI API key not configured",
-                "config": {
-                    "api_key": "NOT_SET",
-                    "base_url": os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-                    "model": os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
-                }
-            }
-        
-        # Try to initialize the OpenAI provider
-        try:
-            from .services.quiz_generator import QuizGenerator
-            quiz_generator = QuizGenerator()
-            
-            if quiz_generator.provider and quiz_generator.provider.name == "openai":
-                return {
-                    "status": "success",
-                    "message": "OpenAI provider initialized successfully",
-                    "config": {
-                        "api_key": f"{os.getenv('OPENAI_API_KEY', '')[:8]}...",
-                        "base_url": os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-                        "model": os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo'),
-                        "strategy": quiz_generator.strategy
-                    }
-                }
-            else:
-                return {
-                    "status": "warning",
-                    "message": "OpenAI provider not available",
-                    "config": {
-                        "api_key": f"{os.getenv('OPENAI_API_KEY', '')[:8]}...",
-                        "base_url": os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-                        "model": os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo'),
-                        "strategy": quiz_generator.strategy,
-                        "provider": quiz_generator.provider.name if quiz_generator.provider else "none"
-                    }
-                }
-                
-        except Exception as e:
-            logger.error(f"Failed to test OpenAI provider: {e}")
-            return {
-                "status": "error",
-                "message": f"Failed to initialize OpenAI provider: {str(e)}",
-                "config": {
-                    "api_key": f"{os.getenv('OPENAI_API_KEY', '')[:8]}...",
-                    "base_url": os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-                    "model": os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
-                }
-            }
-            
-    except Exception as e:
-        logger.error(f"OpenAI test failed: {e}")
-        return {
-            "status": "error",
-            "message": f"OpenAI test failed: {str(e)}"
-        }
-
-# Mock quiz generator removed - system now only uses real AI providers
-    
-
-    
 
     
 
 
-# Study Session endpoints with enhanced mock data
+# Study Session endpoints
 @app.post("/study-sessions/start")
 async def start_study_session(
     request: dict,
@@ -220,8 +128,8 @@ async def start_study_session(
         question_count = request.get("questionCount", 10)
         
         # These fields are now truly optional - use defaults if not provided
-        subject_id = request.get("subjectId", "mock-subject")
-        doc_ids = request.get("docIds", ["mock-doc"])
+        subject_id = request.get("subjectId")
+        doc_ids = request.get("docIds", [])
         
         # Generate unique IDs - use same ID for job and quiz to match SSE endpoint
         session_id = str(uuid.uuid4())
@@ -281,14 +189,14 @@ async def get_study_session_status(
     try:
         logger.info(f"Checking status for job_id: {job_id}")
         
-        # For mock purposes, simulate different states based on job_id
-        if "mock" in job_id.lower():
-            # Return completed status for mock jobs
+        # Check if this is a test job
+        if "test" in job_id.lower():
+            # Return completed status for test jobs
             return {
                 "state": "completed",
                 "progress": 100,
-                "sessionId": "mock-session-id",
-                "quizId": "mock-quiz-id",
+                "sessionId": None,
+                "quizId": None,
                 "message": "Quiz generation completed successfully"
             }
         else:
@@ -331,7 +239,7 @@ async def get_study_session_events(
                 # Use actual quiz data
                 yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'sessionId': f'session-{quiz.id}', 'quizId': str(quiz.id)})}\n\n"
             else:
-                # Fallback to mock data if quiz not found
+                # Fallback if quiz not found
                 yield f"data: {json.dumps({'state': 'completed', 'progress': 100, 'sessionId': f'session-{job_id}', 'quizId': job_id})}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -356,7 +264,7 @@ async def ingest_study_session(
         return {
             "status": "success",
             "message": "Study session input ingested successfully",
-            "sessionId": "mock-session-id"
+            "sessionId": None
         }
         
     except Exception as e:
@@ -382,10 +290,10 @@ async def confirm_study_session(
         question_count = request.get("questionCount", 10)
         
         # These fields are now truly optional - use defaults if not provided
-        subject_id = request.get("subjectId", "mock-subject")
-        doc_ids = request.get("docIds", ["mock-doc"])
+        subject_id = request.get("subjectId")
+        doc_ids = request.get("docIds", [])
         
-        # This endpoint now requires real AI generation - no mock fallback
+        # This endpoint now requires real AI generation
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Study session confirmation requires real AI generation. Use /quizzes/generate endpoint instead."
@@ -412,7 +320,7 @@ async def start_clarifier(
         return {
             "status": "success",
             "message": "Clarifier session started successfully",
-            "sessionId": "mock-clarifier-session-id",
+            "sessionId": None,
             "suggestions": [
                 "Consider adding more diverse question types",
                 "Adjust difficulty based on student level",
@@ -440,7 +348,7 @@ async def ingest_clarifier(
         return {
             "status": "success",
             "message": "Clarifier input processed successfully",
-            "sessionId": "mock-clarifier-session-id",
+            "sessionId": None,
             "suggestions": [
                 "Based on your input, I recommend focusing on key concepts",
                 "Consider the learning objectives for this subject",
@@ -479,7 +387,7 @@ async def generate_quiz_from_clarifier(
                 detail="docIds is required"
             )
         
-        # This endpoint now requires real AI generation - no mock fallback
+        # This endpoint now requires real AI generation
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Clarifier quiz generation requires real AI generation. Use /quizzes/generate endpoint instead."
@@ -566,7 +474,7 @@ async def generate_quiz(
         except Exception:
             pass
 
-        # Generate real quiz using AI providers instead of mock data
+        # Generate real quiz using AI providers
         logger.info(f"🤖 [BACKEND] Starting AI-powered quiz generation: {request_id}", extra={
             "request_id": request_id,
             "user_id": user_id,
@@ -594,7 +502,7 @@ async def generate_quiz(
                 "error_type": type(e).__name__,
                 "traceback": traceback.format_exc()
             })
-            # Fail if no AI provider is available - no mock fallback
+            # Fail if no AI provider is available
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to initialize AI quiz generator: {str(e)}"
@@ -677,7 +585,7 @@ async def generate_quiz(
             "chunk_preview": (context_chunks[0]["content"][:100] + "...") if context_chunks else "No chunks"
         })
         
-        # Generate the quiz using the AI provider or fallback to mock
+        # Generate the quiz using the AI provider
         start_time = time.time()
         if quiz_generator:
             try:
@@ -742,7 +650,7 @@ async def generate_quiz(
                     "error_type": type(e).__name__,
                     "traceback": traceback.format_exc()
                 })
-                # Fail if AI generation fails - no mock fallback
+                # Fail if AI generation fails
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"AI quiz generation failed: {str(e)}"
@@ -869,9 +777,9 @@ async def generate_quiz_simple(request: dict):
         question_types = request.get("questionTypes", ["MCQ"])
         
         # These fields are now truly optional - use defaults if not provided
-        doc_ids = request.get("docIds", ["mock-doc"])
+        doc_ids = request.get("docIds", [])
         
-        # This endpoint now requires real AI generation - no mock fallback
+        # This endpoint now requires real AI generation
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Simple quiz generation requires real AI generation. Use /quizzes/generate endpoint instead."
@@ -1104,7 +1012,7 @@ async def generate_quiz_real(
             num_questions=num_questions,
             context_chunks=context_chunks,
             source_type="document",
-            source_id=doc_ids[0] if doc_ids else "mock-doc",
+            source_id=doc_ids[0] if doc_ids else None,
             allowed_types=allowed_types,
             counts_by_type=counts_by_type
         )
@@ -1185,7 +1093,7 @@ async def generate_quiz_real(
             "job_id": str(uuid.uuid4()),  # Generate unique job_id for frontend compatibility
             "quiz": quiz_data,
             "generation_strategy": quiz_generator.strategy,
-            "provider": quiz_generator.provider.name if quiz_generator.provider else "mock",
+            "provider": quiz_generator.provider.name if quiz_generator.provider else "none",
             "generation_time": f"{generation_time:.2f}s"
         }
         
@@ -1220,76 +1128,6 @@ async def generate_quiz_real(
             detail=f"Failed to generate quiz: {str(e)}"
         )
 
-@app.post("/test-quiz-generation")
-async def test_quiz_generation():
-    """Test the complete quiz generation flow"""
-    try:
-        logger.info("Testing complete quiz generation flow...")
-        
-        # Initialize the quiz generator
-        try:
-            from .services.quiz_generator import QuizGenerator
-            quiz_generator = QuizGenerator()
-            logger.info(f"QuizGenerator initialized with strategy: {quiz_generator.strategy}")
-        except Exception as e:
-            logger.error(f"Failed to initialize QuizGenerator: {e}")
-            return {
-                "status": "error",
-                "message": f"Failed to initialize quiz generator: {str(e)}"
-            }
-        
-        # Create mock context chunks
-        mock_context_chunks = [
-            {
-                "content": "The Vietnam War was a conflict that occurred in Vietnam, Laos, and Cambodia from 1 November 1955 to the fall of Saigon on 30 April 1975.",
-                "metadata": {"source": "test", "document_id": "test-doc-1"}
-            },
-            {
-                "content": "The war was fought between North Vietnam, supported by the Soviet Union and China, and South Vietnam, supported by the United States and other anti-communist allies.",
-                "metadata": {"source": "test", "document_id": "test-doc-2"}
-            }
-        ]
-        
-        logger.info(f"Testing with {len(mock_context_chunks)} mock context chunks")
-        
-        # Test the generation
-        try:
-            quiz_data = await quiz_generator.generate_quiz_from_context(
-                topic="Vietnam War History",
-                difficulty="medium",
-                num_questions=3,
-                context_chunks=mock_context_chunks,
-                source_type="test",
-                source_id="test-doc"
-            )
-            
-            logger.info(f"Quiz generation test completed successfully")
-            
-            return {
-                "status": "success",
-                "message": "Quiz generation test completed successfully",
-                "quiz": quiz_data,
-                "generation_strategy": quiz_generator.strategy,
-                "provider": quiz_generator.provider.name if quiz_generator.provider else "mock",
-                "questions_count": len(quiz_data.get('questions', [])),
-                "test_context_chunks": len(mock_context_chunks)
-            }
-            
-        except Exception as gen_error:
-            logger.error(f"Quiz generation test failed: {gen_error}")
-            return {
-                "status": "error",
-                "message": f"Quiz generation test failed: {str(gen_error)}",
-                "generation_strategy": quiz_generator.strategy,
-                "provider": quiz_generator.provider.name if quiz_generator.provider else "mock"
-            }
-            
-    except Exception as e:
-        logger.error(f"Quiz generation test failed: {e}")
-        return {
-            "status": "error",
-            "message": f"Quiz generation test failed: {str(e)}"
-        }
 
 @app.get("/quizzes/{quiz_id}")
 async def get_quiz(
@@ -1341,50 +1179,11 @@ async def get_quiz_events(
     try:
         logger.info(f"Getting quiz events for job_id: {job_id}")
         
-        # Return mock events for now
-        events = [
-            {
-                "event_id": f"event_{job_id}_1",
-                "event_type": "quiz_generation_started",
-                "user_id": user_id,
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": {
-                    "job_id": job_id,
-                    "stage": "initializing",
-                    "progress": 0,
-                    "message": "Starting quiz generation..."
-                }
-            },
-            {
-                "event_id": f"event_{job_id}_2", 
-                "event_type": "quiz_generation_progress",
-                "user_id": user_id,
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": {
-                    "job_id": job_id,
-                    "stage": "generating_questions",
-                    "progress": 50,
-                    "message": "Generating questions using AI..."
-                }
-            },
-            {
-                "event_id": f"event_{job_id}_3",
-                "event_type": "quiz_generation_completed", 
-                "user_id": user_id,
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": {
-                    "job_id": job_id,
-                    "stage": "completed",
-                    "progress": 100,
-                    "message": "Quiz generation completed successfully!"
-                }
-            }
-        ]
-        
+        # Return empty events list - real events would be implemented with proper event streaming
         return {
             "status": "success",
-            "events": events,
-            "total_events": len(events)
+            "events": [],
+            "total_events": 0
         }
         
     except Exception as e:
@@ -1548,8 +1347,16 @@ async def create_session_from_quiz(
                     private_payload['accepted'] = [[str(x)] for x in blanks_list]
                 elif isinstance(blanks_list, int):
                     blanks_field = blanks_list
+                    # For single blank, store correct_answer as accepted
+                    correct_answer = q_data.get('correct_answer')
+                    if correct_answer:
+                        private_payload['accepted'] = [[str(correct_answer)]]
                 else:
                     blanks_field = 1
+                    # For single blank, store correct_answer as accepted
+                    correct_answer = q_data.get('correct_answer')
+                    if correct_answer:
+                        private_payload['accepted'] = [[str(correct_answer)]]
 
                 # Keep explanation if present
                 if 'explanation' in q_data:
@@ -1558,6 +1365,9 @@ async def create_session_from_quiz(
                 # Normalize boolean answer if provided
                 if isinstance(q_data.get('correct_answer'), bool):
                     private_payload['answer_bool'] = q_data.get('correct_answer')
+                elif isinstance(q_data.get('correct_option'), int):
+                    # correct_option: 0 = True, 1 = False
+                    private_payload['answer_bool'] = q_data.get('correct_option') == 0
                 private_payload['explanation'] = q_data.get('explanation')
             elif question_type == "mcq":
                 # Normalize and shuffle options, assign stable ids
@@ -1940,28 +1750,22 @@ async def submit_session(
                 detail="Quiz session not found"
             )
         
-        # For now, return mock results with proper structure
-        # In a real implementation, you'd grade the answers
-        total_questions = len(quiz_session.questions) if quiz_session.questions else 5
-        correct_count = random.randint(1, total_questions)  # Random score for demo
-        score_percent = (correct_count / total_questions) * 100
+        # Return proper evaluation results using the evaluation service
+        from .services.evaluation_service import evaluator
+        
+        # Get user answers from the request
+        user_answers = request.get("answers", {})
+        
+        # Evaluate the quiz session
+        evaluation_result = evaluator.evaluate_quiz_session(db, session_id, user_answers)
         
         return {
-            "scorePercent": score_percent,
-            "correctCount": correct_count,
-            "totalQuestions": total_questions,
-            "breakdown": {
-                "byType": {
-                    "single_choice": {
-                        "correct": correct_count,
-                        "total": total_questions,
-                        "percentage": score_percent
-                    }
-                },
-                "byQuestion": []
-            },
-            "timeSpent": 1200,  # Mock time in seconds
-            "submittedAt": datetime.now().isoformat()
+            "scorePercent": evaluation_result["scorePercentage"],
+            "correctCount": evaluation_result["correctCount"],
+            "totalQuestions": evaluation_result["totalQuestions"],
+            "breakdown": evaluation_result["breakdown"],
+            "timeSpent": request.get("metadata", {}).get("timeSpent", 0),
+            "submittedAt": evaluation_result["submittedAt"]
         }
         
     except HTTPException:

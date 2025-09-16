@@ -3,7 +3,7 @@ Notification Service for Study AI Platform
 Handles real-time notifications and event processing
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status, Header, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import json
@@ -497,4 +497,35 @@ async def study_sessions_events_stream(job_id: str = Query(...)):
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "*",
             }
+        )
+
+@app.post("/notifications/clear-by-type")
+async def clear_notifications_by_type(request: Request):
+    """Clear notifications by type for the authenticated user"""
+    try:
+        # Get the request body
+        body = await request.json()
+        notification_type = body.get("notification_type")
+        
+        if not notification_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="notification_type is required"
+            )
+        
+        # For now, we'll just return success since we don't have a full notification system
+        # In a real implementation, this would delete notifications from the database
+        logger.info(f"Clearing notifications of type: {notification_type}")
+        
+        return {
+            "message": f"Cleared notifications of type: {notification_type}",
+            "notification_type": notification_type,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing notifications by type: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear notifications: {str(e)}"
         )

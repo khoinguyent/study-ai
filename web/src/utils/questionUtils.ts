@@ -74,5 +74,10 @@ export function transformQuestion(backendQuestion: any): any {
     ];
   }
   
+  // Transform prompt for fill-in-blank questions
+  if (transformed.type === 'fill_blank' && backendQuestion.stem) {
+    transformed.prompt = transformFillBlankPrompt(backendQuestion.stem);
+  }
+  
   return transformed;
 }

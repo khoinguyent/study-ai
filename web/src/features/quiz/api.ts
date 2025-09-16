@@ -102,9 +102,26 @@ export async function submitQuizWithMetadata(
   apiBase?: string
 ): Promise<QuizEvaluation> {
   const submission: AnswerSubmission = {
-    sessionId,
     answers,
     metadata
+  };
+  
+  return evaluateQuiz(sessionId, submission, apiBase);
+}
+
+// Simple submit with answers for proper evaluation
+export async function submitQuizWithAnswers(
+  sessionId: string,
+  answers: AnswerMap,
+  timeSpent: number = 0,
+  apiBase?: string
+): Promise<QuizEvaluation> {
+  const submission: AnswerSubmission = {
+    answers: answers,
+    metadata: {
+      timeSpent: timeSpent,
+      submittedAt: new Date().toISOString()
+    }
   };
   
   return evaluateQuiz(sessionId, submission, apiBase);
