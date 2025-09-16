@@ -1,6 +1,5 @@
 import React from 'react';
 import type { Question } from "../types";
-import { transformFillBlankPrompt } from "../../../utils/questionUtils";
 
 type Props = {
   q: Question;
@@ -10,17 +9,8 @@ type Props = {
 };
 
 export function QuestionCard({ q, value, onChange, showExplanation }: Props) {
-  // Transform the prompt for fill-in-blank questions
-  const displayPrompt = q.type === "fill_blank" ? transformFillBlankPrompt(q.prompt) : q.prompt;
-  
-  // Debug logging to verify transformation
-  if (q.type === "fill_blank") {
-    console.log("Fill-blank question transformation:", {
-      original: q.prompt,
-      transformed: displayPrompt,
-      type: q.type
-    });
-  }
+  // The prompt is already transformed in the transformQuestion function
+  const displayPrompt = q.prompt;
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">

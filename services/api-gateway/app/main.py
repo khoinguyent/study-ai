@@ -1042,12 +1042,88 @@ async def evaluate_quiz_session_proxy(
             detail=f"Quiz evaluation error: {str(e)}"
         )
 
+# Also support the plural form for frontend compatibility
+@app.post("/api/quizzes/sessions/{session_id}/evaluate")
+async def evaluate_quiz_session_proxy_plural(
+    session_id: str,
+    request: Request
+):
+    """Proxy quiz session evaluation to quiz service (plural form)"""
+    try:
+        # Get the request body
+        body = await request.json()
+        
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/sessions/{session_id}/evaluate",
+                json=body,
+                headers=headers,
+                timeout=60.0  # Longer timeout for evaluation
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz evaluation error: {str(e)}"
+        )
+
 @app.get("/api/quiz/sessions/{session_id}/results")
 async def get_quiz_results_proxy(
     session_id: str,
     request: Request
 ):
     """Proxy quiz results retrieval to quiz service"""
+    try:
+        # Forward the Authorization header to quiz service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.QUIZ_SERVICE_URL}/quizzes/sessions/{session_id}/results",
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Return the actual error from the quiz service
+                error_detail = response.text
+                return Response(
+                    content=error_detail,
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Quiz results error: {str(e)}"
+        )
+
+# Also support the plural form for frontend compatibility
+@app.get("/api/quizzes/sessions/{session_id}/results")
+async def get_quiz_results_proxy_plural(
+    session_id: str,
+    request: Request
+):
+    """Proxy quiz results retrieval to quiz service (plural form)"""
     try:
         # Forward the Authorization header to quiz service
         auth_header = request.headers.get("authorization")
@@ -1909,6 +1985,40 @@ async def clear_notifications_by_type_proxy(request: Request):
         headers = {}
         if auth_header:
             headers["Authorization"] = auth_header
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.NOTIFICATION_SERVICE_URL}/notifications/clear-by-type",
+                json=body,
+                headers=headers,
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Failed to clear notifications by type"
+                )
+    except Exception as e:
+        logger.error(f"Error proxying clear notifications by type: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Notification service error: {str(e)}"
+        )
+
+@app.delete("/api/notifications/clear-by-type/{notification_type}")
+async def clear_notifications_by_type_delete_proxy(notification_type: str, request: Request):
+    """Proxy clear notifications by type to notification service (DELETE method)"""
+    try:
+        # Forward the Authorization header to notification service
+        auth_header = request.headers.get("authorization")
+        headers = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        
+        # Create request body with notification type
+        body = {"notification_type": notification_type}
         
         async with httpx.AsyncClient() as client:
             response = await client.post(

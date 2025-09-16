@@ -99,8 +99,13 @@ class QuizGenerator:
         {{
             "type": "MCQ",
             "stem": "Question text?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_option": 0,
+            "options": {{
+                "opt_1": "Option A",
+                "opt_2": "Option B", 
+                "opt_3": "Option C",
+                "opt_4": "Option D"
+            }},
+            "answer": "opt_1",
             "metadata": {{
                 "language": "{lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en")}",
                 "sources": [
@@ -164,7 +169,7 @@ class QuizGenerator:
 CRITICAL REQUIREMENTS:
 1. Return ONLY valid JSON - no additional text, explanations, or markdown
 2. Each question MUST have a "type" field with one of: "MCQ", "TRUE_FALSE", "FILL_BLANK", "SHORT_ANSWER"
-3. MCQ questions: exactly 4 options, correct_option 0-3
+3. MCQ questions: exactly 4 options as object with opt_1, opt_2, opt_3, opt_4 keys, answer field with opt_X
 4. TRUE_FALSE questions: exactly 2 options, correct_option 0-1
 5. FILL_BLANK questions: include "blanks" count and "correct_answer"
 6. SHORT_ANSWER questions: include "correct_answer" field

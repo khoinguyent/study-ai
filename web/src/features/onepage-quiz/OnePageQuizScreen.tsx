@@ -1,11 +1,12 @@
 // @ts-nocheck
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 
 import type { Question, Answer } from "./types";
 import QuestionItem from "./QuestionItem";
 import { validate } from "./validate";
+import { transformFillBlankPrompt } from "../../utils/questionUtils";
 
 // import your left-side chat component:
 import { StudyChat, StudyChatProvider, useStudyChat } from "../../components";
@@ -48,6 +49,7 @@ type Answers = Record<string, Answer | undefined>;
 // Inner component that uses the StudyChat context
 function OnePageQuizScreenInner() {
   const { sessionId = "" } = useParams();
+  const navigate = useNavigate();
   const { mode, quizSummary, messages, ready, sending, error, sendMessage } = useStudyChat();
 
   const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -59,8 +61,13 @@ function OnePageQuizScreenInner() {
   const [title, setTitle] = useState("Quiz");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Answers>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [showExplanations, setShowExplanations] = useState(false);
+  const [timeSpent, setTimeSpent] = useState(0);
+
+  // Timer
+  useEffect(() => {
+    const timer = setInterval(() => setTimeSpent(s => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Load quiz
   useEffect(() => {
@@ -118,7 +125,14 @@ function OnePageQuizScreenInner() {
           if (t.includes("fill") || t.includes("blank")) {
             const blanks = q.blanks ?? (Array.isArray(q.correctValues) ? q.correctValues.length : Array.isArray(q.answer) ? q.answer.length : 1);
             const correctValues = q.correctValues ?? (Array.isArray(q.answer) ? q.answer : (typeof q.answer === "string" ? [q.answer] : undefined));
-            return { ...base, type: "fill_blank", blanks, labels: q.labels, correctValues };
+            return { 
+              ...base, 
+              type: "fill_blank", 
+              blanks, 
+              labels: q.labels, 
+              correctValues,
+              prompt: transformFillBlankPrompt(base.prompt)
+            };
           }
           
           // short answer default
@@ -210,20 +224,6 @@ function OnePageQuizScreenInner() {
     }, 0);
   }, [answers, questions]);
 
-  const results = useMemo(() => {
-    if (!submitted) return null;
-    return questions.map(q => ({ q, r: validate(q, answers[q.id]) }));
-  }, [submitted, questions, answers]);
-
-  const score = useMemo(() => {
-    if (!results) return { earned: 0, max: 0, needsReview: 0 };
-    return results.reduce((acc, it) => {
-      acc.max += it.r.max;
-      if (it.r.status === "correct") acc.earned += it.r.earned;
-      if (it.r.status === "needs_review") acc.needsReview += 1;
-      return acc;
-    }, { earned: 0, max: 0, needsReview: 0 });
-  }, [results]);
 
   const progress = questions.length ? (answeredCount / questions.length) * 100 : 0;
 
@@ -243,14 +243,38 @@ function OnePageQuizScreenInner() {
       if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    setSubmitted(true);
-    setShowExplanations(false);
+    
+    // Calculate quiz result
+    const results = questions.map(q => ({ q, r: validate(q, answers[q.id]) }));
+    const score = results.reduce((acc, it) => {
+      acc.max += it.r.max;
+      if (it.r.status === "correct") acc.earned += it.r.earned;
+      return acc;
+    }, { earned: 0, max: 0 });
+    
+    const scorePercent = score.max > 0 ? (score.earned / score.max) * 100 : 0;
+    const correctCount = results.filter(r => r.r.status === "correct").length;
+    
+    // Create SubmitResult object
+    const quizResult = {
+      scorePercent,
+      correctCount,
+      totalQuestions: questions.length,
+      breakdown: {
+        byType: {}
+      }
+    };
+    
+    // Store result and time in session storage
+    sessionStorage.setItem(`quiz-result-${sessionId}`, JSON.stringify(quizResult));
+    sessionStorage.setItem(`quiz-time-${sessionId}`, timeSpent.toString());
+    
+    // Navigate to result page
+    navigate(`/quiz/result/${sessionId}`);
   };
 
   const onReset = () => {
     setAnswers({});
-    setSubmitted(false);
-    setShowExplanations(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -317,16 +341,6 @@ function OnePageQuizScreenInner() {
               <h1 className="text-lg font-bold text-gray-900">{title}</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border">{answeredCount}/{questions.length} Done</span>
-                {submitted && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Score: {score.earned}/{score.max} {score.max ? `(${Math.round((score.earned/score.max)*100)}%)` : ""}
-                  </span>
-                )}
-                {submitted && score.needsReview > 0 && (
-                  <span className="text-xs text-amber-700 flex items-center gap-1">
-                    ⚠️ {score.needsReview} need review
-                  </span>
-                )}
               </div>
               <div className="mt-2">
                 <div className="w-full bg-gray-200 rounded-full h-2">
@@ -335,7 +349,7 @@ function OnePageQuizScreenInner() {
               </div>
             </div>
 
-            {!submitted ? (
+            <div className="flex gap-2">
               <button 
                 onClick={onSubmit} 
                 disabled={questions.length === 0} 
@@ -343,22 +357,13 @@ function OnePageQuizScreenInner() {
               >
                 Submit Answers
               </button>
-            ) : (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowExplanations(v => !v)}
-                  className="h-10 px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700"
-                >
-                  {showExplanations ? "Hide Explanations" : "Explain"}
-                </button>
-                <button 
-                  onClick={onReset}
-                  className="h-10 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-                >
-                  Reset
-                </button>
-              </div>
-            )}
+              <button 
+                onClick={onReset}
+                className="h-10 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Reset
+              </button>
+            </div>
           </div>
         </div>
 
@@ -371,26 +376,23 @@ function OnePageQuizScreenInner() {
               <p className="text-sm text-gray-500 mt-2">If this takes too long, check the console for errors</p>
             </div>
           ) : (
-            questions.map((q, idx) => {
-              const v = submitted ? validate(q, answers[q.id]) : undefined;
-              return (
-                <div key={q.id} id={`qcard-${q.id}`}>
-                  <QuestionItem
-                    index={idx}
-                    q={q}
-                    value={answers[q.id]}
-                    onChange={(ans) => setAnswers(prev => ({ ...prev, [q.id]: ans }))}
-                    submitted={submitted}
-                    verdict={v?.status as "correct" | "incorrect" | "needs_review" | "incomplete" | undefined}
-                    expected={v?.status !== "correct" ? v?.expected : undefined}
-                    showExplanation={showExplanations}
-                  />
-                </div>
-              );
-            })
+            questions.map((q, idx) => (
+              <div key={q.id} id={`qcard-${q.id}`}>
+                <QuestionItem
+                  index={idx}
+                  q={q}
+                  value={answers[q.id]}
+                  onChange={(ans) => setAnswers(prev => ({ ...prev, [q.id]: ans }))}
+                  submitted={false}
+                  verdict={undefined}
+                  expected={undefined}
+                  showExplanation={false}
+                />
+              </div>
+            ))
           )}
 
-          {!submitted && answeredCount < questions.length && questions.length > 0 && (
+          {answeredCount < questions.length && questions.length > 0 && (
             <div className="text-sm text-gray-600 mt-6">
               Answer all questions to submit. We'll scroll you to the first unanswered if anything is missing.
             </div>

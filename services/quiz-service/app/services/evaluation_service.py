@@ -98,30 +98,46 @@ class QuizEvaluator:
         """Evaluate multiple choice questions"""
         private_payload = self._ensure_payload_dict(question.private_payload or {})
         selected_option_id = user_answer.get("selected_option_id")
-        # Normalize correct ids which might be stored as a string or other shape
-        raw_correct = private_payload.get("correct_option_ids")
-        if isinstance(raw_correct, list):
-            correct_option_ids = set(str(x.get('id') if isinstance(x, dict) else x) for x in raw_correct)
-        elif isinstance(raw_correct, str):
-            # accept comma-separated or single id
-            parts = [p.strip() for p in raw_correct.split(',')] if ',' in raw_correct else [raw_correct]
-            correct_option_ids = set(parts)
+        
+        # Check if using new format (opt_X keys)
+        correct_answer = private_payload.get("correct_answer")
+        if correct_answer and isinstance(correct_answer, str) and correct_answer.startswith("opt_"):
+            # New format: correct_answer is opt_X
+            correct_option_ids = {correct_answer}
         else:
-            correct_option_ids = set()
+            # Legacy format: handle UUIDs and indices
+            raw_correct = private_payload.get("correct_option_ids")
+            if isinstance(raw_correct, list):
+                correct_option_ids = set(str(x.get('id') if isinstance(x, dict) else x) for x in raw_correct)
+            elif isinstance(raw_correct, str):
+                # accept comma-separated or single id
+                parts = [p.strip() for p in raw_correct.split(',')] if ',' in raw_correct else [raw_correct]
+                correct_option_ids = set(parts)
+            else:
+                correct_option_ids = set()
 
-        # If still empty, attempt to derive from meta_data.original_question.correct_option
-        if not correct_option_ids:
-            # Synthesize ids as opt_{index} to match frontend choiceIds
-            try:
-                meta = getattr(question, 'meta_data', None) or {}
-                if isinstance(meta, str):
-                    meta = json.loads(meta)
-                original = (meta or {}).get('original_question') or {}
-                correct_index = original.get('correct_option')
+            # If still empty, attempt to derive from correct_option_index or meta_data.original_question.correct_option
+            if not correct_option_ids:
+                # First try correct_option_index from private_payload
+                correct_index = private_payload.get('correct_option_index')
                 if isinstance(correct_index, int):
                     correct_option_ids = {f"opt_{correct_index}"}
-            except Exception:
-                pass
+                else:
+                    # Synthesize ids as opt_{index} to match frontend choiceIds
+                    try:
+                        meta = getattr(question, 'meta_data', None) or {}
+                        if isinstance(meta, str):
+                            meta = json.loads(meta)
+                        original = (meta or {}).get('original_question') or {}
+                        correct_index = original.get('correct_option')
+                        if isinstance(correct_index, int):
+                            correct_option_ids = {f"opt_{correct_index}"}
+                    except Exception:
+                        pass
+            
+            # Handle case where correct_option_ids is still empty (fallback to first option)
+            if not correct_option_ids:
+                correct_option_ids = {"opt_0"}  # Default to first option
         
         if not selected_option_id:
             return 0.0, False, "No answer provided"
@@ -133,19 +149,30 @@ class QuizEvaluator:
         if is_correct:
             feedback = f"Correct! {explanation}" if explanation else "Correct answer!"
         else:
-            # Normalize options which could be list of dicts or list of strings
-            norm_options = []
-            for opt in (question.options or []):
-                if isinstance(opt, dict):
-                    norm_options.append({
-                        'id': str(opt.get('id')) if opt.get('id') is not None else None,
-                        'text': str(opt.get('text', ''))
-                    })
-                else:
-                    norm_options.append({'id': None, 'text': str(opt)})
-            correct_options = [opt for opt in norm_options if opt.get('id') in correct_option_ids]
-            correct_text = ", ".join([opt.get('text', '') for opt in correct_options])
-            feedback = f"Incorrect. The correct answer was: {correct_text}. {explanation}" if explanation else f"The correct answer was: {correct_text}"
+            # Get the user's selected option text for better feedback
+            user_option_text = self._get_option_text_by_id(question, selected_option_id)
+            
+            # Get correct answer text - handle both new and legacy formats
+            if isinstance(question.options, dict):
+                # New format: options is dict with opt_X keys
+                correct_text = question.options.get(correct_answer, "")
+            else:
+                # Legacy format: normalize options which could be list of dicts or list of strings
+                norm_options = []
+                for opt in (question.options or []):
+                    if isinstance(opt, dict):
+                        norm_options.append({
+                            'id': str(opt.get('id')) if opt.get('id') is not None else None,
+                            'text': str(opt.get('text', ''))
+                        })
+                    else:
+                        norm_options.append({'id': None, 'text': str(opt)})
+                correct_options = [opt for opt in norm_options if opt.get('id') in correct_option_ids]
+                correct_text = ", ".join([opt.get('text', '') for opt in correct_options])
+            
+            # Provide better feedback with user's selection
+            user_selection = f"You selected: {user_option_text}" if user_option_text else "You selected: No answer"
+            feedback = f"Incorrect. {user_selection}. The correct answer was: {correct_text}. {explanation}" if explanation else f"Incorrect. {user_selection}. The correct answer was: {correct_text}"
         
         return score, is_correct, feedback
     
@@ -165,8 +192,9 @@ class QuizEvaluator:
         if is_correct:
             feedback = f"Correct! {explanation}" if explanation else "Correct answer!"
         else:
+            user_text = "True" if user_answer_bool else "False"
             correct_text = "True" if correct_answer_bool else "False"
-            feedback = f"Incorrect. The correct answer was: {correct_text}. {explanation}" if explanation else f"The correct answer was: {correct_text}"
+            feedback = f"Incorrect. You selected: {user_text}. The correct answer was: {correct_text}. {explanation}" if explanation else f"Incorrect. You selected: {user_text}. The correct answer was: {correct_text}"
         
         return score, is_correct, feedback
     
@@ -184,7 +212,9 @@ class QuizEvaluator:
         correct_blanks = 0
         
         for i in range(min(len(user_blanks), len(accepted_answers))):
-            if matches_any(user_blanks[i], accepted_answers[i]):
+            # Fix: Ensure accepted_answers[i] is a list for matches_any function
+            accepted_list = accepted_answers[i] if isinstance(accepted_answers[i], list) else [accepted_answers[i]]
+            if matches_any(user_blanks[i], accepted_list):
                 correct_blanks += 1
         
         # Calculate percentage score
@@ -226,11 +256,21 @@ class QuizEvaluator:
         earned_weight = 0.0
         
         for point in key_points:
-            weight = self._safe_float(point.get("weight", 0.2), 0.2)
+            # Handle both string and dict formats for key_points
+            if isinstance(point, str):
+                # Simple string format - treat as keyword with default weight
+                weight = 0.2
+                keywords = [point]
+            elif isinstance(point, dict):
+                # Dict format with weight and aliases
+                weight = self._safe_float(point.get("weight", 0.2), 0.2)
+                keywords = [point.get("text", "")] + list(point.get("aliases") or [])
+            else:
+                continue
+                
             total_weight += weight
             
             # Check for keyword matches
-            keywords = [point.get("text", "")] + list(point.get("aliases") or [])
             for keyword in keywords:
                 if not keyword:
                     continue
@@ -256,6 +296,72 @@ class QuizEvaluator:
             feedback = f"Answer needs improvement. Score: {percentage:.1%}. {explanation}" if explanation else f"Answer needs improvement. Score: {percentage:.1%}."
         
         return score, is_correct, feedback
+    
+    def _sanitize_user_answer(self, question: QuizSessionQuestion, user_answer: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a sanitized version of user answer for display (no correct answers leaked)"""
+        question_type = question.q_type
+        sanitized = {}
+        
+        if question_type == "mcq":
+            selected_option_id = user_answer.get("selected_option_id")
+            if selected_option_id:
+                # Find the actual option text for display
+                option_text = self._get_option_text_by_id(question, selected_option_id)
+                sanitized["selected_option"] = option_text or f"Option {selected_option_id}"
+            else:
+                sanitized["selected_option"] = "No answer"
+                
+        elif question_type == "true_false":
+            answer_bool = user_answer.get("answer_bool")
+            if answer_bool is not None:
+                sanitized["answer"] = "True" if answer_bool else "False"
+            else:
+                sanitized["answer"] = "No answer"
+                
+        elif question_type == "fill_in_blank":
+            blanks = user_answer.get("blanks", [])
+            sanitized["answers"] = blanks if blanks else ["No answer"]
+            
+        elif question_type == "short_answer":
+            text = user_answer.get("text", "")
+            sanitized["answer"] = text if text.strip() else "No answer"
+            
+        return sanitized
+    
+    def _get_option_text_by_id(self, question: QuizSessionQuestion, option_id: str) -> str:
+        """Get the actual text of an option by its ID"""
+        if not question.options:
+            return ""
+        
+        # Handle new format: options as dict with opt_X keys
+        if isinstance(question.options, dict):
+            return str(question.options.get(option_id, ""))
+        
+        # Handle legacy formats
+        if option_id.startswith("opt_"):
+            # Extract index from opt_X format (opt_1 = index 0, opt_2 = index 1, etc.)
+            try:
+                index = int(option_id.split("_")[1]) - 1  # Convert opt_1 to index 0, opt_2 to index 1
+                if isinstance(question.options, list):
+                    if 0 <= index < len(question.options):
+                        option = question.options[index]
+                        if isinstance(option, dict):
+                            return str(option.get('text', ''))
+                        else:
+                            return str(option)
+            except (ValueError, IndexError):
+                pass
+        
+        # Handle UUID format
+        for option in question.options:
+            if isinstance(option, dict):
+                if str(option.get('id')) == str(option_id):
+                    return str(option.get('text', ''))
+            else:
+                # Handle case where options might be stored differently
+                if str(option) == str(option_id):
+                    return str(option)
+        return ""
     
     def calculate_percentage_score(self, total_score: float, max_score: float) -> float:
         """Calculate percentage score"""
@@ -318,12 +424,14 @@ class QuizEvaluator:
             if is_correct:
                 correct_count += 1
             
-            # Store evaluation
+            # Create sanitized user answer for display
+            sanitized_user_answer = self._sanitize_user_answer(question, user_answer)
+            
+            # Store evaluation (remove correct answers for security)
             question_evaluations.append({
                 "questionId": str(question.id),
                 "type": question.q_type,
-                "userAnswer": user_answer,
-                "correctAnswer": question.private_payload,
+                "userAnswer": sanitized_user_answer,
                 "isCorrect": is_correct,
                 "score": score,
                 "maxScore": question_max_points,

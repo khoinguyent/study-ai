@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { QuestionCard } from "./QuestionCards";
-import { fetchQuiz, submitQuiz } from "../api";
+import { fetchQuiz, submitQuiz, submitQuizWithAnswers } from "../api";
 import { useQuizStore, scheduleAutosave } from "../store";
 import type { Question, SubmitResult } from "../types";
 import LeftClarifierSheet from "../../../components/LeftClarifierSheet";
@@ -108,9 +108,16 @@ export default function QuizScreen() {
   const submit = async () => {
     submitLocal();
     try {
-      const res = await submitQuiz(sessionId, 'http://localhost:8004');
-      setSubmitted(res);
-      setQuizResult(res); // Store the result for display
+      // Use the proper evaluation endpoint with answers
+      const res = await submitQuizWithAnswers(sessionId, answers, timeSec, 'http://localhost:8004');
+      
+      // Store result, time, and student answers in session storage
+      sessionStorage.setItem(`quiz-result-${sessionId}`, JSON.stringify(res));
+      sessionStorage.setItem(`quiz-time-${sessionId}`, timeSec.toString());
+      sessionStorage.setItem(`quiz-answers-${sessionId}`, JSON.stringify(answers));
+      
+      // Navigate to result page
+      nav(`/quiz/result/${sessionId}`);
     } catch (e) {
       // handle error gracefully
       alert("Submit failed. Please try again.");
@@ -163,35 +170,6 @@ export default function QuizScreen() {
     );
   }
 
-  // Show result screen when quiz is completed
-  if (quizResult && status === "submitted") {
-    return (
-      <div className="h-screen w-full grid grid-cols-12">
-        {/* Left side: chat column - keep visible with encouraging messages */}
-        <aside className="col-span-3 border-r border-gray-200 dark:border-gray-700 min-w-[320px] max-w-[400px] overflow-hidden">
-          <LeftClarifierSheet
-            open={true}
-            onClose={() => {}}
-            launch={{
-              userId: sid || "",
-              subjectId: "",
-              docIds: []
-            }}
-          />
-        </aside>
-
-        {/* Right side: result screen */}
-        <main className="col-span-9 flex items-center justify-center">
-          <QuizResultScreen
-            result={quizResult}
-            onTryAgain={handleTryAgain}
-            onBackToStudy={handleBackToStudy}
-            timeSpent={timeSec}
-          />
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="h-screen w-full grid grid-cols-12">

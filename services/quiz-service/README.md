@@ -75,7 +75,7 @@ DATABASE_URL=postgresql://user:pass@localhost/quizdb
 
 # LLM Providers
 OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_MODEL=gpt-4o
 OPENAI_TEMPERATURE=0.7
 OPENAI_MAX_TOKENS=2000
 OPENAI_BASE_URL=https://api.openai.com/v1
