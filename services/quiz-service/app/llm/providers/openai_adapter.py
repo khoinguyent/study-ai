@@ -26,22 +26,28 @@ class OpenAIProvider:
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
         try:
-            logger.info(
-                "[OPENAI] Preparing request",
-                extra={
-                    "provider": "openai",
-                    "model": self.model,
-                    "temperature": self.temperature,
-                    "system_prompt_preview": (system_prompt[:200] + "...") if len(system_prompt) > 200 else system_prompt,
-                    "user_prompt_preview": (user_prompt[:200] + "...") if len(user_prompt) > 200 else user_prompt,
-                },
-            )
-            
             # Prepare messages
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
+            
+            # Log full request body for debugging
+            request_body = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.temperature,
+                "response_format": {"type": "json_object"},
+                "timeout": 120
+            }
+            
+            # Log the full request body in a readable format
+            logger.info(f"[OPENAI] Full request body to OpenAI API:")
+            logger.info(f"[OPENAI] Model: {self.model}")
+            logger.info(f"[OPENAI] Temperature: {self.temperature}")
+            logger.info(f"[OPENAI] System prompt: {system_prompt[:500]}{'...' if len(system_prompt) > 500 else ''}")
+            logger.info(f"[OPENAI] User prompt: {user_prompt[:500]}{'...' if len(user_prompt) > 500 else ''}")
+            logger.info(f"[OPENAI] Full request body JSON: {request_body}")
             
             # Add vector store context if available
             if self.vector_store_ids:

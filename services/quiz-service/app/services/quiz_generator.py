@@ -411,11 +411,15 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
             if isinstance(quiz_data, dict):
                 quiz_data = self._enforce_question_type_diversity(quiz_data)
 
-            # Ensure language fields
+            # Ensure language fields and clean up structure
             if isinstance(quiz_data, dict):
                 quiz_data.setdefault("output_language", lang_code or os.getenv("QUIZ_LANG_DEFAULT", "en"))
                 if "questions" in quiz_data:
                     for q in quiz_data.get("questions", []) or []:
+                        # Remove type field as it's not needed in the final schema
+                        if "type" in q:
+                            del q["type"]
+                        
                         meta = q.get("metadata") or {}
                         meta.setdefault("language", quiz_data["output_language"]) 
                         q["metadata"] = meta
@@ -571,9 +575,19 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
             logger.error(f"❌ [QUIZ_GEN] Error parsing response: {str(e)}")
             return self._create_fallback_quiz_structure()
     
+    def _cleanup_type_fields(self, quiz_data: Dict[str, Any]) -> None:
+        """Remove type fields from all questions as they're not needed in the final schema"""
+        if isinstance(quiz_data, dict) and "questions" in quiz_data:
+            for question in quiz_data.get("questions", []):
+                if isinstance(question, dict) and "type" in question:
+                    del question["type"]
+    
     def _validate_structured_response(self, response_data: Dict[str, Any], generation_id: str) -> Dict[str, Any]:
         """Validate structured response from LLM providers"""
         try:
+            # Always clean up type fields first
+            self._cleanup_type_fields(response_data)
+            
             if self._is_valid_quiz_structure(response_data):
                 return response_data
             
@@ -603,16 +617,13 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
             if not isinstance(questions, list) or len(questions) == 0:
                 return False
             
-            # Validate each question based on its type
+            # Validate each question based on its structure
             for question in questions:
                 if not isinstance(question, dict):
                     return False
                 
-                # Each question must have a type field
-                if "type" not in question:
-                    return False
-                
-                question_type = question.get("type")
+                # Determine question type based on structure (type field not required)
+                question_type = self._determine_question_type(question)
                 if not self._is_valid_question_structure(question, question_type):
                     return False
             
@@ -759,11 +770,13 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                 if not isinstance(question, dict):
                     continue
                 
-                # Ensure question type exists (default to MCQ if missing)
-                if "type" not in question:
-                    question["type"] = "MCQ"
+                # Note: type field is not needed in the final schema according to README
+                # Remove type field if it exists
+                if "type" in question:
+                    del question["type"]
                 
-                question_type = question["type"]
+                # Determine question type based on structure
+                question_type = self._determine_question_type(question)
                 
                 # Repair based on question type
                 if question_type == "MCQ":
@@ -776,7 +789,6 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                     self._repair_short_answer_question(question, i)
                 else:
                     # Unknown type, convert to MCQ
-                    question["type"] = "MCQ"
                     self._repair_mcq_question(question, i)
                 
                 # Ensure metadata exists for all question types
@@ -790,6 +802,21 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
             
         except Exception:
             return None
+    
+    def _determine_question_type(self, question: Dict[str, Any]) -> str:
+        """Determine question type based on structure"""
+        # Check for fill-in-blank: has blanks field OR stem contains _____
+        if "blanks" in question or ("stem" in question and "_____" in question["stem"]):
+            return "FILL_BLANK"
+        # Check for short answer: has correct_answer but no options
+        elif "correct_answer" in question and ("options" not in question or question.get("options") is None):
+            return "SHORT_ANSWER"
+        # Check for true/false: has exactly 2 options
+        elif "options" in question and isinstance(question.get("options"), list) and len(question.get("options", [])) == 2:
+            return "TRUE_FALSE"
+        # Default to MCQ
+        else:
+            return "MCQ"
     
     def _repair_mcq_question(self, question: Dict[str, Any], index: int):
         """Repair MCQ question structure"""
@@ -833,11 +860,41 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
         if "stem" not in question:
             question["stem"] = f"Fill in the blank {index + 1}: _____"
         
-        if "blanks" not in question or not isinstance(question["blanks"], int) or question["blanks"] < 1:
-            question["blanks"] = 1
+        # Ensure stem has _____ placeholders
+        if "_____" not in question["stem"]:
+            # Try to find a good place to add the blank
+            # Look for common patterns like "approximately", "about", "around", etc.
+            import re
+            patterns = [
+                r'\b(approximately|about|around|roughly|some|over|under|nearly|almost)\s+(\d+)\s+',
+                r'\b(the|a|an)\s+([a-zA-Z]+)\s+(is|was|are|were)\s+',
+                r'\b(flows|stretches|extends|covers|spans)\s+',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, question["stem"], re.IGNORECASE)
+                if match:
+                    # Replace the matched part with _____
+                    question["stem"] = re.sub(pattern, lambda m: m.group(0).replace(m.group(2) if len(m.groups()) > 1 else m.group(1), "_____"), question["stem"], count=1)
+                    break
+            else:
+                # If no pattern found, just append _____
+                question["stem"] += " _____"
         
-        if "correct_answer" not in question or not isinstance(question["correct_answer"], str):
+        # Count blanks in stem
+        blank_count = question["stem"].count("_____")
+        
+        if "blanks" not in question or not isinstance(question["blanks"], int) or question["blanks"] < 1:
+            question["blanks"] = max(blank_count, 1)
+        
+        # Fix correct_answer format
+        if "correct_answer" not in question:
             question["correct_answer"] = "answer"
+        elif isinstance(question["correct_answer"], list):
+            # Convert array to string (take first element)
+            question["correct_answer"] = str(question["correct_answer"][0]) if question["correct_answer"] else "answer"
+        elif not isinstance(question["correct_answer"], str):
+            question["correct_answer"] = str(question["correct_answer"])
     
     def _repair_short_answer_question(self, question: Dict[str, Any], index: int):
         """Repair Short Answer question structure"""
@@ -882,28 +939,24 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
             "description": "Unable to generate quiz from AI response",
             "questions": [
                 {
-                    "type": "MCQ",
                     "stem": "What should be done if no chunks are found for documents?",
                     "options": ["Use specific study instructions", "Ignore the issue", "Use general study instructions", "Delete the documents"],
                     "correct_option": 2,
                     "metadata": {"language": "en"}
                 },
                 {
-                    "type": "TRUE_FALSE",
                     "stem": "The system can handle multiple question types.",
                     "options": ["True", "False"],
                     "correct_option": 0,
                     "metadata": {"language": "en"}
                 },
                 {
-                    "type": "FILL_BLANK",
                     "stem": "The quiz system supports _____ question types.",
                     "blanks": 1,
                     "correct_answer": "multiple",
                     "metadata": {"language": "en"}
                 },
                 {
-                    "type": "SHORT_ANSWER",
                     "stem": "Explain why question type validation is important.",
                     "correct_answer": "Question type validation ensures data consistency and proper frontend rendering.",
                     "metadata": {"language": "en"}
@@ -921,10 +974,10 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
             if len(questions) < 2:
                 return quiz_data
             
-            # Count question types
+            # Count question types based on structure (not type field)
             type_counts = {}
             for question in questions:
-                qtype = question.get('type', 'MCQ')
+                qtype = self._determine_question_type(question)
                 type_counts[qtype] = type_counts.get(qtype, 0) + 1
             
             # If we have only MCQ questions, convert some to other types
@@ -936,7 +989,6 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                     if i == 0:  # Keep first as MCQ
                         continue
                     elif i == 1:  # Convert second to True/False
-                        question['type'] = 'TRUE_FALSE'
                         question['options'] = ['True', 'False']
                         question['correct_option'] = 0
                         if 'correct_answer' in question:
@@ -944,7 +996,6 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                         if 'blanks' in question:
                             del question['blanks']
                     elif i == 2:  # Convert third to Fill-in-Blank
-                        question['type'] = 'FILL_BLANK'
                         question['blanks'] = 1
                         question['correct_answer'] = 'answer'
                         if 'options' in question:
@@ -952,7 +1003,6 @@ IMPORTANT: Return ONLY the JSON object with the exact structure specified above.
                         if 'correct_option' in question:
                             del question['correct_option']
                     elif i == 3:  # Convert fourth to Short Answer
-                        question['type'] = 'SHORT_ANSWER'
                         question['correct_answer'] = 'Answer based on the provided context'
                         if 'options' in question:
                             del question['options']
@@ -1114,11 +1164,90 @@ Generate the quiz based ONLY on the provided context:"""
         return blocks
 
     def _schema_minimal(self) -> Dict[str, Any]:
-        # Preserve existing schema expectations; minimal placeholder here
+        # Return the complete expected schema structure with all question types
         return {
             "title": "string",
             "description": "string",
-            "questions": [],
+            "questions": [
+                {
+                    "stem": "What is the main cause of the historical event?",
+                    "options": ["Economic factors", "Political instability", "Social changes", "Environmental factors"],
+                    "correct_option": 1,
+                    "metadata": {
+                        "language": "en",
+                        "sources": [
+                            {
+                                "context_id": "chunk_1",
+                                "quote": "Political instability was the primary driver..."
+                            }
+                        ],
+                        "difficulty": "easy|medium|hard",
+                        "difficulty_validation": {
+                            "assessed": "easy|medium|hard",
+                            "matches": True
+                        }
+                    }
+                },
+                {
+                    "stem": "The historical event had significant long-term effects.",
+                    "options": ["True", "False"],
+                    "correct_option": 0,
+                    "metadata": {
+                        "language": "en",
+                        "sources": [
+                            {
+                                "context_id": "chunk_2",
+                                "quote": "The impact continues to be felt today..."
+                            }
+                        ],
+                        "difficulty": "easy|medium|hard",
+                        "difficulty_validation": {
+                            "assessed": "easy|medium|hard",
+                            "matches": True
+                        }
+                    }
+                },
+                {
+                    "stem": "The key figure in the historical event was _____.",
+                    "blanks": 1,
+                    "correct_answer": "the leader",
+                    "metadata": {
+                        "language": "en",
+                        "sources": [
+                            {
+                                "context_id": "chunk_3",
+                                "quote": "This person played a crucial role..."
+                            }
+                        ],
+                        "difficulty": "easy|medium|hard",
+                        "difficulty_validation": {
+                            "assessed": "easy|medium|hard",
+                            "matches": True
+                        }
+                    }
+                },
+                {
+                    "stem": "Explain the main causes of the historical event.",
+                    "correct_answer": "Answer based on the provided context",
+                    "metadata": {
+                        "language": "en",
+                        "sources": [
+                            {
+                                "context_id": "chunk_4",
+                                "quote": "Multiple factors contributed to the event..."
+                            }
+                        ],
+                        "difficulty": "easy|medium|hard",
+                        "difficulty_validation": {
+                            "assessed": "easy|medium|hard",
+                            "matches": True
+                        }
+                    }
+                }
+            ],
+            "output_language": "en",
+            "source_type": "document",
+            "source_id": "string"
         }
 
     def _make_provider(self):

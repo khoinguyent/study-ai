@@ -369,9 +369,25 @@ async def events_stream(userId: str = Query(...)):
             # Send initial connection event
             yield f"data: {json.dumps({'type': 'connected', 'message': 'Event stream connected'})}\n\n"
             
-            # For now, send a heartbeat every 30 seconds to keep connection alive
-            # In a full implementation, this would stream real events from Redis/event system
-            import asyncio
+            # Send mock quiz generation events for testing
+            logger.info(f"Starting event stream for user {userId}")
+            
+            # Simulate quiz generation progress
+            await asyncio.sleep(1)  # Initial delay
+            
+            # Send quiz generation started event
+            yield f"data: {json.dumps({'type': 'quiz_generation_started', 'data': {'job_id': 'mock-job-123', 'progress': 0, 'message': 'Starting quiz generation...'}})}\n\n"
+            
+            # Simulate progress updates
+            for progress in [25, 50, 75, 100]:
+                await asyncio.sleep(2)  # 2 second intervals
+                yield f"data: {json.dumps({'type': 'quiz_generation_progress', 'data': {'job_id': 'mock-job-123', 'progress': progress, 'message': f'Generating questions... {progress}%'}})}\n\n"
+            
+            # Send completion event
+            await asyncio.sleep(1)
+            yield f"data: {json.dumps({'type': 'quiz_generation_completed', 'data': {'job_id': 'mock-job-123', 'quiz_id': 'mock-quiz-456', 'session_id': 'mock-session-789', 'progress': 100, 'message': 'Quiz generation completed!'}})}\n\n"
+            
+            # Keep connection alive with heartbeats
             while True:
                 await asyncio.sleep(30)
                 yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': str(datetime.utcnow())})}\n\n"

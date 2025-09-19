@@ -72,26 +72,35 @@ export async function clarifierRoutes(fastify: FastifyInstance) {
     const { sessionId, userId, subjectId, docIds, flow } = parsed.data;
     logger.info({ sessionId, userId, subjectId, docCount: docIds.length, flow }, 'clarifier.start');
 
-    // default policy
-    const policy = {
-      allowedQuestionTypes: [...ALLOWED_TYPES],
-      allowedDifficulty: [...ALLOWED_DIFFS],
-      defaults: { difficulty: 'mixed' as const, suggestedCount: 10 },
-      ui: { minCount: 5, maxCountCap: 50 }
-    };
-
+    // Calculate max questions first using quiz budget service
     let maxQuestions = 10;
+    let suggested = 10;
+    let budgetInfo = null;
+    
     try {
-      const b = await callBudget(docIds, policy.defaults.difficulty);
-      maxQuestions = Math.max(policy.ui.minCount, Math.min(policy.ui.maxCountCap, b.maxQuestions));
-      logger.info({ sessionId, maxQuestions }, 'budget.ok');
+      const budgetResponse = await callBudget(docIds, 'mixed');
+      maxQuestions = Math.max(5, Math.min(50, budgetResponse.maxQuestions));
+      suggested = Math.min(15, maxQuestions);
+      budgetInfo = {
+        maxQuestions,
+        suggested,
+        rationale: budgetResponse.rationale
+      };
+      logger.info({ sessionId, maxQuestions, suggested }, 'budget.calculated');
     } catch (e: any) {
       // Graceful fallback so UI can still open
       logger.warn({ err: e?.message }, 'budget.failed_using_defaults');
-      maxQuestions = policy.ui.minCount; // keep conservative if budget down
+      maxQuestions = 10;
+      suggested = 10;
     }
 
-    const suggested = Math.min(policy.defaults.suggestedCount, maxQuestions);
+    // default policy for simplified flow
+    const policy = {
+      allowedQuestionTypes: ['mcq', 'true_false', 'fill_blank'],
+      allowedDifficulty: ['easy', 'medium', 'hard'],
+      defaults: { difficulty: 'mixed' as const, suggestedCount: suggested },
+      ui: { minCount: 5, maxCountCap: maxQuestions }
+    };
 
     // seed in-memory session (simple Map; replace with Redis later)
     (request.server as any).clarifierSessions = (request.server as any).clarifierSessions || new Map();
@@ -105,9 +114,26 @@ export async function clarifierRoutes(fastify: FastifyInstance) {
     return reply.send({
       sessionId,
       flow,
-      nextPrompt: 'Choose question types (you can pick multiple): MCQ, True/False, Fill-in-blank, Short answer.',
-      ui: { quick: ['MCQ','True/False','Fill-in-blank','Short answer'] },
-      maxQuestions, suggested,
+      nextPrompt: `Let's set up your quiz! Please provide:
+
+1. **Number of questions** (textbox): Enter a number between 5 and ${maxQuestions} (suggested: ${suggested})
+
+2. **Question types** (can select multiple): 
+   - MCQ (Multiple Choice) - will get 70% of questions
+   - True/False 
+   - Fill-in-blank
+
+3. **Difficulty levels** (can select multiple):
+   - Easy (30% of questions)
+   - Medium (60% of questions) 
+   - Hard (10% of questions)
+
+Please respond with your choices, for example:
+"15 questions, MCQ and True/False, Medium and Easy difficulty"`,
+      ui: { quick: ['Continue with defaults', 'Custom setup'] },
+      maxQuestions, 
+      suggested,
+      budgetInfo,
       allowedQuestionTypes: policy.allowedQuestionTypes,
       allowedDifficulty: policy.allowedDifficulty
     });

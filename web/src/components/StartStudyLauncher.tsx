@@ -1,5 +1,5 @@
 import React from "react";
-import LeftClarifierSheet, { ClarifierResult, LaunchContext } from "./LeftClarifierSheet";
+import QuizConfigModal, { QuizConfig, LaunchContext } from "./QuizConfigModal";
 
 import { startStudySession } from "../api/studySession";
 import { startQuizJob } from "../api/quiz";
@@ -40,10 +40,10 @@ export default function StartStudyLauncher({
     onFailed: quizToasts.onFailed,
   });
 
-  async function handleConfirm(r: ClarifierResult, launch: LaunchContext) {
+  async function handleConfirm(r: QuizConfig, launch: LaunchContext) {
     console.log('🎯 [QUIZ] User confirmed quiz generation:', {
       timestamp: new Date().toISOString(),
-      clarifierResult: r,
+      quizConfig: r,
       launchContext: launch,
       userId: sel.userId,
       subjectId: sel.subjectId,
@@ -53,10 +53,20 @@ export default function StartStudyLauncher({
     try {
       setOpen(false);
       
-      // Map UI types to backend API types
-      const allowed_types = r.questionTypes.map(t => toApiType[t as QuestionType]);
+      // Map UI types to backend API types, filtering out undefined values
+      const allowed_types = r.questionTypes
+        .map(t => toApiType[t as QuestionType])
+        .filter(t => t !== undefined);
+      
+      // Fallback to MCQ if no valid types found
+      if (allowed_types.length === 0) {
+        allowed_types.push("mcq");
+      }
+      
       const counts_by_type = Object.fromEntries(
-        Object.entries(r.countsByType || {}).map(([k,v]) => [toApiType[k as QuestionType], v as number])
+        Object.entries(r.countsByType || {})
+          .map(([k,v]) => [toApiType[k as QuestionType], v as number])
+          .filter(([k,v]) => k !== undefined)
       );
 
       // Create the quiz generation payload
@@ -64,9 +74,10 @@ export default function StartStudyLauncher({
         docIds: launch.docIds,
         numQuestions: r.questionCount,
         questionTypes: allowed_types,
-        difficulty: r.difficulty === "mixed" ? "medium" : r.difficulty,
+        difficulty: r.difficultyLevels.length === 1 ? r.difficultyLevels[0] : "mixed",
         language: "auto",
         countsByType: counts_by_type, // Include the computed counts for proper distribution
+        countsByDifficulty: r.countsByDifficulty, // Include difficulty distribution
       };
 
       console.log('📤 [QUIZ] Sending quiz generation payload:', {
@@ -190,10 +201,10 @@ export default function StartStudyLauncher({
         ▶ Start Study Session
       </button>
 
-      <LeftClarifierSheet
+      <QuizConfigModal
         open={open}
         onClose={() => {
-          console.log('❌ [QUIZ] Clarifier sheet closed without confirmation:', {
+          console.log('❌ [QUIZ] Quiz config modal closed without confirmation:', {
             timestamp: new Date().toISOString(),
             userId: sel.userId
           });
@@ -203,7 +214,6 @@ export default function StartStudyLauncher({
         maxQuestions={50}
         suggested={15}
         onConfirm={handleConfirm}
-        apiBase={apiBase}
       />
 
       {/* Progress indicator removed - notifications handled by Dashboard */}

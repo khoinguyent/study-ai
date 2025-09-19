@@ -18,6 +18,20 @@ Each object: {id, doc_id, file_name, chunk_id, section_path, char_range, text}
 SCHEMA (return exactly this shape)
 {{ SCHEMA_JSON }}
 
+CRITICAL FORMAT REQUIREMENTS:
+1. MCQ questions: options must be simple strings ["option1", "option2", "option3", "option4"], NOT objects with "value" and "is_correct"
+2. correct_option must be the INDEX (0-3) of the correct answer in the options array
+3. TRUE_FALSE questions: options must be ["True", "False"], correct_option is 0 or 1
+4. FILL_BLANK questions: 
+   - stem MUST contain exactly _____ placeholders (use exactly 4 underscores)
+   - blanks field MUST be a positive integer matching the number of _____ in the stem
+   - correct_answer MUST be a string (not array) with the expected answer
+   - Example: {"stem": "The capital of France is _____.", "blanks": 1, "correct_answer": "Paris"}
+5. SHORT_ANSWER questions: include "correct_answer" field, no options needed
+6. Do NOT include a "type" field in individual questions
+7. Include ALL required top-level fields: title, description, output_language, source_type, source_id
+8. Each question MUST have metadata with sources, difficulty, and difficulty_validation
+
 OUTPUT
 - Return a single JSON object defined by SCHEMA (include "output_language").
 - No commentary; JSON only.
